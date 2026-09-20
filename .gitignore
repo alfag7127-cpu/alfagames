@@ -1,0 +1,14 @@
+# Angular app
+app/node_modules/
+app/dist/
+app/.angular/
+app/.vscode/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Nota: la Project URL y la anon public key de Supabase SÍ se versionan
+# (src/environments/environment*.ts) — son públicas por diseño, la seguridad
+# real la da Row Level Security en la base de datos, no ocultar esta key.
+# Nunca pongas aquí la service_role key.

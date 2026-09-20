@@ -1,0 +1,55 @@
+<h1 class="text-xl font-bold text-slate-800 mb-4">Historial de sesiones</h1>
+
+<div class="flex flex-wrap items-end gap-3 mb-4">
+  <label class="text-sm text-slate-600">
+    Desde
+    <input type="date" [(ngModel)]="desde" class="block rounded border border-slate-300 px-2 py-1" />
+  </label>
+  <label class="text-sm text-slate-600">
+    Hasta
+    <input type="date" [(ngModel)]="hasta" class="block rounded border border-slate-300 px-2 py-1" />
+  </label>
+  <button (click)="cargar()" class="rounded-lg bg-indigo-600 text-white text-sm px-4 py-1.5 hover:bg-indigo-700">
+    Filtrar
+  </button>
+  <span class="text-sm text-slate-600 ml-auto">
+    Total del período (finalizadas): <span class="font-bold">{{ totalPeriodo() | number: '1.0-0' }} COP</span>
+  </span>
+</div>
+
+<div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+  <table class="min-w-full text-sm">
+    <thead class="bg-slate-100 text-slate-600 text-left">
+      <tr>
+        <th class="px-3 py-2">Puesto</th>
+        <th class="px-3 py-2">Cliente</th>
+        <th class="px-3 py-2">Inicio</th>
+        <th class="px-3 py-2">Fin</th>
+        <th class="px-3 py-2">Horas</th>
+        <th class="px-3 py-2">Controles+</th>
+        <th class="px-3 py-2">Total</th>
+        <th class="px-3 py-2">Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (s of sesiones(); track s.id) {
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2">{{ nombrePuesto(s.puesto_id) }}</td>
+          <td class="px-3 py-2">{{ s.cliente_nombre || '—' }}</td>
+          <td class="px-3 py-2">{{ s.hora_inicio | date: 'short' }}</td>
+          <td class="px-3 py-2">{{ s.hora_fin ? (s.hora_fin | date: 'short') : '—' }}</td>
+          <td class="px-3 py-2">{{ s.horas_cobradas ?? '—' }}</td>
+          <td class="px-3 py-2">{{ s.controles_adicionales }}</td>
+          <td class="px-3 py-2 font-medium">
+            {{ s.precio_total != null ? (s.precio_total | number: '1.0-0') + ' COP' : '—' }}
+          </td>
+          <td class="px-3 py-2 capitalize">{{ s.estado }}</td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="8" class="px-3 py-6 text-center text-slate-500">Sin sesiones en este período.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,83 @@
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid-line: #e1e0d9;
+  --baseline: #c3c2b7;
+  --series-ventas: #2a78d6; /* categorical slot 1 */
+  --series-gastos: #eb6834; /* categorical slot 2 */
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid-line: #2c2c2a;
+    --baseline: #383835;
+    --series-ventas: #3987e5;
+    --series-gastos: #d95926;
+    --status-good: #0ca30c;
+    --status-critical: #e66767;
+  }
+}
+
+.stat-tile {
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.stat-label {
+  color: var(--text-secondary);
+}
+
+.chart-shell {
+  background: var(--surface-1);
+}
+
+.chart-bars {
+  border-bottom: 1px solid var(--baseline);
+}
+
+.chart-gridline {
+  border-top: 1px dashed var(--grid-line);
+}
+
+.bar {
+  border-radius: 4px 4px 0 0;
+  width: 10px;
+  min-height: 2px;
+}
+
+.bar-ventas {
+  background: var(--series-ventas);
+}
+
+.bar-gastos {
+  background: var(--series-gastos);
+}
+
+.axis-label {
+  color: var(--text-muted);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.ganancia-positiva {
+  color: var(--status-good);
+}
+
+.ganancia-negativa {
+  color: var(--status-critical);
+}

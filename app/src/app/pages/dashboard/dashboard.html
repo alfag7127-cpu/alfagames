@@ -1,0 +1,110 @@
+<div class="viz-root space-y-6">
+  <h1 class="text-xl font-bold" style="color: var(--text-primary)">Dashboard</h1>
+
+  @if (!cargando()) {
+    <!-- Stat tiles: hoy -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="stat-tile rounded-xl shadow-sm p-4">
+        <p class="stat-label text-xs uppercase tracking-wide">Ventas de hoy</p>
+        <p class="text-2xl font-bold mt-1">{{ hoy()?.ventas ?? 0 | number: '1.0-0' }} COP</p>
+      </div>
+      <div class="stat-tile rounded-xl shadow-sm p-4">
+        <p class="stat-label text-xs uppercase tracking-wide">Gastos de hoy</p>
+        <p class="text-2xl font-bold mt-1">{{ hoy()?.gastos ?? 0 | number: '1.0-0' }} COP</p>
+      </div>
+      <div class="stat-tile rounded-xl shadow-sm p-4">
+        <p class="stat-label text-xs uppercase tracking-wide">Ganancia neta de hoy</p>
+        <p
+          class="text-2xl font-bold mt-1"
+          [class.ganancia-positiva]="gananciaHoy() >= 0"
+          [class.ganancia-negativa]="gananciaHoy() < 0"
+        >
+          {{ gananciaHoy() | number: '1.0-0' }} COP
+        </p>
+      </div>
+    </div>
+
+    <!-- Chart: últimos 7 días -->
+    <div class="chart-shell rounded-xl shadow-sm p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold" style="color: var(--text-primary)">Ventas vs. gastos — últimos 7 días</h2>
+        <div class="flex items-center gap-4 text-xs">
+          <span class="flex items-center gap-1.5">
+            <span class="legend-dot bar-ventas"></span>
+            <span class="stat-label">Ventas</span>
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="legend-dot bar-gastos"></span>
+            <span class="stat-label">Gastos</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="chart-bars flex items-end justify-between gap-4 h-48 px-2">
+        @for (d of dias(); track d.fecha) {
+          <div class="flex flex-col items-center gap-1 flex-1">
+            <div class="flex items-end gap-1 h-40">
+              <div
+                class="bar bar-ventas"
+                [style.height.%]="alturaPorcentaje(d.ventas)"
+                [attr.title]="'Ventas ' + d.etiqueta + ': ' + (d.ventas | number: '1.0-0') + ' COP'"
+              ></div>
+              <div
+                class="bar bar-gastos"
+                [style.height.%]="alturaPorcentaje(d.gastos)"
+                [attr.title]="'Gastos ' + d.etiqueta + ': ' + (d.gastos | number: '1.0-0') + ' COP'"
+              ></div>
+            </div>
+            <span class="axis-label text-xs">{{ d.etiqueta }}</span>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Tabla del período (vista accesible del mismo dato) -->
+    <div class="chart-shell rounded-xl shadow-sm overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="text-left border-b" style="border-color: var(--grid-line)">
+            <th class="px-3 py-2 stat-label">Día</th>
+            <th class="px-3 py-2 stat-label">Ventas</th>
+            <th class="px-3 py-2 stat-label">Gastos</th>
+            <th class="px-3 py-2 stat-label">Ganancia</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (d of dias(); track d.fecha) {
+            <tr class="border-b" style="border-color: var(--grid-line); color: var(--text-primary)">
+              <td class="px-3 py-2">{{ d.etiqueta }}</td>
+              <td class="px-3 py-2">{{ d.ventas | number: '1.0-0' }}</td>
+              <td class="px-3 py-2">{{ d.gastos | number: '1.0-0' }}</td>
+              <td
+                class="px-3 py-2 font-medium"
+                [class.ganancia-positiva]="d.ventas - d.gastos >= 0"
+                [class.ganancia-negativa]="d.ventas - d.gastos < 0"
+              >
+                {{ d.ventas - d.gastos | number: '1.0-0' }}
+              </td>
+            </tr>
+          }
+        </tbody>
+        <tfoot>
+          <tr class="font-semibold" style="color: var(--text-primary)">
+            <td class="px-3 py-2">Total 7 días</td>
+            <td class="px-3 py-2">{{ totalPeriodo().ventas | number: '1.0-0' }}</td>
+            <td class="px-3 py-2">{{ totalPeriodo().gastos | number: '1.0-0' }}</td>
+            <td
+              class="px-3 py-2"
+              [class.ganancia-positiva]="totalPeriodo().ganancia >= 0"
+              [class.ganancia-negativa]="totalPeriodo().ganancia < 0"
+            >
+              {{ totalPeriodo().ganancia | number: '1.0-0' }}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  } @else {
+    <p class="stat-label">Cargando...</p>
+  }
+</div>

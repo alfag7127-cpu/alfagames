@@ -1,0 +1,122 @@
+<h1 class="text-xl font-bold text-slate-800 mb-4">Sala — estado en vivo</h1>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+  @for (p of puestos(); track p.id) {
+    <div
+      class="rounded-xl border p-4 shadow-sm bg-white"
+      [class.border-emerald-300]="!p.sesion_id"
+      [class.border-amber-300]="!!p.sesion_id"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold text-slate-800">{{ p.nombre }}</h2>
+        <span
+          class="text-xs font-medium px-2 py-0.5 rounded-full"
+          [class.bg-emerald-100]="!p.sesion_id"
+          [class.text-emerald-700]="!p.sesion_id"
+          [class.bg-amber-100]="!!p.sesion_id"
+          [class.text-amber-700]="!!p.sesion_id"
+        >
+          {{ p.sesion_id ? 'Ocupado' : 'Libre' }}
+        </span>
+      </div>
+
+      @if (!p.sesion_id) {
+        @if (!p.formAbierto) {
+          <button
+            (click)="toggleForm(p.id)"
+            class="w-full rounded-lg bg-emerald-600 text-white text-sm py-2 hover:bg-emerald-700"
+          >
+            Abrir sesión
+          </button>
+        } @else {
+          <div class="space-y-2">
+            <input
+              [(ngModel)]="p.clienteInput"
+              name="cliente-{{ p.id }}"
+              placeholder="Nombre del cliente (opcional)"
+              class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+            />
+            <div class="flex gap-2">
+              <button
+                (click)="abrir(p)"
+                class="flex-1 rounded-lg bg-emerald-600 text-white text-sm py-1.5 hover:bg-emerald-700"
+              >
+                Confirmar
+              </button>
+              <button
+                (click)="toggleForm(p.id)"
+                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        }
+      } @else {
+        <p class="text-sm text-slate-600 mb-1">
+          Cliente: <span class="font-medium">{{ p.cliente_nombre || 'Sin nombre' }}</span>
+        </p>
+        <p class="text-2xl font-mono font-bold text-slate-800 mb-2">{{ tiempoFormateado(p) }}</p>
+
+        @if (!p.formAbierto) {
+          <button
+            (click)="toggleForm(p.id)"
+            class="w-full rounded-lg bg-amber-600 text-white text-sm py-2 hover:bg-amber-700"
+          >
+            Cerrar sesión
+          </button>
+        } @else {
+          <div class="space-y-2">
+            <label class="block text-xs text-slate-600">
+              Controles adicionales
+              <input
+                type="number"
+                min="0"
+                [(ngModel)]="p.controlesInput"
+                name="controles-{{ p.id }}"
+                class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+              />
+            </label>
+
+            <label class="flex items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" [(ngModel)]="p.usarPrecioManual" name="usar-manual-{{ p.id }}" />
+              Precio manual (oferta especial)
+            </label>
+
+            @if (p.usarPrecioManual) {
+              <input
+                type="number"
+                min="0"
+                placeholder="Precio pactado"
+                [(ngModel)]="p.precioManualInput"
+                name="precio-manual-{{ p.id }}"
+                class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+              />
+            }
+
+            <p class="text-sm text-slate-700">
+              Total a cobrar: <span class="font-bold">{{ previewPrecio(p) | number: '1.0-0' }} COP</span>
+            </p>
+
+            <div class="flex gap-2">
+              <button
+                (click)="cerrar(p)"
+                class="flex-1 rounded-lg bg-amber-600 text-white text-sm py-1.5 hover:bg-amber-700"
+              >
+                Cobrar y cerrar
+              </button>
+              <button
+                (click)="toggleForm(p.id)"
+                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        }
+      }
+    </div>
+  } @empty {
+    <p class="text-slate-500">No hay puestos creados todavía. Un admin debe crear puestos en Supabase.</p>
+  }
+</div>

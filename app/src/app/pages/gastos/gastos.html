@@ -1,0 +1,80 @@
+<h1 class="text-xl font-bold text-slate-800 mb-4">Gastos</h1>
+
+<form (ngSubmit)="agregar()" class="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap items-end gap-3">
+  <label class="text-sm text-slate-600">
+    Fecha
+    <input type="date" [(ngModel)]="fecha" name="fecha" class="block rounded border border-slate-300 px-2 py-1" />
+  </label>
+  <label class="text-sm text-slate-600 flex-1 min-w-[180px]">
+    Descripción
+    <input
+      type="text"
+      [(ngModel)]="descripcion"
+      name="descripcion"
+      required
+      class="block w-full rounded border border-slate-300 px-2 py-1"
+    />
+  </label>
+  <label class="text-sm text-slate-600">
+    Categoría
+    <input
+      type="text"
+      [(ngModel)]="categoria"
+      name="categoria"
+      placeholder="arriendo, luz, insumos..."
+      class="block rounded border border-slate-300 px-2 py-1"
+    />
+  </label>
+  <label class="text-sm text-slate-600">
+    Monto (COP)
+    <input
+      type="number"
+      min="0"
+      [(ngModel)]="monto"
+      name="monto"
+      required
+      class="block rounded border border-slate-300 px-2 py-1 w-32"
+    />
+  </label>
+  <button type="submit" class="rounded-lg bg-indigo-600 text-white text-sm px-4 py-2 hover:bg-indigo-700">
+    Agregar gasto
+  </button>
+</form>
+
+<div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+  <table class="min-w-full text-sm">
+    <thead class="bg-slate-100 text-slate-600 text-left">
+      <tr>
+        <th class="px-3 py-2">Fecha</th>
+        <th class="px-3 py-2">Descripción</th>
+        <th class="px-3 py-2">Categoría</th>
+        <th class="px-3 py-2">Monto</th>
+        <th class="px-3 py-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (g of gastos(); track g.id) {
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2">{{ g.fecha }}</td>
+          <td class="px-3 py-2">{{ g.descripcion }}</td>
+          <td class="px-3 py-2">{{ g.categoria || '—' }}</td>
+          <td class="px-3 py-2 font-medium">{{ g.monto | number: '1.0-0' }} COP</td>
+          <td class="px-3 py-2 text-right">
+            <button (click)="eliminar(g.id)" class="text-red-600 text-xs hover:underline">Eliminar</button>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="5" class="px-3 py-6 text-center text-slate-500">No hay gastos registrados.</td>
+        </tr>
+      }
+    </tbody>
+    <tfoot>
+      <tr class="border-t border-slate-200 font-semibold">
+        <td colspan="3" class="px-3 py-2 text-right">Total</td>
+        <td class="px-3 py-2">{{ totalListado() | number: '1.0-0' }} COP</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
