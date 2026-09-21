@@ -4,7 +4,7 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 
 ## Reglas de negocio (confirmadas)
 
-- **Puestos simultáneos**: la sala tiene varios puestos (consolas/PCs), cada uno con su propio cliente y cronómetro corriendo en paralelo.
+- **Puestos**: 5 PS5 (`PS5-1` a `PS5-5`), cada una con su propio cliente y cronómetro corriendo en paralelo.
 - **Tarifa por horas** (COP):
   - 1 hora: $6.000
   - 2 horas: $10.000
@@ -30,8 +30,11 @@ Ver [`supabase/schema.sql`](../supabase/schema.sql) — ya escrito, listo para c
 - `vista_puestos` — vista que junta puesto + su sesión activa (si hay), para saber libre/ocupado sin duplicar estado.
 - `gastos` — gastos diarios (fecha, descripción, monto, categoría), solo admin.
 - RLS ya escrito: empleado inserta/cierra sus sesiones, admin todo, gastos solo admin.
+- **`public.cerrar_sesion(sesion_id, controles_adicionales, precio_manual)`** — función que hace el cierre real. El navegador nunca calcula ni envía `hora_fin`/`horas_cobradas`/`precio_total`: llama esta función por RPC, y el servidor calcula todo con su propio reloj y la misma fórmula de arriba. Esto es lo que hace que la parte financiera sea confiable — nadie puede alterar un cobro manipulando el navegador. El cálculo en `pricing.ts` (frontend) es solo la vista previa mientras la sesión sigue corriendo.
+- Constraints de integridad: `controles_adicionales >= 0`, `precio_manual > 0` (si no es null), `precio_total >= 0`, `horas_cobradas > 0`.
+- Funciones helper (`is_admin`, `handle_new_user`) viven en un esquema `private`, no `public` — así Supabase no las expone como endpoints REST públicos.
 
-**Pendiente que tú decides luego (no bloquea el arranque):** primer usuario admin se crea registrándose normal y luego se promueve a mano con un `UPDATE profiles SET role = 'admin' WHERE id = '<uuid>'` en el SQL Editor.
+**Admin ya creado**: `prueba@alfagames.com` — cambia la contraseña real cuando quieras desde la app (o pídeme el flujo de "cambiar contraseña").
 
 ## Stack técnico
 

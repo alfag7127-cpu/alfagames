@@ -1,10 +1,8 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
 import { Sesion, PuestoConEstado } from './models';
-import { calcularHorasCobradas, calcularPrecioTotal } from './pricing';
 
 export interface CerrarSesionOpts {
-  horaInicio: string;
   controlesAdicionales: number;
   precioManual: number | null;
 }
@@ -43,30 +41,18 @@ export class SesionesService {
     return data as Sesion;
   }
 
-  /** Cierra la sesión, calculando horas (redondeo hacia arriba) y precio final. */
+  /**
+   * Cierra la sesión llamando a la función `cerrar_sesion` en la base de datos:
+   * hora de cierre, horas cobradas (redondeo hacia arriba) y precio final se
+   * calculan en el servidor con la hora del servidor, no en el navegador del
+   * empleado — esa es la fuente de verdad para lo financiero.
+   */
   async cerrarSesion(sesionId: number, opts: CerrarSesionOpts): Promise<Sesion> {
-    const horaFin = new Date();
-    const minutosJugados = (horaFin.getTime() - new Date(opts.horaInicio).getTime()) / 60_000;
-    const horas = calcularHorasCobradas(minutosJugados);
-    const precioTotal = calcularPrecioTotal({
-      horas,
-      controlesAdicionales: opts.controlesAdicionales,
-      precioManual: opts.precioManual,
+    const { data, error } = await this.supabase.client.rpc('cerrar_sesion', {
+      p_sesion_id: sesionId,
+      p_controles_adicionales: opts.controlesAdicionales,
+      p_precio_manual: opts.precioManual,
     });
-
-    const { data, error } = await this.supabase.client
-      .from('sesiones')
-      .update({
-        hora_fin: horaFin.toISOString(),
-        horas_cobradas: horas,
-        controles_adicionales: opts.controlesAdicionales,
-        precio_manual: opts.precioManual,
-        precio_total: precioTotal,
-        estado: 'finalizada',
-      })
-      .eq('id', sesionId)
-      .select()
-      .single();
     if (error) throw error;
     return data as Sesion;
   }

@@ -1,5 +1,11 @@
 <h1 class="text-xl font-bold text-slate-800 mb-4">Sala — estado en vivo</h1>
 
+@if (error()) {
+  <div class="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">
+    {{ error() }}
+  </div>
+}
+
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
   @for (p of puestos(); track p.id) {
     <div
@@ -39,13 +45,15 @@
             <div class="flex gap-2">
               <button
                 (click)="abrir(p)"
-                class="flex-1 rounded-lg bg-emerald-600 text-white text-sm py-1.5 hover:bg-emerald-700"
+                [disabled]="p.procesando"
+                class="flex-1 rounded-lg bg-emerald-600 text-white text-sm py-1.5 hover:bg-emerald-700 disabled:opacity-50"
               >
-                Confirmar
+                {{ p.procesando ? 'Abriendo...' : 'Confirmar' }}
               </button>
               <button
                 (click)="toggleForm(p.id)"
-                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300"
+                [disabled]="p.procesando"
+                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300 disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -101,13 +109,15 @@
             <div class="flex gap-2">
               <button
                 (click)="cerrar(p)"
-                class="flex-1 rounded-lg bg-amber-600 text-white text-sm py-1.5 hover:bg-amber-700"
+                [disabled]="p.procesando"
+                class="flex-1 rounded-lg bg-amber-600 text-white text-sm py-1.5 hover:bg-amber-700 disabled:opacity-50"
               >
-                Cobrar y cerrar
+                {{ p.procesando ? 'Cobrando...' : 'Cobrar y cerrar' }}
               </button>
               <button
                 (click)="toggleForm(p.id)"
-                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300"
+                [disabled]="p.procesando"
+                class="rounded-lg bg-slate-200 text-slate-700 text-sm px-3 hover:bg-slate-300 disabled:opacity-50"
               >
                 Cancelar
               </button>

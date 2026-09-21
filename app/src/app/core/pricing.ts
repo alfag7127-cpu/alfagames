@@ -6,6 +6,13 @@
  * - 3+ horas: 10.000 + 5.000 por cada hora adicional a partir de la 2ª
  * - Control adicional dentro de la misma sesión: 2.000 fijo, cada uno.
  * - Tiempo parcial se redondea siempre hacia arriba a la hora completa.
+ *
+ * IMPORTANTE: estas funciones son solo para la VISTA PREVIA en pantalla mientras
+ * la sesión sigue activa (el empleado necesita ver "cuánto va" antes de cobrar).
+ * El valor que realmente se cobra y se guarda lo calcula la función SQL
+ * `public.cerrar_sesion` en el servidor (misma fórmula, hora del servidor) —
+ * esa es la fuente de verdad financiera, no este archivo. Si cambias la
+ * tarifa, cambia ambos lados: este archivo Y la función en Supabase.
  */
 
 export const PRECIO_CONTROL_ADICIONAL = 2000;

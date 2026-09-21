@@ -17,9 +17,9 @@ Detalle de reglas de negocio y roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 3. **Configurar credenciales**: en tu proyecto Supabase ve a *Settings > API* y copia la `Project URL` y la `anon public key`. Pégalas en:
    - `app/src/environments/environment.ts`
    - `app/src/environments/environment.development.ts`
-4. **Crear los puestos iniciales**: en el SQL Editor de Supabase:
+4. **Crear los puestos iniciales**: en el SQL Editor de Supabase (ejemplo con 5 PS5):
    ```sql
-   insert into public.puestos (nombre) values ('PS5-1'), ('PS5-2'), ('PC-1');
+   insert into public.puestos (nombre) values ('PS5-1'), ('PS5-2'), ('PS5-3'), ('PS5-4'), ('PS5-5');
    ```
 5. **Instalar dependencias y correr**:
    ```powershell

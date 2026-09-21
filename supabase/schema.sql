@@ -160,3 +160,82 @@ create policy "sesiones_delete_admin" on public.sesiones
 -- GASTOS: solo admin, en todo (crear, ver, editar, borrar).
 create policy "gastos_admin_all" on public.gastos
   for all to authenticated using (private.is_admin()) with check (private.is_admin());
+
+-- ============================================================
+-- 6. INTEGRIDAD FINANCIERA
+-- ============================================================
+alter table public.sesiones
+  add constraint controles_adicionales_no_negativo check (controles_adicionales >= 0),
+  add constraint precio_manual_positivo check (precio_manual is null or precio_manual > 0),
+  add constraint precio_total_no_negativo check (precio_total is null or precio_total >= 0),
+  add constraint horas_cobradas_positivo check (horas_cobradas is null or horas_cobradas > 0);
+
+-- ============================================================
+-- 7. CIERRE DE SESION — calculado en el servidor, no en el navegador
+-- ============================================================
+-- El frontend NUNCA calcula ni envia hora_fin/horas_cobradas/precio_total.
+-- Llama a esta funcion (supabase.rpc('cerrar_sesion', {...})) y el servidor
+-- decide con su propio reloj y la misma formula de docs/PLAN.md. SECURITY
+-- INVOKER (default): corre con los permisos del que llama, la policy
+-- "sesiones_update_propia_o_admin" sigue mandando sobre quien puede cerrar que.
+create or replace function public.cerrar_sesion(
+  p_sesion_id bigint,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_hora_inicio timestamptz;
+  v_minutos numeric;
+  v_horas int;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  select hora_inicio into v_hora_inicio
+  from public.sesiones
+  where id = p_sesion_id and estado = 'activa';
+
+  if v_hora_inicio is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  v_minutos := extract(epoch from (now() - v_hora_inicio)) / 60.0;
+  v_horas := greatest(1, ceil(v_minutos / 60.0)::int);
+
+  v_precio_base := coalesce(
+    p_precio_manual,
+    case when v_horas = 1 then 6000 else 10000 + (v_horas - 2) * 5000 end
+  );
+  v_precio_total := v_precio_base + p_controles_adicionales * 2000;
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_horas,
+      controles_adicionales = p_controles_adicionales,
+      precio_manual = p_precio_manual,
+      precio_total = v_precio_total,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_fila;
+
+  if v_fila.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_fila;
+end;
+$$;
+
+revoke all on function public.cerrar_sesion(bigint, int, numeric) from public;
+grant execute on function public.cerrar_sesion(bigint, int, numeric) to authenticated;
