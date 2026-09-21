@@ -7,6 +7,7 @@ import { AuthService } from '../../core/auth.service';
   selector: 'app-login',
   imports: [FormsModule],
   templateUrl: './login.html',
+  styleUrl: './login.css',
 })
 export class Login {
   email = '';

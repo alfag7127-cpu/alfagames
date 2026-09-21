@@ -1,4 +1,4 @@
-# Sala Gamer — Plan del proyecto
+# Alfa Games — Plan del proyecto
 
 Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, cobro por horas, ventas/gastos diarios, roles admin/empleado.
 

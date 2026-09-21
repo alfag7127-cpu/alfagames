@@ -1,4 +1,4 @@
-# Sala Gamer
+# Alfa Games
 
 Control de sala de videojuegos: puestos en vivo, cobro por horas, historial, gastos y ganancia neta diaria. Angular + Supabase.
 
