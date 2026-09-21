@@ -3,6 +3,12 @@
 -- Orden de ejecucion: de arriba hacia abajo, es idempotente-friendly con IF NOT EXISTS donde aplica.
 
 -- ============================================================
+-- 0. ESQUEMA PRIVADO — funciones helper que NO deben quedar expuestas
+--    como endpoints RPC publicos (PostgREST solo expone el esquema public).
+-- ============================================================
+create schema if not exists private;
+
+-- ============================================================
 -- 1. PROFILES — extiende auth.users con rol de la app
 -- ============================================================
 create table if not exists public.profiles (
@@ -14,7 +20,7 @@ create table if not exists public.profiles (
 
 -- Crea automaticamente un profile (rol empleado por defecto) cuando se registra un usuario nuevo.
 -- El primer admin se promueve a mano con un UPDATE despues de crear su cuenta.
-create or replace function public.handle_new_user()
+create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
@@ -29,10 +35,10 @@ $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+  for each row execute procedure private.handle_new_user();
 
 -- Helper para RLS: ¿el usuario autenticado es admin?
-create or replace function public.is_admin()
+create or replace function private.is_admin()
 returns boolean
 language sql
 security definer set search_path = public
@@ -81,7 +87,9 @@ create index if not exists sesiones_por_fecha on public.sesiones (created_at);
 create index if not exists sesiones_por_empleado on public.sesiones (empleado_id);
 
 -- Vista de conveniencia: estado actual de cada puesto (libre / ocupado) sin duplicar dato.
-create or replace view public.vista_puestos as
+-- security_invoker: la vista respeta el RLS del usuario que consulta, no del dueño de la vista.
+create or replace view public.vista_puestos
+with (security_invoker = true) as
 select
   p.id,
   p.nombre,
@@ -119,17 +127,17 @@ alter table public.gastos enable row level security;
 
 -- PROFILES: cada quien ve su propio perfil; admin ve todos.
 create policy "profiles_select_own_or_admin" on public.profiles
-  for select using (id = auth.uid() or public.is_admin());
+  for select using (id = auth.uid() or private.is_admin());
 
 create policy "profiles_update_admin" on public.profiles
-  for update using (public.is_admin());
+  for update using (private.is_admin()) with check (private.is_admin());
 
 -- PUESTOS: cualquier usuario autenticado puede ver; solo admin crea/edita/borra.
 create policy "puestos_select_authenticated" on public.puestos
   for select to authenticated using (true);
 
 create policy "puestos_write_admin" on public.puestos
-  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+  for all to authenticated using (private.is_admin()) with check (private.is_admin());
 
 -- SESIONES: admin y empleado ven todo (empleado necesita historial para atender clientes).
 create policy "sesiones_select_authenticated" on public.sesiones
@@ -137,16 +145,18 @@ create policy "sesiones_select_authenticated" on public.sesiones
 
 -- Empleado (o admin) puede abrir una sesion, quedando como dueño de esa sesion.
 create policy "sesiones_insert_propia" on public.sesiones
-  for insert to authenticated with check (empleado_id = auth.uid() or public.is_admin());
+  for insert to authenticated with check (empleado_id = auth.uid() or private.is_admin());
 
 -- Empleado solo cierra/edita sus propias sesiones activas; admin edita cualquiera.
 create policy "sesiones_update_propia_o_admin" on public.sesiones
-  for update to authenticated using (empleado_id = auth.uid() or public.is_admin());
+  for update to authenticated
+  using (empleado_id = auth.uid() or private.is_admin())
+  with check (empleado_id = auth.uid() or private.is_admin());
 
 -- Solo admin puede borrar (correccion de errores).
 create policy "sesiones_delete_admin" on public.sesiones
-  for delete to authenticated using (public.is_admin());
+  for delete to authenticated using (private.is_admin());
 
 -- GASTOS: solo admin, en todo (crear, ver, editar, borrar).
 create policy "gastos_admin_all" on public.gastos
-  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+  for all to authenticated using (private.is_admin()) with check (private.is_admin());
