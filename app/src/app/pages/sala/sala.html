@@ -9,9 +9,12 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
   @for (p of puestos(); track p.id) {
     <div
-      class="rounded-xl border p-4 shadow-sm bg-white"
+      class="rounded-xl border p-4 shadow-sm bg-white transition-colors"
       [class.border-emerald-300]="!p.sesion_id"
-      [class.border-amber-300]="!!p.sesion_id"
+      [class.border-amber-300]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
+      [class.border-amber-500]="nivelAlerta(p) === 'aviso'"
+      [class.border-red-500]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
+      [class.animate-pulse]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
     >
       <div class="flex items-center justify-between mb-2">
         <h2 class="font-semibold text-slate-800">{{ p.nombre }}</h2>
@@ -19,8 +22,10 @@
           class="text-xs font-medium px-2 py-0.5 rounded-full"
           [class.bg-emerald-100]="!p.sesion_id"
           [class.text-emerald-700]="!p.sesion_id"
-          [class.bg-amber-100]="!!p.sesion_id"
-          [class.text-amber-700]="!!p.sesion_id"
+          [class.bg-amber-100]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
+          [class.text-amber-700]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
+          [class.bg-red-100]="nivelAlerta(p) === 'aviso' || nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
+          [class.text-red-700]="nivelAlerta(p) === 'aviso' || nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
         >
           {{ p.sesion_id ? 'Ocupado' : 'Libre' }}
         </span>
@@ -36,12 +41,96 @@
           </button>
         } @else {
           <div class="space-y-2">
+            <!-- Selector de modalidad -->
+            <div class="flex rounded-lg overflow-hidden border border-slate-300 text-xs">
+              <button
+                type="button"
+                (click)="seleccionarModo(p.id, 'cronometrado')"
+                class="flex-1 py-1.5"
+                [class.bg-indigo-600]="p.modoSeleccionado === 'cronometrado'"
+                [class.text-white]="p.modoSeleccionado === 'cronometrado'"
+                [class.bg-slate-100]="p.modoSeleccionado !== 'cronometrado'"
+              >
+                Cronometrado
+              </button>
+              <button
+                type="button"
+                (click)="seleccionarModo(p.id, 'conteo_regresivo')"
+                class="flex-1 py-1.5"
+                [class.bg-indigo-600]="p.modoSeleccionado === 'conteo_regresivo'"
+                [class.text-white]="p.modoSeleccionado === 'conteo_regresivo'"
+                [class.bg-slate-100]="p.modoSeleccionado !== 'conteo_regresivo'"
+              >
+                Conteo regresivo
+              </button>
+            </div>
+
             <input
               [(ngModel)]="p.clienteInput"
               name="cliente-{{ p.id }}"
               placeholder="Nombre del cliente (opcional)"
               class="w-full text-sm rounded border border-slate-300 px-2 py-1"
             />
+
+            @if (p.modoSeleccionado === 'conteo_regresivo') {
+              <label class="block text-xs text-slate-600">
+                Minutos de conteo regresivo
+                <div class="flex gap-1 mt-1 mb-1">
+                  @for (preset of [30, 60, 90, 120]; track preset) {
+                    <button
+                      type="button"
+                      (click)="p.minutosInput = preset"
+                      class="flex-1 rounded border text-xs py-1"
+                      [class.bg-indigo-600]="p.minutosInput === preset"
+                      [class.text-white]="p.minutosInput === preset"
+                      [class.border-indigo-600]="p.minutosInput === preset"
+                      [class.border-slate-300]="p.minutosInput !== preset"
+                    >
+                      {{ preset }}m
+                    </button>
+                  }
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  [(ngModel)]="p.minutosInput"
+                  name="minutos-{{ p.id }}"
+                  class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+                />
+              </label>
+
+              <label class="block text-xs text-slate-600">
+                Controles adicionales
+                <input
+                  type="number"
+                  min="0"
+                  [(ngModel)]="p.controlesInput"
+                  name="controles-abrir-{{ p.id }}"
+                  class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+                />
+              </label>
+
+              <label class="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" [(ngModel)]="p.usarPrecioManual" name="usar-manual-abrir-{{ p.id }}" />
+                Precio manual (oferta especial)
+              </label>
+
+              @if (p.usarPrecioManual) {
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Precio pactado"
+                  [(ngModel)]="p.precioManualInput"
+                  name="precio-manual-abrir-{{ p.id }}"
+                  class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+                />
+              }
+
+              <p class="text-sm text-slate-700">
+                Total pactado: <span class="font-bold">{{ previewPrecio(p) | number: '1.0-0' }} COP</span>
+              </p>
+            }
+
             <div class="flex gap-2">
               <button
                 (click)="abrir(p)"
@@ -64,7 +153,32 @@
         <p class="text-sm text-slate-600 mb-1">
           Cliente: <span class="font-medium">{{ p.cliente_nombre || 'Sin nombre' }}</span>
         </p>
-        <p class="text-2xl font-mono font-bold text-slate-800 mb-2">{{ tiempoFormateado(p) }}</p>
+        <p class="text-xs text-slate-500 mb-1">
+          {{ p.modalidad === 'conteo_regresivo' ? 'Conteo regresivo (' + p.minutos_asignados + ' min pactados)' : 'Cronometrado' }}
+        </p>
+
+        <p
+          class="text-2xl font-mono font-bold mb-1"
+          [class.text-slate-800]="nivelAlerta(p) === 'normal'"
+          [class.text-amber-600]="nivelAlerta(p) === 'aviso'"
+          [class.text-red-600]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
+        >
+          {{ tiempoFormateado(p) }}
+        </p>
+
+        @if (nivelAlerta(p) === 'aviso') {
+          <p class="text-xs font-medium text-amber-600 mb-2">⚠ Quedan pocos minutos</p>
+        } @else if (nivelAlerta(p) === 'critico') {
+          <p class="text-xs font-medium text-red-600 mb-2">⚠ Menos de 1 minuto</p>
+        } @else if (nivelAlerta(p) === 'vencido') {
+          <p class="text-xs font-medium text-red-600 mb-2">⚠ Tiempo cumplido — cobrando sobretiempo</p>
+        }
+
+        @if (p.modalidad === 'conteo_regresivo') {
+          <p class="text-xs text-slate-500 mb-2">
+            Precio pactado: <span class="font-semibold">{{ p.precio_total | number: '1.0-0' }} COP</span>
+          </p>
+        }
 
         @if (!p.formAbierto) {
           <button
@@ -86,25 +200,34 @@
               />
             </label>
 
-            <label class="flex items-center gap-2 text-xs text-slate-600">
-              <input type="checkbox" [(ngModel)]="p.usarPrecioManual" name="usar-manual-{{ p.id }}" />
-              Precio manual (oferta especial)
-            </label>
+            @if (p.modalidad === 'cronometrado') {
+              <label class="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" [(ngModel)]="p.usarPrecioManual" name="usar-manual-{{ p.id }}" />
+                Precio manual (oferta especial)
+              </label>
 
-            @if (p.usarPrecioManual) {
-              <input
-                type="number"
-                min="0"
-                placeholder="Precio pactado"
-                [(ngModel)]="p.precioManualInput"
-                name="precio-manual-{{ p.id }}"
-                class="w-full text-sm rounded border border-slate-300 px-2 py-1"
-              />
+              @if (p.usarPrecioManual) {
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Precio pactado"
+                  [(ngModel)]="p.precioManualInput"
+                  name="precio-manual-{{ p.id }}"
+                  class="w-full text-sm rounded border border-slate-300 px-2 py-1"
+                />
+              }
+
+              <p class="text-sm text-slate-700">
+                Total a cobrar: <span class="font-bold">{{ previewPrecio(p) | number: '1.0-0' }} COP</span>
+              </p>
+            } @else {
+              <p class="text-sm text-slate-700">
+                Total a cobrar (pactado + controles extra):
+                <span class="font-bold">
+                  {{ (p.precio_total ?? 0) + p.controlesInput * 2000 | number: '1.0-0' }} COP
+                </span>
+              </p>
             }
-
-            <p class="text-sm text-slate-700">
-              Total a cobrar: <span class="font-bold">{{ previewPrecio(p) | number: '1.0-0' }} COP</span>
-            </p>
 
             <div class="flex gap-2">
               <button

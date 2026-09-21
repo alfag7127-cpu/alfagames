@@ -16,6 +16,13 @@ export interface Puesto {
 
 export type EstadoSesion = 'activa' | 'finalizada' | 'cancelada';
 
+/**
+ * Modalidad de cobro:
+ * - cronometrado: cuenta hacia arriba, se cobra al cerrar según tiempo jugado (redondeo hacia arriba).
+ * - conteo_regresivo: tiempo fijo pactado al abrir (ej. 45, 90, 120 min); precio queda pactado de una vez.
+ */
+export type Modalidad = 'cronometrado' | 'conteo_regresivo';
+
 export interface Sesion {
   id: number;
   puesto_id: number;
@@ -23,9 +30,12 @@ export interface Sesion {
   cliente_nombre: string | null;
   hora_inicio: string;
   hora_fin: string | null;
+  modalidad: Modalidad;
+  minutos_asignados: number | null;
   horas_cobradas: number | null;
   controles_adicionales: number;
   precio_manual: number | null;
+  precio_base: number | null;
   precio_total: number | null;
   estado: EstadoSesion;
   created_at: string;
@@ -40,6 +50,10 @@ export interface PuestoConEstado {
   cliente_nombre: string | null;
   hora_inicio: string | null;
   empleado_id: string | null;
+  modalidad: Modalidad | null;
+  minutos_asignados: number | null;
+  controles_adicionales: number | null;
+  precio_total: number | null;
 }
 
 export interface Gasto {

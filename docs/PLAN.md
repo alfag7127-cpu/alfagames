@@ -15,6 +15,24 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 - **Control adicional**: $2.000 fijo por cada control extra usado *dentro de la misma sesión* (ej. 2 personas en un puesto). Se suma al total de esa sesión, no es un cobro aparte.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 
+### Modalidades de cobro (por sesión, elegible en cada PS5 al abrir)
+
+- **Cronometrado**: cuenta hacia arriba desde que se abre. Se cobra al cerrar, según el tiempo realmente jugado (redondeo hacia arriba). Es la modalidad de siempre.
+- **Conteo regresivo**: el empleado especifica cuántos minutos compra el cliente (atajos de 30/60/90/120 min, o un número custom). El precio queda **pactado y guardado de una vez al abrir**, calculado con la misma fórmula de horas — no cambia si el cliente juega un poco más o un poco menos. Solo se pueden sumar controles adicionales sobre la marcha antes de cerrar.
+- Ambas modalidades conviven puesto por puesto: cada PS5 puede tener, en momentos distintos, sesiones cronometradas o de conteo regresivo — no es una configuración fija del puesto, se elige cada vez que se abre una sesión.
+
+### Avisos de tiempo (solo aplica a conteo regresivo, que tiene un final conocido)
+
+Tres umbrales, cada uno se dispara una sola vez por sesión (no se repite cada segundo):
+
+| Umbral | Cuándo | Aviso |
+|---|---|---|
+| Aviso | quedan ≤ 5 minutos | borde/texto ámbar + notificación del navegador + beep corto |
+| Crítico | queda ≤ 1 minuto | borde/texto rojo parpadeante + notificación + beep más largo |
+| Vencido | tiempo cumplido, en sobretiempo | rojo sólido parpadeante + notificación + beep grave, cronómetro sigue contando en positivo (`+mm:ss`) |
+
+Notificaciones del navegador (Web Notification API) piden permiso una sola vez al cargar la Sala; si el usuario no lo concede, quedan igual el aviso visual y el beep (Web Audio API, sin archivos de sonido externos).
+
 ## Roles
 
 - **Admin**: ve todo — todas las sesiones, todos los puestos, historial completo, reportes de ventas/ganancias/gastos de cualquier día o rango. Único que registra y ve **gastos**. Puede crear/editar puestos y promover usuarios a admin.

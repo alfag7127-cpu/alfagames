@@ -239,3 +239,167 @@ $$;
 
 revoke all on function public.cerrar_sesion(bigint, int, numeric) from public;
 grant execute on function public.cerrar_sesion(bigint, int, numeric) to authenticated;
+
+-- ============================================================
+-- 8. MODALIDADES DE COBRO — cronometrado (arriba) y conteo regresivo
+-- ============================================================
+-- Modalidad de cobro por sesion: cronometrado (arriba) o conteo_regresivo (tiempo fijo pactado).
+alter table public.sesiones
+  add column modalidad text not null default 'cronometrado'
+    check (modalidad in ('cronometrado', 'conteo_regresivo')),
+  add column minutos_asignados int
+    check (minutos_asignados is null or minutos_asignados > 0),
+  add column precio_base numeric(10, 0)
+    check (precio_base is null or precio_base > 0);
+
+-- conteo_regresivo siempre trae minutos_asignados; cronometrado nunca.
+alter table public.sesiones
+  add constraint modalidad_minutos_coherentes check (
+    (modalidad = 'conteo_regresivo' and minutos_asignados is not null)
+    or (modalidad = 'cronometrado' and minutos_asignados is null)
+  );
+
+-- La vista de estado en vivo necesita estos campos para pintar cuenta regresiva y avisos.
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa';
+
+-- Abre una sesion de tiempo fijo (conteo regresivo): el precio queda pactado
+-- de una vez, no depende de cuanto dure realmente la partida.
+create or replace function public.abrir_sesion_regresiva(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_minutos_asignados int,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_horas int;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_minutos_asignados is null or p_minutos_asignados <= 0 then
+    raise exception 'minutos_asignados debe ser mayor a 0';
+  end if;
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  v_horas := ceil(p_minutos_asignados / 60.0)::int;
+  v_precio_base := coalesce(
+    p_precio_manual,
+    case when v_horas = 1 then 6000 else 10000 + (v_horas - 2) * 5000 end
+  );
+  v_precio_total := v_precio_base + p_controles_adicionales * 2000;
+
+  insert into public.sesiones (
+    puesto_id, empleado_id, cliente_nombre, modalidad, minutos_asignados,
+    horas_cobradas, controles_adicionales, precio_manual, precio_base, precio_total
+  ) values (
+    p_puesto_id, auth.uid(), p_cliente_nombre, 'conteo_regresivo', p_minutos_asignados,
+    v_horas, p_controles_adicionales, p_precio_manual, v_precio_base, v_precio_total
+  )
+  returning * into v_fila;
+
+  return v_fila;
+end;
+$$;
+
+revoke all on function public.abrir_sesion_regresiva(bigint, text, int, int, numeric) from public;
+grant execute on function public.abrir_sesion_regresiva(bigint, text, int, int, numeric) to authenticated;
+
+-- Cierre de sesion, ahora consciente de la modalidad:
+-- cronometrado -> horas y precio se calculan del tiempo realmente jugado (como antes).
+-- conteo_regresivo -> el precio pactado al abrir NO cambia por jugar de mas o de menos;
+--   solo se permite sumar controles adicionales pedidos sobre la marcha.
+create or replace function public.cerrar_sesion(
+  p_sesion_id bigint,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_hora_inicio timestamptz;
+  v_modalidad text;
+  v_minutos_asignados int;
+  v_precio_base_actual numeric;
+  v_minutos numeric;
+  v_horas int;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  select hora_inicio, modalidad, minutos_asignados, precio_base
+    into v_hora_inicio, v_modalidad, v_minutos_asignados, v_precio_base_actual
+  from public.sesiones
+  where id = p_sesion_id and estado = 'activa';
+
+  if v_hora_inicio is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  if v_modalidad = 'conteo_regresivo' then
+    -- Precio pactado al abrir es fijo; solo horas_cobradas queda como referencia informativa.
+    v_horas := ceil(v_minutos_asignados / 60.0)::int;
+    v_precio_base := v_precio_base_actual;
+  else
+    v_minutos := extract(epoch from (now() - v_hora_inicio)) / 60.0;
+    v_horas := greatest(1, ceil(v_minutos / 60.0)::int);
+    v_precio_base := coalesce(
+      p_precio_manual,
+      case when v_horas = 1 then 6000 else 10000 + (v_horas - 2) * 5000 end
+    );
+  end if;
+
+  v_precio_total := v_precio_base + p_controles_adicionales * 2000;
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_horas,
+      controles_adicionales = p_controles_adicionales,
+      precio_manual = case when v_modalidad = 'cronometrado' then p_precio_manual else precio_manual end,
+      precio_base = v_precio_base,
+      precio_total = v_precio_total,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_fila;
+
+  if v_fila.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_fila;
+end;
+$$;

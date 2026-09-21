@@ -22,6 +22,7 @@
     <thead class="bg-slate-100 text-slate-600 text-left">
       <tr>
         <th class="px-3 py-2">Puesto</th>
+        <th class="px-3 py-2">Modalidad</th>
         <th class="px-3 py-2">Cliente</th>
         <th class="px-3 py-2">Inicio</th>
         <th class="px-3 py-2">Fin</th>
@@ -35,6 +36,9 @@
       @for (s of sesiones(); track s.id) {
         <tr class="border-t border-slate-100">
           <td class="px-3 py-2">{{ nombrePuesto(s.puesto_id) }}</td>
+          <td class="px-3 py-2">
+            {{ s.modalidad === 'conteo_regresivo' ? 'Regresivo (' + s.minutos_asignados + 'm)' : 'Cronometrado' }}
+          </td>
           <td class="px-3 py-2">{{ s.cliente_nombre || '—' }}</td>
           <td class="px-3 py-2">{{ s.hora_inicio | date: 'short' }}</td>
           <td class="px-3 py-2">{{ s.hora_fin ? (s.hora_fin | date: 'short') : '—' }}</td>
@@ -47,7 +51,7 @@
         </tr>
       } @empty {
         <tr>
-          <td colspan="8" class="px-3 py-6 text-center text-slate-500">Sin sesiones en este período.</td>
+          <td colspan="9" class="px-3 py-6 text-center text-slate-500">Sin sesiones en este período.</td>
         </tr>
       }
     </tbody>

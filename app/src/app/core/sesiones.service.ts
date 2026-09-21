@@ -27,6 +27,7 @@ export class SesionesService {
     return data as PuestoConEstado[];
   }
 
+  /** Abre sesión modalidad cronometrado: cuenta hacia arriba, se cobra al cerrar. */
   async abrirSesion(
     puestoId: number,
     empleadoId: string,
@@ -37,6 +38,29 @@ export class SesionesService {
       .insert({ puesto_id: puestoId, empleado_id: empleadoId, cliente_nombre: clienteNombre })
       .select()
       .single();
+    if (error) throw error;
+    return data as Sesion;
+  }
+
+  /**
+   * Abre sesión modalidad conteo regresivo: tiempo fijo pactado (`minutosAsignados`),
+   * precio calculado y guardado por el servidor en el mismo momento — no cambia
+   * después aunque la partida termine antes o después de tiempo.
+   */
+  async abrirSesionRegresiva(
+    puestoId: number,
+    clienteNombre: string | null,
+    minutosAsignados: number,
+    controlesAdicionales: number,
+    precioManual: number | null,
+  ): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('abrir_sesion_regresiva', {
+      p_puesto_id: puestoId,
+      p_cliente_nombre: clienteNombre,
+      p_minutos_asignados: minutosAsignados,
+      p_controles_adicionales: controlesAdicionales,
+      p_precio_manual: precioManual,
+    });
     if (error) throw error;
     return data as Sesion;
   }
