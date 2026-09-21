@@ -54,6 +54,7 @@ export interface PuestoConEstado {
   minutos_asignados: number | null;
   controles_adicionales: number | null;
   precio_total: number | null;
+  precio_base: number | null;
 }
 
 export interface Gasto {

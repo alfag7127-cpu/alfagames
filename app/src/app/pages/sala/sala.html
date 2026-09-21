@@ -223,9 +223,7 @@
             } @else {
               <p class="text-sm text-slate-700">
                 Total a cobrar (pactado + controles extra):
-                <span class="font-bold">
-                  {{ (p.precio_total ?? 0) + p.controlesInput * 2000 | number: '1.0-0' }} COP
-                </span>
+                <span class="font-bold">{{ previewCierreRegresivo(p) | number: '1.0-0' }} COP</span>
               </p>
             }
 

@@ -330,7 +330,88 @@ $$;
 revoke all on function public.abrir_sesion_regresiva(bigint, text, int, int, numeric) from public;
 grant execute on function public.abrir_sesion_regresiva(bigint, text, int, int, numeric) to authenticated;
 
--- Cierre de sesion, ahora consciente de la modalidad:
+-- ============================================================
+-- 9. TARIFA CON TRAMO DE MEDIA HORA + CONTROL ADICIONAL POR HORA
+-- ============================================================
+-- Nueva tabla de tarifas base (COP):
+--   <=30 min -> 3.000
+--   <=60 min -> 6.000
+--   <=120 min -> 10.000
+--   >120 min -> 10.000 + 5.000 por cada hora completa adicional
+-- Control adicional: 2.000 POR HORA cobrada de la sesion (antes era plano por sesion).
+-- horas_cobradas pasa de int a numeric para representar el tramo de media hora (0.5).
+alter table public.sesiones
+  alter column horas_cobradas type numeric(4, 1) using horas_cobradas::numeric(4, 1);
+
+-- Helper compartido por abrir_sesion_regresiva y cerrar_sesion: una sola fuente de verdad
+-- para la formula de tarifas, evita que las dos funciones se desincronicen.
+create or replace function private.calcular_tarifa(p_minutos numeric, out horas numeric, out precio_base numeric)
+language plpgsql
+set search_path = public
+immutable
+as $$
+begin
+  if p_minutos <= 30 then
+    horas := 0.5;
+    precio_base := 3000;
+  elsif p_minutos <= 60 then
+    horas := 1;
+    precio_base := 6000;
+  elsif p_minutos <= 120 then
+    horas := 2;
+    precio_base := 10000;
+  else
+    horas := 2 + ceil((p_minutos - 120) / 60.0);
+    precio_base := 10000 + (horas - 2) * 5000;
+  end if;
+end;
+$$;
+
+create or replace function public.abrir_sesion_regresiva(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_minutos_asignados int,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_tarifa record;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_minutos_asignados is null or p_minutos_asignados <= 0 then
+    raise exception 'minutos_asignados debe ser mayor a 0';
+  end if;
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  select * into v_tarifa from private.calcular_tarifa(p_minutos_asignados::numeric);
+  v_precio_base := coalesce(p_precio_manual, v_tarifa.precio_base);
+  v_precio_total := v_precio_base + p_controles_adicionales * 2000 * v_tarifa.horas;
+
+  insert into public.sesiones (
+    puesto_id, empleado_id, cliente_nombre, modalidad, minutos_asignados,
+    horas_cobradas, controles_adicionales, precio_manual, precio_base, precio_total
+  ) values (
+    p_puesto_id, auth.uid(), p_cliente_nombre, 'conteo_regresivo', p_minutos_asignados,
+    v_tarifa.horas, p_controles_adicionales, p_precio_manual, v_precio_base, v_precio_total
+  )
+  returning * into v_fila;
+
+  return v_fila;
+end;
+$$;
+
+-- Cierre de sesion, consciente de la modalidad:
 -- cronometrado -> horas y precio se calculan del tiempo realmente jugado (como antes).
 -- conteo_regresivo -> el precio pactado al abrir NO cambia por jugar de mas o de menos;
 --   solo se permite sumar controles adicionales pedidos sobre la marcha.
@@ -349,7 +430,8 @@ declare
   v_minutos_asignados int;
   v_precio_base_actual numeric;
   v_minutos numeric;
-  v_horas int;
+  v_tarifa record;
+  v_horas numeric;
   v_precio_base numeric;
   v_precio_total numeric;
   v_fila public.sesiones;
@@ -371,19 +453,18 @@ begin
   end if;
 
   if v_modalidad = 'conteo_regresivo' then
-    -- Precio pactado al abrir es fijo; solo horas_cobradas queda como referencia informativa.
-    v_horas := ceil(v_minutos_asignados / 60.0)::int;
+    -- Precio pactado al abrir es fijo; solo controles_adicionales puede cambiar al cerrar.
+    select * into v_tarifa from private.calcular_tarifa(v_minutos_asignados::numeric);
+    v_horas := v_tarifa.horas;
     v_precio_base := v_precio_base_actual;
   else
     v_minutos := extract(epoch from (now() - v_hora_inicio)) / 60.0;
-    v_horas := greatest(1, ceil(v_minutos / 60.0)::int);
-    v_precio_base := coalesce(
-      p_precio_manual,
-      case when v_horas = 1 then 6000 else 10000 + (v_horas - 2) * 5000 end
-    );
+    select * into v_tarifa from private.calcular_tarifa(v_minutos);
+    v_horas := v_tarifa.horas;
+    v_precio_base := coalesce(p_precio_manual, v_tarifa.precio_base);
   end if;
 
-  v_precio_total := v_precio_base + p_controles_adicionales * 2000;
+  v_precio_total := v_precio_base + p_controles_adicionales * 2000 * v_horas;
 
   update public.sesiones
   set hora_fin = now(),
@@ -403,3 +484,25 @@ begin
   return v_fila;
 end;
 $$;
+
+-- La vista de estado en vivo tambien expone precio_base, necesario en el frontend
+-- para calcular el cierre de una sesion de conteo regresivo sin duplicar el cobro
+-- de los controles adicionales ya incluidos en precio_total.
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa';

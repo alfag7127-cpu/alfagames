@@ -5,14 +5,17 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 ## Reglas de negocio (confirmadas)
 
 - **Puestos**: 5 PS5 (`PS5-1` a `PS5-5`), cada una con su propio cliente y cronómetro corriendo en paralelo.
-- **Tarifa por horas** (COP):
-  - 1 hora: $6.000
-  - 2 horas: $10.000
-  - 3+ horas: $10.000 + $5.000 por cada hora adicional a partir de la 2ª (3h = $15.000, 4h = $20.000, ...)
-  - Fórmula: `horas === 1 ? 6000 : 10000 + (horas - 2) * 5000`
-- **Precio manual**: el empleado puede sobreescribir el precio calculado cuando hay una oferta especial (ej. 3 horas a precio fijo pactado). El sistema guarda igual el valor final cobrado.
-- **Redondeo de tiempo**: si el tiempo jugado no cae exacto en una hora, se redondea hacia arriba (1h20 → se cobra 2h).
-- **Control adicional**: $2.000 fijo por cada control extra usado *dentro de la misma sesión* (ej. 2 personas en un puesto). Se suma al total de esa sesión, no es un cobro aparte.
+- **Tarifa base** (COP), sin controles adicionales:
+  | Tiempo | Precio base |
+  |---|---|
+  | ≤ 30 min | $3.000 |
+  | ≤ 1 hora | $6.000 |
+  | ≤ 2 horas | $10.000 |
+  | Cada hora completa adicional después de 2h | + $5.000 |
+
+  Ejemplos: 45 min = $6.000 (cae en el tramo de 1h), 90 min = $10.000 (tramo de 2h), 3h = $15.000, 4h = $20.000. El tiempo que no cae justo en un tramo se redondea siempre hacia el tramo/hora siguiente.
+- **Precio manual**: el empleado puede sobreescribir el precio *base* calculado cuando hay una oferta especial (ej. precio fijo pactado). Los controles adicionales se siguen sumando aparte, incluso con precio manual.
+- **Control adicional**: $2.000 **por hora cobrada de la sesión** (no es un cobro plano). Ej.: una sesión de 2 horas con 1 control extra suma $2.000 × 2h = $4.000 de controles, encima del precio base. Se calcula con las mismas horas que el precio base.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 
 ### Modalidades de cobro (por sesión, elegible en cada PS5 al abrir)

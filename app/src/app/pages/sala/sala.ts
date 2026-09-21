@@ -3,7 +3,7 @@ import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { Modalidad, PuestoConEstado } from '../../core/models';
-import { calcularHorasCobradas, calcularPrecioTotal } from '../../core/pricing';
+import { PRECIO_CONTROL_POR_HORA, calcularPrecioTotal, calcularTarifa } from '../../core/pricing';
 import { SesionesService } from '../../core/sesiones.service';
 
 /** Umbral de aviso para conteo regresivo: a partir de acá cambia el color / suena aviso. */
@@ -226,20 +226,25 @@ export class Sala implements OnInit, OnDestroy {
   }
 
   previewPrecio(p: PuestoVM): number {
-    if (p.modoSeleccionado === 'conteo_regresivo' && !p.sesion_id) {
-      const horas = calcularHorasCobradas(p.minutosInput || 0);
-      return calcularPrecioTotal({
-        horas,
-        controlesAdicionales: p.controlesInput,
-        precioManual: p.usarPrecioManual ? p.precioManualInput : null,
-      });
-    }
-    const horas = calcularHorasCobradas(this.minutosTranscurridos(p));
+    const minutos = p.modoSeleccionado === 'conteo_regresivo' && !p.sesion_id
+      ? p.minutosInput || 0
+      : this.minutosTranscurridos(p);
     return calcularPrecioTotal({
-      horas,
+      minutos,
       controlesAdicionales: p.controlesInput,
       precioManual: p.usarPrecioManual ? p.precioManualInput : null,
-    });
+    }).precioTotal;
+  }
+
+  /**
+   * Vista previa al CERRAR una sesión de conteo regresivo: el precio base ya quedó
+   * fijo al abrir (`p.precio_base`), solo cambia si el empleado ajusta controles
+   * adicionales de último momento — cobrados por hora igual que en cronometrado.
+   */
+  previewCierreRegresivo(p: PuestoVM): number {
+    if (!p.minutos_asignados) return p.precio_total ?? 0;
+    const { horas } = calcularTarifa(p.minutos_asignados);
+    return (p.precio_base ?? 0) + p.controlesInput * PRECIO_CONTROL_POR_HORA * horas;
   }
 
   // ── Alertas (visual + notificación + sonido) ───────────────────────────
