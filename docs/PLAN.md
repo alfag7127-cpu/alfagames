@@ -5,23 +5,44 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 ## Reglas de negocio (confirmadas)
 
 - **Puestos**: 5 PS5 (`PS5-1` a `PS5-5`), cada una con su propio cliente y cronómetro corriendo en paralelo.
-- **Tarifa base** (COP), sin controles adicionales:
-  | Tiempo | Precio base |
-  |---|---|
-  | ≤ 30 min | $3.000 |
-  | ≤ 1 hora | $6.000 |
-  | ≤ 2 horas | $10.000 |
-  | Cada hora completa adicional después de 2h | + $5.000 |
+- **Estándar de cobro** (COP, definido el 2026-09-27 a partir de la tabla de ejemplos del negocio):
 
-  Ejemplos: 45 min = $6.000 (cae en el tramo de 1h), 90 min = $10.000 (tramo de 2h), 3h = $15.000, 4h = $20.000. El tiempo que no cae justo en un tramo se redondea siempre hacia el tramo/hora siguiente.
+  **1. Redondeo del tiempo.** El tiempo jugado se redondea a la **media hora más cercana**: 1h05 → 1h, 1h14 → 1h, 1h15 → 1h30, 1h16 → 1h30. El mínimo que se cobra es 30 min.
+
+  **2. Controles incluidos.** Cada PS5 incluye **2 controles**. Se pueden sumar **máximo 2 controles adicionales** (4 en total).
+
+  **3. Sin controles adicionales → precio por paquete:**
+  | Tiempo cobrado | Precio |
+  |---|---|
+  | 30 min | $3.000 |
+  | 1h | $6.000 |
+  | 1h30 | $9.000 |
+  | 2h | $10.000 |
+  | Cada media hora más después de 2h | + $2.500 (2h30 = $12.500, 3h = $15.000, 4h = $20.000, 5h = $25.000, 6h = $30.000) |
+
+  **4. Con controles adicionales → se pierde el descuento del paquete y se cobra por hora:**
+  `precio = $6.000 × horas cobradas + $2.000 × (controles adicionales × horas que estuvieron en uso)`
+  | Ejemplo | Cálculo | Precio |
+  |---|---|---|
+  | 1h con 3 controles | 6.000 + 2.000 | $8.000 |
+  | 1h con 4 controles | 6.000 + 4.000 | $10.000 |
+  | 1h30 con 3 controles | 1,5 × 8.000 | $12.000 |
+  | 1h30 con 4 controles | 1,5 × 10.000 | $15.000 |
+  | 2h con 3 controles | 2 × 8.000 | $16.000 |
+  | 2h con 4 controles | 2 × 10.000 | $20.000 |
+  | 3h con 3 controles | 3 × 8.000 | $24.000 |
+
+  **5. Control que entra a mitad de la sesión.** Se cobra **solo desde que entra**. El tiempo de cada control adicional se redondea igual (a la media hora más cercana). Ej.: 2h de sesión, el 3.er control entra al cumplir la 1.ª hora → 6.000 × 2 + 2.000 × 1 = **$14.000**. Si al redondear el control adicional queda en 0 (ej. se usó 10 min), no se cobra y se aplica el precio por paquete.
+
+  **6. Extensión de tiempo (conteo regresivo).** Si el cliente compra más tiempo, el precio se **recalcula sobre el tiempo total**: 1h + 1h = paquete de 2h = $10.000 (no 6.000 + 6.000).
+
 - **Precio manual**: el empleado puede sobreescribir el precio *base* calculado cuando hay una oferta especial (ej. precio fijo pactado). Los controles adicionales se siguen sumando aparte, incluso con precio manual.
-- **Control adicional**: $2.000 **por hora cobrada de la sesión** (no es un cobro plano). Ej.: una sesión de 2 horas con 1 control extra suma $2.000 × 2h = $4.000 de controles, encima del precio base. Se calcula con las mismas horas que el precio base.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 
 ### Modalidades de cobro (por sesión, elegible en cada PS5 al abrir)
 
-- **Cronometrado**: cuenta hacia arriba desde que se abre. Se cobra al cerrar, según el tiempo realmente jugado (redondeo hacia arriba). Es la modalidad de siempre.
-- **Conteo regresivo**: el empleado especifica cuántos minutos compra el cliente (atajos de 30/60/90/120 min, o un número custom). El precio queda **pactado y guardado de una vez al abrir**, calculado con la misma fórmula de horas — no cambia si el cliente juega un poco más o un poco menos. Solo se pueden sumar controles adicionales sobre la marcha antes de cerrar.
+- **Cronometrado**: cuenta hacia arriba desde que se abre. Se cobra al cerrar, según el tiempo realmente jugado (redondeo a la media hora más cercana). Es la modalidad de siempre.
+- **Conteo regresivo**: el empleado especifica cuántos minutos compra el cliente (atajos de 30/60/90/120 min, o un número custom). El precio queda **pactado y guardado de una vez al abrir**, calculado con la misma fórmula de horas — no cambia si el cliente juega un poco más o un poco menos. Sobre la marcha se puede **extender el tiempo** (+30 min / +1h; el precio se recalcula sobre el total) o **sumar un control adicional** (se cobra desde que entra).
 - Ambas modalidades conviven puesto por puesto: cada PS5 puede tener, en momentos distintos, sesiones cronometradas o de conteo regresivo — no es una configuración fija del puesto, se elige cada vez que se abre una sesión.
 
 ### Avisos de tiempo (solo aplica a conteo regresivo, que tiene un final conocido)

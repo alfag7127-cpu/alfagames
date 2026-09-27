@@ -18,7 +18,7 @@ export type EstadoSesion = 'activa' | 'finalizada' | 'cancelada';
 
 /**
  * Modalidad de cobro:
- * - cronometrado: cuenta hacia arriba, se cobra al cerrar según tiempo jugado (redondeo hacia arriba).
+ * - cronometrado: cuenta hacia arriba, se cobra al cerrar según tiempo jugado (redondeo a la media hora más cercana).
  * - conteo_regresivo: tiempo fijo pactado al abrir (ej. 45, 90, 120 min); precio queda pactado de una vez.
  */
 export type Modalidad = 'cronometrado' | 'conteo_regresivo';
@@ -34,6 +34,7 @@ export interface Sesion {
   minutos_asignados: number | null;
   horas_cobradas: number | null;
   controles_adicionales: number;
+  horas_controles: number;
   precio_manual: number | null;
   precio_base: number | null;
   precio_total: number | null;
@@ -55,6 +56,9 @@ export interface PuestoConEstado {
   controles_adicionales: number | null;
   precio_total: number | null;
   precio_base: number | null;
+  precio_manual: number | null;
+  /** Hora en que entró cada control adicional (se cobra desde ahí). */
+  controles_desde: string[];
 }
 
 export interface Gasto {

@@ -1,8 +1,12 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
-import { Sesion, PuestoConEstado } from './models';
+import { Modalidad, Sesion, PuestoConEstado } from './models';
 
-export interface CerrarSesionOpts {
+export interface AbrirSesionOpts {
+  puestoId: number;
+  clienteNombre: string | null;
+  modalidad: Modalidad;
+  minutosAsignados: number;
   controlesAdicionales: number;
   precioManual: number | null;
 }
@@ -27,55 +31,52 @@ export class SesionesService {
     return data as PuestoConEstado[];
   }
 
-  /** Abre sesión modalidad cronometrado: cuenta hacia arriba, se cobra al cerrar. */
-  async abrirSesion(
-    puestoId: number,
-    empleadoId: string,
-    clienteNombre: string | null,
-  ): Promise<Sesion> {
-    const { data, error } = await this.supabase.client
-      .from('sesiones')
-      .insert({ puesto_id: puestoId, empleado_id: empleadoId, cliente_nombre: clienteNombre })
-      .select()
-      .single();
+  /**
+   * Abre una sesión en el servidor (`abrir_sesion`). Los controles adicionales
+   * indicados al abrir se cobran desde el inicio. En conteo regresivo el precio
+   * queda pactado de una vez (se recalcula si luego se extiende o se suma un control).
+   */
+  async abrirSesion(opts: AbrirSesionOpts): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('abrir_sesion', {
+      p_puesto_id: opts.puestoId,
+      p_cliente_nombre: opts.clienteNombre,
+      p_modalidad: opts.modalidad,
+      p_minutos_asignados: opts.modalidad === 'conteo_regresivo' ? opts.minutosAsignados : null,
+      p_controles_adicionales: opts.controlesAdicionales,
+      p_precio_manual: opts.precioManual,
+    });
     if (error) throw error;
     return data as Sesion;
   }
 
-  /**
-   * Abre sesión modalidad conteo regresivo: tiempo fijo pactado (`minutosAsignados`),
-   * precio calculado y guardado por el servidor en el mismo momento — no cambia
-   * después aunque la partida termine antes o después de tiempo.
-   */
-  async abrirSesionRegresiva(
-    puestoId: number,
-    clienteNombre: string | null,
-    minutosAsignados: number,
-    controlesAdicionales: number,
-    precioManual: number | null,
-  ): Promise<Sesion> {
-    const { data, error } = await this.supabase.client.rpc('abrir_sesion_regresiva', {
-      p_puesto_id: puestoId,
-      p_cliente_nombre: clienteNombre,
-      p_minutos_asignados: minutosAsignados,
-      p_controles_adicionales: controlesAdicionales,
-      p_precio_manual: precioManual,
+  /** Suma un control adicional a una sesión activa; se cobra desde este momento. */
+  async agregarControl(sesionId: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('agregar_control', {
+      p_sesion_id: sesionId,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
+  /** Conteo regresivo: suma minutos y el servidor recalcula el precio sobre el total. */
+  async extenderSesion(sesionId: number, minutos: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('extender_sesion', {
+      p_sesion_id: sesionId,
+      p_minutos: minutos,
     });
     if (error) throw error;
     return data as Sesion;
   }
 
   /**
-   * Cierra la sesión llamando a la función `cerrar_sesion` en la base de datos:
-   * hora de cierre, horas cobradas (redondeo hacia arriba) y precio final se
-   * calculan en el servidor con la hora del servidor, no en el navegador del
-   * empleado — esa es la fuente de verdad para lo financiero.
+   * Cierra y cobra en el servidor (`cerrar_sesion`): horas y precio final se
+   * calculan con el reloj del servidor, no en el navegador — esa es la fuente
+   * de verdad financiera. El precio manual solo aplica a cronometrado.
    */
-  async cerrarSesion(sesionId: number, opts: CerrarSesionOpts): Promise<Sesion> {
+  async cerrarSesion(sesionId: number, precioManual: number | null): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('cerrar_sesion', {
       p_sesion_id: sesionId,
-      p_controles_adicionales: opts.controlesAdicionales,
-      p_precio_manual: opts.precioManual,
+      p_precio_manual: precioManual,
     });
     if (error) throw error;
     return data as Sesion;

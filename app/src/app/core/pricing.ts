@@ -1,58 +1,61 @@
 /**
- * Reglas de cobro de la sala (COP). Ver docs/PLAN.md en la raíz del repo.
+ * Estándar de cobro de la sala (COP). Ver "Estándar de cobro" en docs/PLAN.md.
  *
- * - 30 min: 3.000
- * - 1 hora: 6.000
- * - 2 horas: 10.000
- * - 3+ horas: 10.000 + 5.000 por cada hora completa adicional a partir de la 2ª
- * - Control adicional: 2.000 POR HORA cobrada de la sesión (no es plano por sesión).
- * - Tiempo parcial (fuera de los tramos exactos) se redondea siempre hacia arriba.
+ * - El tiempo se redondea a la media hora MÁS CERCANA (1h14 → 1h, 1h15 → 1h30), mínimo 30 min.
+ * - Sin controles adicionales, precio por paquete: 30m 3.000 · 1h 6.000 · 1h30 9.000 · 2h 10.000
+ *   · +2.500 por cada media hora después de 2h.
+ * - Con controles adicionales se pierde el paquete: 6.000 × hora
+ *   + 2.000 × (cada control adicional × horas que estuvo en uso).
+ * - Cada control adicional se cobra solo desde que entra. Máximo 2 adicionales.
  *
- * IMPORTANTE: estas funciones son solo para la VISTA PREVIA en pantalla mientras
- * la sesión sigue activa (el empleado necesita ver "cuánto va" antes de cobrar).
- * El valor que realmente se cobra y se guarda lo calcula `private.calcular_tarifa`
- * en el servidor (misma fórmula, hora del servidor) — esa es la fuente de verdad
- * financiera, no este archivo. Si cambias la tarifa, cambia ambos lados: este
- * archivo Y la función en Supabase.
+ * IMPORTANTE: esto es solo la VISTA PREVIA en pantalla. El valor que se cobra y se
+ * guarda lo calcula `private.calcular_cobro` en Supabase (misma fórmula, reloj del
+ * servidor). Si cambias la tarifa, cambia ambos lados.
  */
 
-export const PRECIO_CONTROL_POR_HORA = 2000;
+export const MAX_CONTROLES_ADICIONALES = 2;
+export const PRECIO_HORA_SIN_PAQUETE = 6000;
+export const PRECIO_CONTROL_ADICIONAL_POR_HORA = 2000;
 
-export interface Tarifa {
-  /** Horas cobradas — puede ser fraccionaria (0.5 en el tramo de media hora). */
+export interface Cobro {
+  /** Horas cobradas (múltiplos de 0.5). */
   horas: number;
+  /** Suma de horas de todos los controles adicionales, ya redondeadas. */
+  horasControles: number;
   precioBase: number;
-}
-
-/** Minutos jugados (o pactados) -> horas cobradas + precio base, sin controles ni manual. */
-export function calcularTarifa(minutos: number): Tarifa {
-  if (minutos <= 0) return { horas: 0, precioBase: 0 };
-  if (minutos <= 30) return { horas: 0.5, precioBase: 3000 };
-  if (minutos <= 60) return { horas: 1, precioBase: 6000 };
-  if (minutos <= 120) return { horas: 2, precioBase: 10000 };
-  const horasExtra = Math.ceil((minutos - 120) / 60);
-  return { horas: 2 + horasExtra, precioBase: 10000 + horasExtra * 5000 };
-}
-
-export interface CalculoPrecioInput {
-  minutos: number;
-  controlesAdicionales?: number;
-  /** Si el empleado pactó un precio especial, reemplaza el precio base (los controles se suman igual). */
-  precioManual?: number | null;
-}
-
-export interface ResultadoPrecio extends Tarifa {
   precioTotal: number;
 }
 
-/** Precio final de una sesión: base (automático o manual) + controles adicionales por hora. */
-export function calcularPrecioTotal({
-  minutos,
-  controlesAdicionales = 0,
-  precioManual = null,
-}: CalculoPrecioInput): ResultadoPrecio {
-  const tarifa = calcularTarifa(minutos);
-  const precioBase = precioManual != null ? precioManual : tarifa.precioBase;
-  const precioControles = controlesAdicionales * PRECIO_CONTROL_POR_HORA * tarifa.horas;
-  return { horas: tarifa.horas, precioBase, precioTotal: precioBase + precioControles };
+/** Minutos → horas, redondeado a la media hora más cercana (en empate sube). */
+export function redondearHoras(minutos: number): number {
+  return Math.floor(Math.max(minutos, 0) / 30 + 0.5) * 0.5;
+}
+
+function precioPaquete(horas: number): number {
+  return horas <= 1.5 ? PRECIO_HORA_SIN_PAQUETE * horas : 10000 + (horas - 2) * 5000;
+}
+
+/**
+ * @param minutos tiempo total de la sesión.
+ * @param minutosControles minutos que estuvo en uso cada control adicional.
+ * @param precioManual si se pactó un precio especial, reemplaza el precio base.
+ */
+export function calcularCobro(
+  minutos: number,
+  minutosControles: number[] = [],
+  precioManual: number | null = null,
+): Cobro {
+  const horas = Math.max(0.5, redondearHoras(minutos));
+  const horasControles = minutosControles.reduce(
+    (acc, m) => acc + Math.min(redondearHoras(m), horas),
+    0,
+  );
+  const base = horasControles === 0 ? precioPaquete(horas) : PRECIO_HORA_SIN_PAQUETE * horas;
+  const precioBase = precioManual ?? base;
+  return {
+    horas,
+    horasControles,
+    precioBase,
+    precioTotal: precioBase + PRECIO_CONTROL_ADICIONAL_POR_HORA * horasControles,
+  };
 }

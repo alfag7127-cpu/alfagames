@@ -3,8 +3,9 @@ import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { Modalidad, PuestoConEstado } from '../../core/models';
-import { PRECIO_CONTROL_POR_HORA, calcularPrecioTotal, calcularTarifa } from '../../core/pricing';
+import { MAX_CONTROLES_ADICIONALES, calcularCobro } from '../../core/pricing';
 import { SesionesService } from '../../core/sesiones.service';
+import { ToastService } from '../../core/toast.service';
 
 /** Umbral de aviso para conteo regresivo: a partir de acá cambia el color / suena aviso. */
 const SEGUNDOS_AVISO = 5 * 60; // 5 minutos
@@ -19,8 +20,8 @@ interface PuestoVM extends PuestoConEstado {
   modoSeleccionado: Modalidad;
   clienteInput: string;
   minutosInput: number;
-  // Compartido entre apertura (conteo regresivo) y cierre (cronometrado)
   controlesInput: number;
+  // Precio manual: al abrir (conteo regresivo) o al cerrar (cronometrado)
   usarPrecioManual: boolean;
   precioManualInput: number | null;
   procesando: boolean;
@@ -65,7 +66,6 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 })
 export class Sala implements OnInit, OnDestroy {
   readonly puestos = signal<PuestoVM[]>([]);
-  readonly error = signal<string | null>(null);
   private readonly ahora = signal(Date.now());
   private timerHandle?: ReturnType<typeof setInterval>;
   private unsubscribeRealtime?: () => void;
@@ -75,6 +75,7 @@ export class Sala implements OnInit, OnDestroy {
   constructor(
     private readonly sesiones: SesionesService,
     private readonly auth: AuthService,
+    private readonly toast: ToastService,
   ) {}
 
   ngOnInit(): void {
@@ -106,21 +107,30 @@ export class Sala implements OnInit, OnDestroy {
       for (const sesionId of this.avisosEnviados.keys()) {
         if (!idsVivos.has(sesionId)) this.avisosEnviados.delete(sesionId);
       }
+      // Conserva lo que el empleado ya escribió en un formulario abierto (evita perder
+      // el nombre del cliente o los minutos elegidos cuando llega una actualización realtime).
+      const previos = new Map(this.puestos().map((p) => [p.id, p]));
       this.puestos.set(
-        data.map((p) => ({
-          ...p,
-          formAbierto: false,
-          modoSeleccionado: 'cronometrado',
-          clienteInput: '',
-          minutosInput: 60,
-          controlesInput: 0,
-          usarPrecioManual: false,
-          precioManualInput: null,
-          procesando: false,
-        })),
+        data.map((p) => {
+          const previo = previos.get(p.id);
+          if (previo && previo.sesion_id === p.sesion_id) {
+            return { ...previo, ...p };
+          }
+          return {
+            ...p,
+            formAbierto: false,
+            modoSeleccionado: 'cronometrado',
+            clienteInput: '',
+            minutosInput: 60,
+            controlesInput: 0,
+            usarPrecioManual: false,
+            precioManualInput: null,
+            procesando: false,
+          };
+        }),
       );
     } catch (e) {
-      this.error.set(this.mensajeError(e));
+      this.toast.error(this.mensajeError(e));
     }
   }
 
@@ -136,46 +146,91 @@ export class Sala implements OnInit, OnDestroy {
     );
   }
 
+  ajustarControles(puestoId: number, delta: number): void {
+    this.puestos.update((list) =>
+      list.map((p) =>
+        p.id === puestoId
+          ? { ...p, controlesInput: Math.min(MAX_CONTROLES_ADICIONALES, Math.max(0, p.controlesInput + delta)) }
+          : p,
+      ),
+    );
+  }
+
+  seleccionarMinutosPreset(puestoId: number, minutos: number): void {
+    this.puestos.update((list) =>
+      list.map((p) => (p.id === puestoId ? { ...p, minutosInput: minutos } : p)),
+    );
+  }
+
   async abrir(p: PuestoVM): Promise<void> {
-    const empleadoId = this.auth.currentProfile()?.id;
-    if (!empleadoId) return;
-    this.error.set(null);
+    if (!this.auth.currentProfile()?.id) return;
     this.marcarProcesando(p.id, true);
     try {
-      if (p.modoSeleccionado === 'conteo_regresivo') {
-        if (!p.minutosInput || p.minutosInput <= 0) {
-          throw new Error('Indica cuántos minutos de conteo regresivo.');
-        }
-        await this.sesiones.abrirSesionRegresiva(
-          p.id,
-          p.clienteInput.trim() || null,
-          p.minutosInput,
-          p.controlesInput,
-          p.usarPrecioManual ? p.precioManualInput : null,
-        );
-      } else {
-        await this.sesiones.abrirSesion(p.id, empleadoId, p.clienteInput.trim() || null);
+      const regresivo = p.modoSeleccionado === 'conteo_regresivo';
+      if (regresivo && (!p.minutosInput || p.minutosInput <= 0)) {
+        throw new Error('Indica cuántos minutos de conteo regresivo.');
       }
+      await this.sesiones.abrirSesion({
+        puestoId: p.id,
+        clienteNombre: p.clienteInput.trim() || null,
+        modalidad: p.modoSeleccionado,
+        minutosAsignados: p.minutosInput,
+        controlesAdicionales: p.controlesInput,
+        precioManual: regresivo && p.usarPrecioManual ? p.precioManualInput : null,
+      });
       await this.cargar();
+      this.toast.exito(`${p.nombre}: sesión abierta.`);
     } catch (e) {
-      this.error.set(this.mensajeError(e));
+      this.toast.error(this.mensajeError(e));
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  /** Suma un control adicional ahora mismo; se cobra desde este momento. */
+  async agregarControl(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.agregarControl(p.sesion_id);
+      await this.cargar();
+      this.toast.exito(`${p.nombre}: control adicional agregado.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  /** Conteo regresivo: el cliente compra más tiempo; el precio se recalcula sobre el total. */
+  async extender(p: PuestoVM, minutos: number): Promise<void> {
+    if (!p.sesion_id) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      const sesion = await this.sesiones.extenderSesion(p.sesion_id, minutos);
+      await this.cargar();
+      this.toast.exito(
+        `${p.nombre}: +${minutos} min. Nuevo total $${(sesion.precio_total ?? 0).toLocaleString('es-CO')} COP.`,
+      );
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
       this.marcarProcesando(p.id, false);
     }
   }
 
   async cerrar(p: PuestoVM): Promise<void> {
     if (!p.sesion_id) return;
-    this.error.set(null);
     this.marcarProcesando(p.id, true);
     try {
-      await this.sesiones.cerrarSesion(p.sesion_id, {
-        controlesAdicionales: p.controlesInput,
-        precioManual: p.usarPrecioManual ? p.precioManualInput : null,
-      });
+      const precioManual =
+        p.modalidad === 'cronometrado' && p.usarPrecioManual ? p.precioManualInput : null;
+      const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioManual);
       await this.cargar();
+      const total = sesion.precio_total ?? 0;
+      this.toast.exito(`${p.nombre}: cobrado $${total.toLocaleString('es-CO')} COP.`);
     } catch (e) {
       // Ej: otro empleado ya cerró esta sesión desde otro puesto — refresca para ver el estado real.
-      this.error.set(this.mensajeError(e));
+      this.toast.error(this.mensajeError(e));
       await this.cargar();
     }
   }
@@ -225,26 +280,29 @@ export class Sala implements OnInit, OnDestroy {
     return 'normal';
   }
 
-  previewPrecio(p: PuestoVM): number {
-    const minutos = p.modoSeleccionado === 'conteo_regresivo' && !p.sesion_id
-      ? p.minutosInput || 0
-      : this.minutosTranscurridos(p);
-    return calcularPrecioTotal({
+  readonly maxControles = MAX_CONTROLES_ADICIONALES;
+
+  /** Total pactado en el formulario de apertura de conteo regresivo (controles desde el inicio). */
+  previewApertura(p: PuestoVM): number {
+    const minutos = p.minutosInput || 0;
+    return calcularCobro(
       minutos,
-      controlesAdicionales: p.controlesInput,
-      precioManual: p.usarPrecioManual ? p.precioManualInput : null,
-    }).precioTotal;
+      Array(p.controlesInput).fill(minutos),
+      p.usarPrecioManual ? p.precioManualInput : null,
+    ).precioTotal;
   }
 
-  /**
-   * Vista previa al CERRAR una sesión de conteo regresivo: el precio base ya quedó
-   * fijo al abrir (`p.precio_base`), solo cambia si el empleado ajusta controles
-   * adicionales de último momento — cobrados por hora igual que en cronometrado.
-   */
-  previewCierreRegresivo(p: PuestoVM): number {
-    if (!p.minutos_asignados) return p.precio_total ?? 0;
-    const { horas } = calcularTarifa(p.minutos_asignados);
-    return (p.precio_base ?? 0) + p.controlesInput * PRECIO_CONTROL_POR_HORA * horas;
+  /** "Cuánto va" en una sesión cronometrada activa: cada control cuenta desde que entró. */
+  previewCronometrado(p: PuestoVM): number {
+    const ahora = this.ahora();
+    const minutosControles = (p.controles_desde ?? []).map(
+      (desde) => Math.max(0, ahora - new Date(desde).getTime()) / 60000,
+    );
+    return calcularCobro(
+      this.segundosTranscurridos(p) / 60,
+      minutosControles,
+      p.usarPrecioManual ? p.precioManualInput : null,
+    ).precioTotal;
   }
 
   // ── Alertas (visual + notificación + sonido) ───────────────────────────
@@ -276,6 +334,8 @@ export class Sala implements OnInit, OnDestroy {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       new Notification('Alfa Games', { body: texto });
     }
+    if (umbral === 'vencido') this.toast.error(texto);
+    else this.toast.info(texto);
 
     if (umbral === 'aviso') reproducirBeep(880, 150);
     else if (umbral === 'critico') reproducirBeep(880, 300);

@@ -506,3 +506,493 @@ select
 from public.puestos p
 left join public.sesiones s
   on s.puesto_id = p.id and s.estado = 'activa';
+
+-- ============================================================
+-- 10. CONTROL ADICIONAL: 2.000 -> 5.000 POR HORA COBRADA
+-- ============================================================
+-- Mismo esquema de la seccion 9 (control adicional * 2000 * horas), solo cambia
+-- la tarifa a 5.000 por hora por control adicional.
+create or replace function public.abrir_sesion_regresiva(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_minutos_asignados int,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_tarifa record;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_minutos_asignados is null or p_minutos_asignados <= 0 then
+    raise exception 'minutos_asignados debe ser mayor a 0';
+  end if;
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  select * into v_tarifa from private.calcular_tarifa(p_minutos_asignados::numeric);
+  v_precio_base := coalesce(p_precio_manual, v_tarifa.precio_base);
+  v_precio_total := v_precio_base + p_controles_adicionales * 5000 * v_tarifa.horas;
+
+  insert into public.sesiones (
+    puesto_id, empleado_id, cliente_nombre, modalidad, minutos_asignados,
+    horas_cobradas, controles_adicionales, precio_manual, precio_base, precio_total
+  ) values (
+    p_puesto_id, auth.uid(), p_cliente_nombre, 'conteo_regresivo', p_minutos_asignados,
+    v_tarifa.horas, p_controles_adicionales, p_precio_manual, v_precio_base, v_precio_total
+  )
+  returning * into v_fila;
+
+  return v_fila;
+end;
+$$;
+
+create or replace function public.cerrar_sesion(
+  p_sesion_id bigint,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_hora_inicio timestamptz;
+  v_modalidad text;
+  v_minutos_asignados int;
+  v_precio_base_actual numeric;
+  v_minutos numeric;
+  v_tarifa record;
+  v_horas numeric;
+  v_precio_base numeric;
+  v_precio_total numeric;
+  v_fila public.sesiones;
+begin
+  if p_controles_adicionales < 0 then
+    raise exception 'controles_adicionales no puede ser negativo';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'precio_manual debe ser mayor a 0';
+  end if;
+
+  select hora_inicio, modalidad, minutos_asignados, precio_base
+    into v_hora_inicio, v_modalidad, v_minutos_asignados, v_precio_base_actual
+  from public.sesiones
+  where id = p_sesion_id and estado = 'activa';
+
+  if v_hora_inicio is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  if v_modalidad = 'conteo_regresivo' then
+    select * into v_tarifa from private.calcular_tarifa(v_minutos_asignados::numeric);
+    v_horas := v_tarifa.horas;
+    v_precio_base := v_precio_base_actual;
+  else
+    v_minutos := extract(epoch from (now() - v_hora_inicio)) / 60.0;
+    select * into v_tarifa from private.calcular_tarifa(v_minutos);
+    v_horas := v_tarifa.horas;
+    v_precio_base := coalesce(p_precio_manual, v_tarifa.precio_base);
+  end if;
+
+  v_precio_total := v_precio_base + p_controles_adicionales * 5000 * v_horas;
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_horas,
+      controles_adicionales = p_controles_adicionales,
+      precio_manual = case when v_modalidad = 'cronometrado' then p_precio_manual else precio_manual end,
+      precio_base = v_precio_base,
+      precio_total = v_precio_total,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_fila;
+
+  if v_fila.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_fila;
+end;
+$$;
+
+-- ============================================================
+-- 11. PERMISOS SOBRE private.calcular_tarifa
+-- ============================================================
+-- abrir_sesion_regresiva y cerrar_sesion son SECURITY INVOKER (respetan RLS), asi que
+-- el rol authenticated necesita USAGE en el esquema private para llamar al helper.
+-- El esquema private no esta expuesto por la API, esto no lo publica.
+grant usage on schema private to authenticated;
+revoke all on function private.calcular_tarifa(numeric) from public, anon;
+grant execute on function private.calcular_tarifa(numeric) to authenticated;
+
+-- ============================================================
+-- 12. ESTANDAR DE COBRO (2026-09-27) — ver docs/PLAN.md "Estandar de cobro"
+-- ============================================================
+-- - Tiempo redondeado a la media hora MAS CERCANA (1h14 -> 1h, 1h15 -> 1h30), minimo 30 min.
+-- - Sin controles adicionales: precio por paquete (30m 3.000, 1h 6.000, 1h30 9.000,
+--   2h 10.000, +2.500 por cada media hora despues de 2h).
+-- - Con controles adicionales: se pierde el paquete -> 6.000 x hora
+--   + 2.000 x (cada control adicional x horas que estuvo en uso).
+-- - Cada control adicional se cobra solo desde que entra (tabla sesion_controles).
+-- - Maximo 2 controles adicionales por sesion (4 en total).
+-- - Conteo regresivo: extender tiempo recalcula el precio sobre el total.
+
+-- Un registro por control adicional, con la hora en que entro.
+create table if not exists public.sesion_controles (
+  id bigint generated always as identity primary key,
+  sesion_id bigint not null references public.sesiones (id) on delete cascade,
+  desde timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sesion_controles_por_sesion on public.sesion_controles (sesion_id);
+
+alter table public.sesion_controles enable row level security;
+
+create policy "sesion_controles_select_authenticated" on public.sesion_controles
+  for select to authenticated using (true);
+
+-- Solo quien puede modificar la sesion (su empleado o un admin) puede sumarle controles.
+create policy "sesion_controles_insert_propia" on public.sesion_controles
+  for insert to authenticated with check (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  );
+
+create policy "sesion_controles_delete_admin" on public.sesion_controles
+  for delete to authenticated using (private.is_admin());
+
+-- Horas de control adicional cobradas (suma de los controles, ya redondeadas).
+alter table public.sesiones
+  add column if not exists horas_controles numeric(5, 1) not null default 0;
+
+alter table public.sesiones
+  add constraint controles_adicionales_maximo check (controles_adicionales <= 2);
+
+-- Redondeo a la media hora mas cercana; en empate (x:15, x:45) sube.
+create or replace function private.redondear_horas(p_minutos numeric)
+returns numeric
+language sql
+immutable
+set search_path = public
+as $$
+  select floor(greatest(p_minutos, 0) / 30.0 + 0.5) * 0.5;
+$$;
+
+-- Formula unica del cobro. p_minutos_controles: minutos que estuvo en uso cada control adicional.
+create or replace function private.calcular_cobro(
+  p_minutos numeric,
+  p_minutos_controles numeric[],
+  p_precio_manual numeric,
+  out horas numeric,
+  out horas_controles numeric,
+  out precio_base numeric,
+  out precio_total numeric
+)
+language plpgsql
+immutable
+set search_path = public
+as $$
+begin
+  horas := greatest(0.5, private.redondear_horas(p_minutos));
+
+  select coalesce(sum(least(private.redondear_horas(m), horas)), 0)
+    into horas_controles
+  from unnest(coalesce(p_minutos_controles, '{}'::numeric[])) as m;
+
+  if horas_controles = 0 then
+    -- Paquete: 6.000/h hasta 1h30, 2h = 10.000, luego 5.000/h (2.500 por media hora).
+    precio_base := case when horas <= 1.5 then 6000 * horas else 10000 + (horas - 2) * 5000 end;
+  else
+    precio_base := 6000 * horas;
+  end if;
+
+  precio_base := coalesce(p_precio_manual, precio_base);
+  precio_total := precio_base + 2000 * horas_controles;
+end;
+$$;
+
+-- Cobro de una sesion hasta p_fin, leyendo sus controles adicionales.
+create or replace function private.cobro_sesion(
+  p_sesion_id bigint,
+  p_fin timestamptz,
+  p_precio_manual numeric,
+  out horas numeric,
+  out horas_controles numeric,
+  out precio_base numeric,
+  out precio_total numeric
+)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_inicio timestamptz;
+  v_controles numeric[];
+begin
+  select hora_inicio into v_inicio from public.sesiones where id = p_sesion_id;
+
+  select coalesce(array_agg(extract(epoch from (p_fin - greatest(c.desde, v_inicio))) / 60.0), '{}')
+    into v_controles
+  from public.sesion_controles c
+  where c.sesion_id = p_sesion_id and c.desde < p_fin;
+
+  select * into horas, horas_controles, precio_base, precio_total
+  from private.calcular_cobro(extract(epoch from (p_fin - v_inicio)) / 60.0, v_controles, p_precio_manual);
+end;
+$$;
+
+-- Recalcula y guarda el precio pactado de una sesion de conteo regresivo activa.
+create or replace function private.recalcular_regresiva(p_sesion_id bigint)
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_c record;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  select * into v_c
+  from private.cobro_sesion(p_sesion_id, v_s.hora_inicio + make_interval(mins => v_s.minutos_asignados), v_s.precio_manual);
+
+  update public.sesiones
+  set horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_base = v_c.precio_base,
+      precio_total = v_c.precio_total
+  where id = p_sesion_id;
+end;
+$$;
+
+-- Las funciones viejas quedan reemplazadas por las de abajo.
+drop function if exists public.abrir_sesion_regresiva(bigint, text, int, int, numeric);
+drop function if exists public.cerrar_sesion(bigint, int, numeric);
+drop function if exists private.calcular_tarifa(numeric);
+
+-- Abre una sesion en cualquier modalidad, con sus controles adicionales desde el inicio.
+create or replace function public.abrir_sesion(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_modalidad text default 'cronometrado',
+  p_minutos_asignados int default null,
+  p_controles_adicionales int default 0,
+  p_precio_manual numeric default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_fila public.sesiones;
+begin
+  if p_modalidad not in ('cronometrado', 'conteo_regresivo') then
+    raise exception 'Modalidad invalida: %', p_modalidad;
+  end if;
+  if p_modalidad = 'conteo_regresivo' and (p_minutos_asignados is null or p_minutos_asignados <= 0) then
+    raise exception 'Indica cuantos minutos de conteo regresivo';
+  end if;
+  if p_controles_adicionales < 0 or p_controles_adicionales > 2 then
+    raise exception 'Controles adicionales: minimo 0, maximo 2';
+  end if;
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'El precio manual debe ser mayor a 0';
+  end if;
+
+  insert into public.sesiones (
+    puesto_id, empleado_id, cliente_nombre, modalidad, minutos_asignados,
+    controles_adicionales, precio_manual
+  ) values (
+    p_puesto_id, auth.uid(), p_cliente_nombre, p_modalidad,
+    case when p_modalidad = 'conteo_regresivo' then p_minutos_asignados end,
+    p_controles_adicionales,
+    case when p_modalidad = 'conteo_regresivo' then p_precio_manual end
+  )
+  returning * into v_fila;
+
+  insert into public.sesion_controles (sesion_id, desde)
+  select v_fila.id, v_fila.hora_inicio from generate_series(1, p_controles_adicionales);
+
+  if p_modalidad = 'conteo_regresivo' then
+    perform private.recalcular_regresiva(v_fila.id);
+  end if;
+
+  select * into v_fila from public.sesiones where id = v_fila.id;
+  return v_fila;
+end;
+$$;
+
+-- Suma un control adicional a una sesion activa; se cobra desde este momento.
+create or replace function public.agregar_control(p_sesion_id bigint)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'La sesion % no esta activa', p_sesion_id;
+  end if;
+  if v_s.controles_adicionales >= 2 then
+    raise exception 'Maximo 2 controles adicionales por PS5';
+  end if;
+
+  update public.sesiones
+  set controles_adicionales = controles_adicionales + 1
+  where id = p_sesion_id and estado = 'activa';
+  if not found then
+    raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+  end if;
+
+  insert into public.sesion_controles (sesion_id) values (p_sesion_id);
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    perform private.recalcular_regresiva(p_sesion_id);
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  return v_s;
+end;
+$$;
+
+-- Conteo regresivo: el cliente compra mas tiempo; el precio se recalcula sobre el total.
+create or replace function public.extender_sesion(p_sesion_id bigint, p_minutos int)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  if p_minutos is null or p_minutos <= 0 then
+    raise exception 'Los minutos a extender deben ser mayores a 0';
+  end if;
+
+  update public.sesiones
+  set minutos_asignados = minutos_asignados + p_minutos
+  where id = p_sesion_id and estado = 'activa' and modalidad = 'conteo_regresivo'
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'La sesion % no es un conteo regresivo activo o no tienes permiso', p_sesion_id;
+  end if;
+
+  perform private.recalcular_regresiva(p_sesion_id);
+
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  return v_s;
+end;
+$$;
+
+-- Cierra y cobra. Cronometrado: se cobra el tiempo real jugado (reloj del servidor).
+-- Conteo regresivo: se cobra el tiempo pactado, aunque jueguen de mas o de menos.
+create or replace function public.cerrar_sesion(p_sesion_id bigint, p_precio_manual numeric default null)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_fin timestamptz;
+  v_manual numeric;
+  v_c record;
+begin
+  if p_precio_manual is not null and p_precio_manual <= 0 then
+    raise exception 'El precio manual debe ser mayor a 0';
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    v_fin := v_s.hora_inicio + make_interval(mins => v_s.minutos_asignados);
+    v_manual := v_s.precio_manual;
+  else
+    v_fin := now();
+    v_manual := p_precio_manual;
+  end if;
+
+  select * into v_c from private.cobro_sesion(p_sesion_id, v_fin, v_manual);
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_manual = v_manual,
+      precio_base = v_c.precio_base,
+      precio_total = v_c.precio_total,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+
+  if v_s.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_s;
+end;
+$$;
+
+-- Permisos: las funciones publicas son SECURITY INVOKER (respetan RLS); el rol
+-- authenticated necesita ejecutar los helpers de private (que no se exponen por la API).
+revoke all on function private.redondear_horas(numeric) from public, anon;
+revoke all on function private.calcular_cobro(numeric, numeric[], numeric) from public, anon;
+revoke all on function private.cobro_sesion(bigint, timestamptz, numeric) from public, anon;
+revoke all on function private.recalcular_regresiva(bigint) from public, anon;
+grant execute on function private.redondear_horas(numeric) to authenticated;
+grant execute on function private.calcular_cobro(numeric, numeric[], numeric) to authenticated;
+grant execute on function private.cobro_sesion(bigint, timestamptz, numeric) to authenticated;
+grant execute on function private.recalcular_regresiva(bigint) to authenticated;
+
+revoke all on function public.abrir_sesion(bigint, text, text, int, int, numeric) from public, anon;
+revoke all on function public.agregar_control(bigint) from public, anon;
+revoke all on function public.extender_sesion(bigint, int) from public, anon;
+revoke all on function public.cerrar_sesion(bigint, numeric) from public, anon;
+grant execute on function public.abrir_sesion(bigint, text, text, int, int, numeric) to authenticated;
+grant execute on function public.agregar_control(bigint) to authenticated;
+grant execute on function public.extender_sesion(bigint, int) to authenticated;
+grant execute on function public.cerrar_sesion(bigint, numeric) to authenticated;
+
+-- La vista en vivo expone la hora de entrada de cada control adicional, para que la
+-- Sala muestre "cuanto va" en cronometrado con la misma formula del servidor.
+drop view if exists public.vista_puestos;
+create view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (select array_agg(c.desde order by c.desde) from public.sesion_controles c where c.sesion_id = s.id),
+    '{}'
+  ) as controles_desde
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa';
+
+grant select on public.vista_puestos to authenticated;
