@@ -8,7 +8,8 @@ Detalle de reglas de negocio y roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
 - `app/` — proyecto Angular (standalone, zoneless, Tailwind).
 - `supabase/schema.sql` — tablas, vista y políticas RLS. Correr en el SQL Editor de tu proyecto Supabase.
-- `docs/PLAN.md` — reglas de negocio confirmadas y roadmap.
+- `docs/PLAN.md` — reglas de negocio confirmadas (incluye el **Estándar de cobro**) y roadmap.
+- `CLAUDE.md` — contexto del proyecto para trabajar con Claude Code (local o en claude.ai/code).
 
 ## Puesta en marcha
 
@@ -42,3 +43,10 @@ npm start          # servidor de desarrollo
 npm run build       # build de producción (dist/app)
 npm test            # tests unitarios
 ```
+
+## Publicación y trabajo remoto
+
+- **GitHub**: https://github.com/alfag7127-cpu/alfagames (rama `main`). El CI compila y corre las pruebas en cada push y PR.
+- **Vercel**: importa el repo en [vercel.com/new](https://vercel.com/new) y déjalo como está. `vercel.json` ya indica cómo compilar `app/`. Cada push a `main` se publica solo, y cada PR recibe una URL de vista previa.
+- **Supabase Auth**: después del primer despliegue, agrega la URL de Vercel en *Authentication → URL Configuration* (Site URL y Redirect URLs).
+- **Editar sin el computador local**: abre el repo en [claude.ai/code](https://claude.ai/code) o edítalo directo en GitHub. Los cambios de base de datos se agregan como sección nueva al final de `supabase/schema.sql`.

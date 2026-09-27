@@ -12,3 +12,6 @@ Thumbs.db
 # (src/environments/environment*.ts) — son públicas por diseño, la seguridad
 # real la da Row Level Security en la base de datos, no ocultar esta key.
 # Nunca pongas aquí la service_role key.
+
+# Vercel
+.vercel/
