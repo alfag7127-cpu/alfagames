@@ -21,9 +21,12 @@ interface PuestoVM extends PuestoConEstado {
   clienteInput: string;
   minutosInput: number;
   controlesInput: number;
-  // Precio manual: al abrir (conteo regresivo) o al cerrar (cronometrado)
+  // Precio especial pactado al abrir un conteo regresivo
   usarPrecioManual: boolean;
   precioManualInput: number | null;
+  // Al cobrar: cambiar el precio sugerido por otro
+  cambiarPrecio: boolean;
+  precioFinalInput: number | null;
   procesando: boolean;
 }
 
@@ -125,6 +128,8 @@ export class Sala implements OnInit, OnDestroy {
             controlesInput: 0,
             usarPrecioManual: false,
             precioManualInput: null,
+            cambiarPrecio: false,
+            precioFinalInput: null,
             procesando: false,
           };
         }),
@@ -201,6 +206,21 @@ export class Sala implements OnInit, OnDestroy {
     }
   }
 
+  /** Quita el control adicional más reciente; deja de cobrarse desde este momento. */
+  async quitarControl(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.quitarControl(p.sesion_id);
+      await this.cargar();
+      this.toast.exito(`${p.nombre}: control adicional retirado.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
   /** Conteo regresivo: el cliente compra más tiempo; el precio se recalcula sobre el total. */
   async extender(p: PuestoVM, minutos: number): Promise<void> {
     if (!p.sesion_id) return;
@@ -222,9 +242,14 @@ export class Sala implements OnInit, OnDestroy {
     if (!p.sesion_id) return;
     this.marcarProcesando(p.id, true);
     try {
-      const precioManual =
-        p.modalidad === 'cronometrado' && p.usarPrecioManual ? p.precioManualInput : null;
-      const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioManual);
+      let precioFinal: number | null = null;
+      if (p.cambiarPrecio) {
+        if (p.precioFinalInput == null || p.precioFinalInput < 0) {
+          throw new Error('Escribe el precio a cobrar (o desmarca "Cambiar precio").');
+        }
+        precioFinal = p.precioFinalInput;
+      }
+      const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioFinal);
       await this.cargar();
       const total = sesion.precio_total ?? 0;
       this.toast.exito(`${p.nombre}: cobrado $${total.toLocaleString('es-CO')} COP.`);
@@ -232,6 +257,7 @@ export class Sala implements OnInit, OnDestroy {
       // Ej: otro empleado ya cerró esta sesión desde otro puesto — refresca para ver el estado real.
       this.toast.error(this.mensajeError(e));
       await this.cargar();
+      this.marcarProcesando(p.id, false);
     }
   }
 
@@ -292,17 +318,30 @@ export class Sala implements OnInit, OnDestroy {
     ).precioTotal;
   }
 
-  /** "Cuánto va" en una sesión cronometrada activa: cada control cuenta desde que entró. */
+  /** "Cuánto va" en una sesión cronometrada activa: cada control cuenta mientras estuvo en uso. */
   previewCronometrado(p: PuestoVM): number {
     const ahora = this.ahora();
-    const minutosControles = (p.controles_desde ?? []).map(
-      (desde) => Math.max(0, ahora - new Date(desde).getTime()) / 60000,
+    const minutosControles = (p.controles ?? []).map((c) => {
+      const fin = c.hasta ? new Date(c.hasta).getTime() : ahora;
+      return Math.max(0, fin - new Date(c.desde).getTime()) / 60000;
+    });
+    return calcularCobro(this.segundosTranscurridos(p) / 60, minutosControles).precioTotal;
+  }
+
+  /** Precio que sugiere el sistema al cobrar. En conteo regresivo es el pactado (ya recalculado por el servidor). */
+  precioSugerido(p: PuestoVM): number {
+    return p.modalidad === 'conteo_regresivo' ? (p.precio_total ?? 0) : this.previewCronometrado(p);
+  }
+
+  toggleCambiarPrecio(p: PuestoVM): void {
+    const sugerido = this.precioSugerido(p);
+    this.puestos.update((list) =>
+      list.map((x) =>
+        x.id === p.id
+          ? { ...x, cambiarPrecio: !x.cambiarPrecio, precioFinalInput: x.cambiarPrecio ? null : sugerido }
+          : x,
+      ),
     );
-    return calcularCobro(
-      this.segundosTranscurridos(p) / 60,
-      minutosControles,
-      p.usarPrecioManual ? p.precioManualInput : null,
-    ).precioTotal;
   }
 
   // ── Alertas (visual + notificación + sonido) ───────────────────────────

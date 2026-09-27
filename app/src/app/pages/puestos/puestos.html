@@ -1,0 +1,82 @@
+<h1 class="text-xl font-bold text-slate-800 mb-1">Puestos</h1>
+<p class="text-sm text-slate-500 mb-4">
+  Agrega o quita consolas de la sala. Una consola quitada conserva su historial y se puede reactivar.
+</p>
+
+<form (ngSubmit)="agregar()" class="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap items-end gap-3">
+  <label class="text-sm text-slate-600 flex-1 min-w-[180px]">
+    Nombre de la nueva consola
+    <input
+      type="text"
+      [(ngModel)]="nuevoNombre"
+      name="nuevoNombre"
+      required
+      class="block w-full rounded border border-slate-300 px-2 py-1"
+    />
+  </label>
+  <button type="submit" class="rounded-lg bg-indigo-600 text-white text-sm px-4 py-2 hover:bg-indigo-700">
+    Agregar consola
+  </button>
+</form>
+
+<div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-left text-slate-500">
+      <tr>
+        <th class="px-3 py-2">Nombre</th>
+        <th class="px-3 py-2">Estado</th>
+        <th class="px-3 py-2 text-right">Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (p of puestos(); track p.id) {
+        <tr class="border-t border-slate-100" [class.opacity-60]="!p.activo">
+          <td class="px-3 py-2">
+            @if (editandoId() === p.id) {
+              <input
+                [(ngModel)]="nombreEditado"
+                name="editar-{{ p.id }}"
+                (keydown.enter)="guardarNombre(p)"
+                (keydown.escape)="editandoId.set(null)"
+                class="rounded border border-slate-300 px-2 py-1"
+              />
+            } @else {
+              <span class="font-medium text-slate-800">{{ p.nombre }}</span>
+            }
+          </td>
+          <td class="px-3 py-2">
+            <span
+              class="text-xs font-medium px-2 py-0.5 rounded-full"
+              [class.bg-emerald-100]="p.activo"
+              [class.text-emerald-700]="p.activo"
+              [class.bg-slate-100]="!p.activo"
+              [class.text-slate-500]="!p.activo"
+            >
+              {{ p.activo ? 'En la sala' : 'Quitada' }}
+            </span>
+          </td>
+          <td class="px-3 py-2 text-right space-x-3 whitespace-nowrap">
+            @if (editandoId() === p.id) {
+              <button (click)="guardarNombre(p)" class="text-indigo-600 hover:underline">Guardar</button>
+              <button (click)="editandoId.set(null)" class="text-slate-500 hover:underline">Cancelar</button>
+            } @else {
+              <button (click)="empezarEdicion(p)" class="text-slate-600 hover:underline">Renombrar</button>
+              <button
+                (click)="cambiarActivo(p)"
+                [class.text-red-600]="p.activo"
+                [class.text-emerald-600]="!p.activo"
+                class="hover:underline"
+              >
+                {{ p.activo ? 'Quitar' : 'Reactivar' }}
+              </button>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="3" class="px-3 py-6 text-center text-slate-500">No hay consolas todavía.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

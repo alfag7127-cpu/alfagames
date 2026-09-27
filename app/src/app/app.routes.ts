@@ -7,6 +7,7 @@ import { Sala } from './pages/sala/sala';
 import { Historial } from './pages/historial/historial';
 import { Gastos } from './pages/gastos/gastos';
 import { Dashboard } from './pages/dashboard/dashboard';
+import { Puestos } from './pages/puestos/puestos';
 
 export const routes: Routes = [
   { path: 'login', component: Login },
@@ -20,6 +21,7 @@ export const routes: Routes = [
       { path: 'historial', component: Historial },
       { path: 'gastos', component: Gastos, canActivate: [adminGuard] },
       { path: 'dashboard', component: Dashboard, canActivate: [adminGuard] },
+      { path: 'puestos', component: Puestos, canActivate: [adminGuard] },
     ],
   },
   { path: '**', redirectTo: '' },

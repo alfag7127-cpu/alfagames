@@ -243,14 +243,26 @@
               <span class="text-slate-400">({{ p.controles_adicionales }} adicional{{ p.controles_adicionales > 1 ? 'es' : '' }})</span>
             }
           </span>
-          <button
-            type="button"
-            (click)="agregarControl(p)"
-            [disabled]="p.procesando || (p.controles_adicionales ?? 0) >= maxControles"
-            class="rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 px-2 py-1 hover:bg-slate-100 disabled:opacity-40"
-          >
-            + Control
-          </button>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              (click)="quitarControl(p)"
+              [disabled]="p.procesando || !p.controles_adicionales"
+              title="Retirar un control adicional (deja de cobrarse desde ahora)"
+              class="rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 px-2 py-1 hover:bg-slate-100 disabled:opacity-40"
+            >
+              − Control
+            </button>
+            <button
+              type="button"
+              (click)="agregarControl(p)"
+              [disabled]="p.procesando || (p.controles_adicionales ?? 0) >= maxControles"
+              title="Agregar un control adicional (se cobra desde ahora)"
+              class="rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 px-2 py-1 hover:bg-slate-100 disabled:opacity-40"
+            >
+              + Control
+            </button>
+          </div>
         </div>
 
         @if (p.modalidad === 'conteo_regresivo') {
@@ -278,32 +290,34 @@
           </button>
         } @else {
           <div class="space-y-3">
-            @if (p.modalidad === 'cronometrado') {
-              <label class="flex items-center gap-2 text-xs text-slate-600">
-                <input type="checkbox" [(ngModel)]="p.usarPrecioManual" name="usar-manual-{{ p.id }}" class="rounded" />
-                Precio manual (oferta especial)
-              </label>
+            <div class="rounded-lg bg-amber-50 px-3 py-2 flex items-center justify-between">
+              <span class="text-xs text-amber-700">Precio sugerido</span>
+              <span
+                class="text-sm font-bold text-amber-900"
+                [class.line-through]="p.cambiarPrecio"
+                [class.opacity-60]="p.cambiarPrecio"
+              >
+                {{ precioSugerido(p) | number: '1.0-0' }} COP
+              </span>
+            </div>
 
-              @if (p.usarPrecioManual) {
+            <label class="flex items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" [checked]="p.cambiarPrecio" (change)="toggleCambiarPrecio(p)" class="rounded" />
+              Cambiar precio
+            </label>
+
+            @if (p.cambiarPrecio) {
+              <label class="block">
+                <span class="block text-xs font-medium text-slate-500 mb-1">Precio a cobrar (COP)</span>
                 <input
                   type="number"
                   min="0"
-                  placeholder="Precio pactado"
-                  [(ngModel)]="p.precioManualInput"
-                  name="precio-manual-{{ p.id }}"
-                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5"
+                  step="500"
+                  [(ngModel)]="p.precioFinalInput"
+                  name="precio-final-{{ p.id }}"
+                  class="w-full text-sm font-semibold rounded-lg border border-amber-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
-              }
-
-              <div class="rounded-lg bg-amber-50 px-3 py-2 flex items-center justify-between">
-                <span class="text-xs text-amber-700">Total a cobrar</span>
-                <span class="text-sm font-bold text-amber-900">{{ previewCronometrado(p) | number: '1.0-0' }} COP</span>
-              </div>
-            } @else {
-              <div class="rounded-lg bg-amber-50 px-3 py-2 flex items-center justify-between">
-                <span class="text-xs text-amber-700">Total pactado</span>
-                <span class="text-sm font-bold text-amber-900">{{ p.precio_total | number: '1.0-0' }} COP</span>
-              </div>
+              </label>
             }
 
             <div class="flex gap-2">

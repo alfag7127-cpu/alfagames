@@ -8,7 +8,7 @@ App para administrar una sala de videojuegos (5 PS5): sesiones en vivo, cobro, h
 
 ## Cobro: dos implementaciones que deben coincidir
 
-- Servidor (lo que se cobra de verdad): `private.calcular_cobro` y `private.cobro_sesion` en Supabase, usadas por las RPC `abrir_sesion`, `agregar_control`, `extender_sesion` y `cerrar_sesion`.
+- Servidor (lo que se cobra de verdad): `private.calcular_cobro` y `private.cobro_sesion` en Supabase, usadas por las RPC `abrir_sesion`, `agregar_control`, `quitar_control`, `extender_sesion` y `cerrar_sesion`. Cada control adicional es una fila de `sesion_controles` (`desde`/`hasta`). `cerrar_sesion` guarda `precio_sugerido` y acepta un `p_precio_final` opcional que decide quien cobra.
 - Front (solo vista previa): `app/src/app/core/pricing.ts`, con pruebas en `pricing.spec.ts` que usan la tabla de ejemplos del negocio.
 
 Si cambia una tarifa, actualiza los dos lados, `docs/PLAN.md` y los casos de `pricing.spec.ts`.

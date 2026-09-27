@@ -27,7 +27,7 @@
         <th class="px-3 py-2">Inicio</th>
         <th class="px-3 py-2">Fin</th>
         <th class="px-3 py-2">Horas</th>
-        <th class="px-3 py-2">Controles+</th>
+        <th class="px-3 py-2">Horas control+</th>
         <th class="px-3 py-2">Total</th>
         <th class="px-3 py-2">Estado</th>
       </tr>
@@ -43,9 +43,14 @@
           <td class="px-3 py-2">{{ s.hora_inicio | date: 'short' }}</td>
           <td class="px-3 py-2">{{ s.hora_fin ? (s.hora_fin | date: 'short') : '—' }}</td>
           <td class="px-3 py-2">{{ s.horas_cobradas ?? '—' }}</td>
-          <td class="px-3 py-2">{{ s.controles_adicionales }}</td>
+          <td class="px-3 py-2">{{ s.horas_controles || '—' }}</td>
           <td class="px-3 py-2 font-medium">
             {{ s.precio_total != null ? (s.precio_total | number: '1.0-0') + ' COP' : '—' }}
+            @if (s.precio_sugerido != null && s.precio_sugerido !== s.precio_total) {
+              <span class="block text-xs font-normal text-slate-400" title="El precio se cambió al cobrar">
+                sugerido {{ s.precio_sugerido | number: '1.0-0' }}
+              </span>
+            }
           </td>
           <td class="px-3 py-2 capitalize">{{ s.estado }}</td>
         </tr>

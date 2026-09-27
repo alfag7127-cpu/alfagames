@@ -58,6 +58,15 @@ export class SesionesService {
     return data as Sesion;
   }
 
+  /** Quita el control adicional más reciente en uso; se deja de cobrar desde este momento. */
+  async quitarControl(sesionId: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('quitar_control', {
+      p_sesion_id: sesionId,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
   /** Conteo regresivo: suma minutos y el servidor recalcula el precio sobre el total. */
   async extenderSesion(sesionId: number, minutos: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('extender_sesion', {
@@ -71,12 +80,13 @@ export class SesionesService {
   /**
    * Cierra y cobra en el servidor (`cerrar_sesion`): horas y precio final se
    * calculan con el reloj del servidor, no en el navegador — esa es la fuente
-   * de verdad financiera. El precio manual solo aplica a cronometrado.
+   * de verdad financiera. El servidor guarda su precio sugerido; si `precioFinal`
+   * viene, es lo que se cobra (quien cobra puede ajustar el precio según la situación).
    */
-  async cerrarSesion(sesionId: number, precioManual: number | null): Promise<Sesion> {
+  async cerrarSesion(sesionId: number, precioFinal: number | null): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('cerrar_sesion', {
       p_sesion_id: sesionId,
-      p_precio_manual: precioManual,
+      p_precio_final: precioFinal,
     });
     if (error) throw error;
     return data as Sesion;

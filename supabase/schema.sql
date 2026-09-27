@@ -996,3 +996,227 @@ left join public.sesiones s
   on s.puesto_id = p.id and s.estado = 'activa';
 
 grant select on public.vista_puestos to authenticated;
+
+-- ============================================================
+-- 13. QUITAR CONTROLES, PRECIO FINAL EDITABLE Y ADMINISTRAR PUESTOS (2026-09-27)
+-- ============================================================
+-- - Un control adicional se puede quitar a mitad de sesion: se cobra solo el tiempo
+--   que estuvo en uso (desde -> hasta), redondeado a la media hora mas cercana.
+-- - controles_adicionales = controles adicionales EN USO ahora (maximo 2 a la vez).
+-- - Al cobrar, el sistema sugiere el precio (precio_sugerido) y quien cobra puede
+--   poner otro (precio_total). Quedan guardados los dos.
+-- - Puestos: el admin agrega, renombra y quita (activo = false) PS5. Un puesto con
+--   sesion activa no se puede quitar. Los puestos quitados no aparecen en la Sala.
+
+alter table public.sesion_controles
+  add column if not exists hasta timestamptz;
+
+alter table public.sesion_controles
+  add constraint sesion_controles_hasta_valido check (hasta is null or hasta >= desde);
+
+create policy "sesion_controles_update_propia" on public.sesion_controles
+  for update to authenticated
+  using (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  );
+
+alter table public.sesiones
+  add column if not exists precio_sugerido numeric(10, 0);
+
+-- Cada control cuenta desde que entra hasta que sale (o hasta el fin de la sesion).
+create or replace function private.cobro_sesion(
+  p_sesion_id bigint,
+  p_fin timestamptz,
+  p_precio_manual numeric,
+  out horas numeric,
+  out horas_controles numeric,
+  out precio_base numeric,
+  out precio_total numeric
+)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_inicio timestamptz;
+  v_controles numeric[];
+begin
+  select hora_inicio into v_inicio from public.sesiones where id = p_sesion_id;
+
+  select coalesce(
+    array_agg(extract(epoch from (least(coalesce(c.hasta, p_fin), p_fin) - greatest(c.desde, v_inicio))) / 60.0),
+    '{}'
+  )
+    into v_controles
+  from public.sesion_controles c
+  where c.sesion_id = p_sesion_id and c.desde < p_fin;
+
+  select * into horas, horas_controles, precio_base, precio_total
+  from private.calcular_cobro(extract(epoch from (p_fin - v_inicio)) / 60.0, v_controles, p_precio_manual);
+end;
+$$;
+
+-- Quita el control adicional mas reciente que siga en uso.
+create or replace function public.quitar_control(p_sesion_id bigint)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_control_id bigint;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'La sesion % no esta activa', p_sesion_id;
+  end if;
+
+  select id into v_control_id
+  from public.sesion_controles
+  where sesion_id = p_sesion_id and hasta is null
+  order by desde desc, id desc
+  limit 1;
+  if v_control_id is null then
+    raise exception 'Esta sesion no tiene controles adicionales en uso';
+  end if;
+
+  update public.sesiones
+  set controles_adicionales = controles_adicionales - 1
+  where id = p_sesion_id and estado = 'activa';
+  if not found then
+    raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+  end if;
+
+  update public.sesion_controles set hasta = greatest(now(), desde) where id = v_control_id;
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    perform private.recalcular_regresiva(p_sesion_id);
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  return v_s;
+end;
+$$;
+
+-- Cerrar: el servidor calcula el precio sugerido; p_precio_final (si viene) es lo que se cobra.
+drop function if exists public.cerrar_sesion(bigint, numeric);
+
+create or replace function public.cerrar_sesion(p_sesion_id bigint, p_precio_final numeric default null)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_fin timestamptz;
+  v_c record;
+begin
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio a cobrar no puede ser negativo';
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    v_fin := v_s.hora_inicio + make_interval(mins => v_s.minutos_asignados);
+  else
+    v_fin := now();
+  end if;
+
+  -- En conteo regresivo se respeta el precio especial pactado al abrir.
+  select * into v_c from private.cobro_sesion(p_sesion_id, v_fin, v_s.precio_manual);
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_base = v_c.precio_base,
+      precio_sugerido = v_c.precio_total,
+      precio_total = coalesce(p_precio_final, v_c.precio_total),
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+
+  if v_s.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_s;
+end;
+$$;
+
+revoke all on function public.quitar_control(bigint) from public, anon;
+revoke all on function public.cerrar_sesion(bigint, numeric) from public, anon;
+grant execute on function public.quitar_control(bigint) to authenticated;
+grant execute on function public.cerrar_sesion(bigint, numeric) to authenticated;
+
+-- PUESTOS: nombre unico (sin importar mayusculas) y no se quita uno con sesion activa.
+create unique index if not exists puestos_nombre_unico on public.puestos (lower(trim(nombre)));
+
+alter table public.puestos
+  add constraint puestos_nombre_no_vacio check (length(trim(nombre)) > 0);
+
+create or replace function private.validar_puesto()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if old.activo and not new.activo and exists (
+    select 1 from public.sesiones where puesto_id = new.id and estado = 'activa'
+  ) then
+    raise exception '% tiene una sesion activa; cobrala antes de quitarla', old.nombre;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists puestos_validar on public.puestos;
+create trigger puestos_validar
+  before update on public.puestos
+  for each row execute function private.validar_puesto();
+
+-- Vista en vivo: solo puestos activos; cada control con su entrada y salida.
+drop view if exists public.vista_puestos;
+create view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;
+
+grant select on public.vista_puestos to authenticated;

@@ -34,9 +34,13 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 
   **5. Control que entra a mitad de la sesión.** Se cobra **solo desde que entra**. El tiempo de cada control adicional se redondea igual (a la media hora más cercana). Ej.: 2h de sesión, el 3.er control entra al cumplir la 1.ª hora → 6.000 × 2 + 2.000 × 1 = **$14.000**. Si al redondear el control adicional queda en 0 (ej. se usó 10 min), no se cobra y se aplica el precio por paquete.
 
+  **5b. Quitar un control adicional.** Se puede retirar en cualquier momento; se cobra solo el tiempo que estuvo en uso, redondeado a la media hora más cercana. Ej.: 2h de sesión con un control adicional solo la 1.ª hora → 6.000 × 2 + 2.000 × 1 = **$14.000**. Máximo 2 adicionales en uso a la vez.
+
   **6. Extensión de tiempo (conteo regresivo).** Si el cliente compra más tiempo, el precio se **recalcula sobre el tiempo total**: 1h + 1h = paquete de 2h = $10.000 (no 6.000 + 6.000).
 
-- **Precio manual**: el empleado puede sobreescribir el precio *base* calculado cuando hay una oferta especial (ej. precio fijo pactado). Los controles adicionales se siguen sumando aparte, incluso con precio manual.
+- **Precio al cobrar**: el sistema muestra un **precio sugerido** con el estándar, y quien cobra puede marcar "Cambiar precio" y poner otro valor según la situación. Se guardan ambos (`precio_sugerido` y `precio_total`); el Historial muestra el sugerido cuando se cambió.
+- **Precio especial al abrir (conteo regresivo)**: se puede pactar un precio base fijo al abrir; los controles adicionales se siguen sumando aparte.
+- **Puestos**: el admin agrega, renombra o quita consolas desde la página *Puestos*. Quitar una consola la saca de la Sala pero conserva su historial y se puede reactivar. No se puede quitar una consola con una sesión abierta.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 
 ### Modalidades de cobro (por sesión, elegible en cada PS5 al abrir)

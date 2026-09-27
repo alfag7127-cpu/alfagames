@@ -37,6 +37,8 @@ export interface Sesion {
   horas_controles: number;
   precio_manual: number | null;
   precio_base: number | null;
+  /** Precio que calculó el sistema al cobrar; precio_total puede ser distinto si quien cobró lo cambió. */
+  precio_sugerido: number | null;
   precio_total: number | null;
   estado: EstadoSesion;
   created_at: string;
@@ -57,8 +59,13 @@ export interface PuestoConEstado {
   precio_total: number | null;
   precio_base: number | null;
   precio_manual: number | null;
-  /** Hora en que entró cada control adicional (se cobra desde ahí). */
-  controles_desde: string[];
+  /** Controles adicionales de la sesión: se cobra de `desde` a `hasta` (null = sigue en uso). */
+  controles: ControlAdicional[];
+}
+
+export interface ControlAdicional {
+  desde: string;
+  hasta: string | null;
 }
 
 export interface Gasto {
