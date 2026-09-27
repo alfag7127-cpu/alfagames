@@ -1,3 +1,4 @@
+import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -64,7 +65,7 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 
 @Component({
   selector: 'app-sala',
-  imports: [FormsModule, DecimalPipe],
+  imports: [DuracionPipe, FormsModule, DecimalPipe],
   templateUrl: './sala.html',
 })
 export class Sala implements OnInit, OnDestroy {
@@ -307,6 +308,8 @@ export class Sala implements OnInit, OnDestroy {
   }
 
   readonly maxControles = MAX_CONTROLES_ADICIONALES;
+  /** Atajos de conteo regresivo: de 30 min a 6 h (lo máximo que suelen jugar). */
+  readonly presetsMinutos = [30, 60, 90, 120, 180, 240, 300, 360];
 
   /** Total pactado en el formulario de apertura de conteo regresivo (controles desde el inicio). */
   previewApertura(p: PuestoVM): number {

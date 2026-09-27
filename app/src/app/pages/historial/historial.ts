@@ -1,3 +1,4 @@
+import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -6,7 +7,7 @@ import { SesionesService } from '../../core/sesiones.service';
 
 @Component({
   selector: 'app-historial',
-  imports: [FormsModule, DecimalPipe, DatePipe],
+  imports: [DuracionPipe, FormsModule, DecimalPipe, DatePipe],
   templateUrl: './historial.html',
 })
 export class Historial implements OnInit {
