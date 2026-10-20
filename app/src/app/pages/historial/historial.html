@@ -52,9 +52,12 @@
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Horas cobradas</p>
     <p class="text-2xl font-bold text-slate-900">{{ horasPeriodo() | duracion: 'horas' }}</p>
   </div>
-  <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
-    <p class="text-[11px] uppercase tracking-wide text-slate-500">Promedio por sesión</p>
-    <p class="text-2xl font-bold text-slate-900 tabular-nums">{{ ticketPromedio() | number: '1.0-0' }}</p>
+  <div class="rounded-xl bg-white ring-1 p-4 shadow-sm" [class.ring-amber-300]="minutosSinCobrar() > 0" [class.ring-slate-100]="minutosSinCobrar() === 0">
+    <p class="text-[11px] uppercase tracking-wide text-slate-500">Tiempo jugado sin cobrar</p>
+    <p class="text-2xl font-bold tabular-nums" [class.text-amber-700]="minutosSinCobrar() > 0" [class.text-slate-900]="minutosSinCobrar() === 0">
+      {{ minutosSinCobrar() ? (minutosSinCobrar() | duracion) : '0' }}
+    </p>
+    <p class="text-xs text-slate-400">Promedio por sesión {{ ticketPromedio() | number: '1.0-0' }}</p>
   </div>
 </div>
 
@@ -107,7 +110,22 @@
               <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">
                 {{ s.hora_inicio | date: 'h:mm a' }} – {{ s.hora_fin ? (s.hora_fin | date: 'h:mm a') : '…' }}
               </td>
-              <td class="px-4 py-2.5 text-slate-700">{{ s.horas_cobradas | duracion: 'horas' }}</td>
+              <td class="px-4 py-2.5 text-slate-700">
+                {{ s.horas_cobradas | duracion: 'horas' }}
+                @if (desfaseNotable(s)) {
+                  <span
+                    class="mt-0.5 block w-fit rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+                    [class.bg-amber-100]="desfase(s)! > 0" [class.text-amber-800]="desfase(s)! > 0"
+                    [class.bg-sky-100]="desfase(s)! < 0" [class.text-sky-800]="desfase(s)! < 0"
+                    [title]="'Jugó ' + (s.minutos_reales | duracion) + ' de verdad'"
+                  >
+                    ⚠ {{ desfase(s)! > 0 ? '+' + (desfase(s)! | duracion) + ' sin cobrar' : (-desfase(s)! | duracion) + ' menos' }}
+                  </span>
+                }
+                @if (s.cerrado_por && s.cerrado_por !== s.empleado_id) {
+                  <span class="block text-[11px] text-slate-400">cerró {{ nombreUsuario(s.cerrado_por) }}</span>
+                }
+              </td>
               <td class="px-4 py-2.5 text-slate-500">{{ s.horas_controles ? (s.horas_controles | duracion: 'horas') : '—' }}</td>
               <td class="px-4 py-2.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
                 {{ s.precio_total != null ? (s.precio_total | number: '1.0-0') : '—' }}
@@ -159,6 +177,11 @@
               <p class="text-xs text-slate-500 tabular-nums">
                 {{ s.hora_inicio | date: 'h:mm a' }} – {{ s.hora_fin ? (s.hora_fin | date: 'h:mm a') : '…' }}
                 · {{ s.horas_cobradas | duracion: 'horas' }}
+                @if (desfaseNotable(s)) {
+                  <span [class.text-amber-700]="desfase(s)! > 0" [class.text-sky-700]="desfase(s)! < 0" class="font-semibold">
+                    · ⚠ {{ desfase(s)! > 0 ? '+' + (desfase(s)! | duracion) + ' sin cobrar' : (-desfase(s)! | duracion) + ' menos' }}
+                  </span>
+                }
                 {{ s.modalidad === 'conteo_regresivo' ? '· ⏳ regresivo' : '· ⏱ cronometrado' }}
               </p>
             </div>

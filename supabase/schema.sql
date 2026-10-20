@@ -2976,3 +2976,84 @@ begin
   return v_fila;
 end;
 $$;
+
+-- ============================================================
+-- 24. CUALQUIER USUARIO OPERA CUALQUIER SESION + DESFASE DE TIEMPO (2026-10-20)
+-- ============================================================
+-- En el mostrador cualquier trabajador cierra, pausa, extiende o transfiere sesiones
+-- abiertas por otro. En vez de bloquearlo, se registra quien cerro y cuanto tiempo se
+-- jugo de verdad, para que el historial muestre el desfase contra lo cobrado.
+
+drop policy if exists "sesiones_update_propia_o_admin" on public.sesiones;
+create policy "sesiones_update_authenticated" on public.sesiones
+  for update to authenticated using (true) with check (true);
+
+drop policy if exists "sesion_controles_insert_propia" on public.sesion_controles;
+drop policy if exists "sesion_controles_update_propia" on public.sesion_controles;
+create policy "sesion_controles_insert_authenticated" on public.sesion_controles
+  for insert to authenticated with check (true);
+create policy "sesion_controles_update_authenticated" on public.sesion_controles
+  for update to authenticated using (true) with check (true);
+
+drop policy if exists "sesion_pausas_insert_propia" on public.sesion_pausas;
+drop policy if exists "sesion_pausas_update_propia" on public.sesion_pausas;
+create policy "sesion_pausas_insert_authenticated" on public.sesion_pausas
+  for insert to authenticated with check (true);
+create policy "sesion_pausas_update_authenticated" on public.sesion_pausas
+  for update to authenticated using (true) with check (true);
+
+alter table public.sesiones
+  add column if not exists minutos_reales numeric(7, 1),
+  add column if not exists cerrado_por uuid references public.profiles (id);
+
+-- Cerrar: igual que antes + minutos realmente jugados (sin pausas) y quien cerro.
+create or replace function public.cerrar_sesion(p_sesion_id bigint, p_precio_final numeric default null)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_fin timestamptz;
+  v_c record;
+begin
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio a cobrar no puede ser negativo';
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'Sesion % no existe o ya esta cerrada', p_sesion_id;
+  end if;
+
+  update public.sesion_pausas set hasta = now() where sesion_id = p_sesion_id and hasta is null;
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    v_fin := private.fin_regresiva(p_sesion_id);
+  else
+    v_fin := now();
+  end if;
+
+  select * into v_c from private.cobro_sesion(p_sesion_id, v_fin, v_s.precio_manual);
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_base = v_c.precio_base,
+      precio_sugerido = v_c.precio_total,
+      precio_total = coalesce(p_precio_final, v_c.precio_total),
+      minutos_reales = round(private.minutos_efectivos(p_sesion_id, v_s.hora_inicio, now()), 1),
+      cerrado_por = auth.uid(),
+      pausada = false,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+
+  if v_s.id is null then
+    raise exception 'No se pudo cerrar la sesion % (ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_s;
+end;
+$$;

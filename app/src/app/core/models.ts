@@ -41,6 +41,10 @@ export interface Sesion {
   precio_sugerido: number | null;
   precio_total: number | null;
   estado: EstadoSesion;
+  /** Minutos jugados de verdad (sin pausas) al cerrar; se comparan con lo cobrado. */
+  minutos_reales: number | null;
+  /** Quién cerró (puede ser distinto de quien abrió). */
+  cerrado_por: string | null;
   created_at: string;
 }
 

@@ -152,6 +152,17 @@ export class SesionesService {
     return data as Sesion[];
   }
 
+  /** Mapa id -> nombre de usuario (el admin ve todos los perfiles). */
+  async listarNombresUsuarios(): Promise<Record<string, string>> {
+    const { data, error } = await this.supabase.client.from('profiles').select('id, full_name, role');
+    if (error) throw error;
+    const mapa: Record<string, string> = {};
+    for (const p of data as { id: string; full_name: string | null; role: string }[]) {
+      mapa[p.id] = p.full_name || (p.role === 'admin' ? 'Admin' : 'Trabajador');
+    }
+    return mapa;
+  }
+
   /** Mapa id -> nombre de puesto, útil para mostrar nombres en tablas de historial. */
   async listarNombresPuestos(): Promise<Record<number, string>> {
     const { data, error } = await this.supabase.client.from('puestos').select('id, nombre');

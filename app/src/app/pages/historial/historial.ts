@@ -37,6 +37,7 @@ export class Historial implements OnInit {
   readonly nombresPuestos = signal<Record<number, string>>({});
   readonly ventas = signal<VentaProducto[]>([]);
   readonly nombresProductos = signal<Record<number, string>>({});
+  readonly nombresUsuarios = signal<Record<string, string>>({});
   readonly cargando = signal(false);
   readonly rango = signal<Rango | null>('7');
   desde = sumarDias(fechaColombia(), -6);
@@ -49,6 +50,10 @@ export class Historial implements OnInit {
   );
   readonly totalPeriodo = computed(() => this.totalSala() + this.totalProductos());
   readonly horasPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.horas_cobradas ?? 0), 0));
+  /** Minutos jugados de más (no cobrados) en el período, por cierres con desfase. */
+  readonly minutosSinCobrar = computed(() =>
+    this.finalizadas().reduce((t, s) => t + Math.max(0, this.desfase(s) ?? 0), 0),
+  );
   readonly ticketPromedio = computed(() =>
     this.finalizadas().length ? Math.round(this.totalSala() / this.finalizadas().length) : 0,
   );
@@ -92,6 +97,7 @@ export class Historial implements OnInit {
 
   ngOnInit(): void {
     this.sesionesService.listarNombresPuestos().then((m) => this.nombresPuestos.set(m));
+    this.sesionesService.listarNombresUsuarios().then((m) => this.nombresUsuarios.set(m)).catch(() => undefined);
     this.productosService
       .listar()
       .then((ps) => this.nombresProductos.set(Object.fromEntries(ps.map((p) => [p.id, p.nombre]))));
@@ -140,6 +146,28 @@ export class Historial implements OnInit {
       texto: this.nombresProductos()[id] ?? `Producto #${id}`,
       unidades,
     }));
+  }
+
+  /**
+   * Desfase = minutos jugados de verdad − minutos cobrados (los pactados en regresivo,
+   * las horas cobradas en cronometrado). Positivo: jugó más de lo cobrado.
+   * null si la sesión es anterior a este registro o no se cerró.
+   */
+  desfase(s: Sesion): number | null {
+    if (s.minutos_reales == null || s.estado !== 'finalizada') return null;
+    const cobrados = s.modalidad === 'conteo_regresivo' ? (s.minutos_asignados ?? 0) : (s.horas_cobradas ?? 0) * 60;
+    return Math.round(s.minutos_reales - cobrados);
+  }
+
+  /** Solo se avisa desde 10 minutos (en cronometrado el redondeo da hasta ±15 min normales). */
+  desfaseNotable(s: Sesion): boolean {
+    const d = this.desfase(s);
+    if (d == null) return false;
+    return s.modalidad === 'conteo_regresivo' ? Math.abs(d) >= 10 : Math.abs(d) > 15;
+  }
+
+  nombreUsuario(id: string | null): string {
+    return id ? (this.nombresUsuarios()[id] ?? 'Otro usuario') : '—';
   }
 
   nombrePuesto(puestoId: number): string {
