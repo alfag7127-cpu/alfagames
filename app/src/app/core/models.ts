@@ -201,7 +201,7 @@ export interface ConsolaConEstado {
 
 // ── Potes: movimientos de dinero (préstamos, inversiones, traslados) ──
 
-export type TipoMovimiento = 'prestamo' | 'abono_prestamo' | 'inversion' | 'otro_egreso' | 'otro_ingreso' | 'traslado';
+export type TipoMovimiento = 'saldo_inicial' | 'prestamo' | 'abono_prestamo' | 'inversion' | 'otro_egreso' | 'otro_ingreso' | 'traslado';
 
 export interface PoteMovimiento {
   id: number;
@@ -230,4 +230,40 @@ export interface PrestamoPendiente {
   abonado: number;
   pendiente: number;
   ultimo_movimiento: string;
+}
+
+// ── Productos de la sala ───────────────────────────────────────────────
+
+export interface Producto {
+  id: number;
+  nombre: string;
+  precio_compra: number;
+  precio_venta: number;
+  stock: number;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface VentaProducto {
+  id: number;
+  producto_id: number;
+  cantidad: number;
+  precio_unitario: number;
+  costo_unitario: number;
+  total: number;
+  estado: 'vendida' | 'anulada';
+  empleado_id: string;
+  created_at: string;
+}
+
+// ── Usuarios (función "usuarios") ──────────────────────────────────────
+
+export interface UsuarioApp {
+  id: string;
+  email: string;
+  nombre: string | null;
+  rol: Rol;
+  activo: boolean;
+  ultimo_ingreso: string | null;
+  yo: boolean;
 }

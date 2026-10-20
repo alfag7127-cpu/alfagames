@@ -139,3 +139,10 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 - **Menú**: dos secciones, *Sala* (pestañas: En vivo, Historial, Dashboard, Gastos, Puestos) y *Alquiler* (Consolas, Historial, Gráficas, Inventario y precios).
 - **Ficha de cada consola**: capacidad, juegos instalados y detalles (accesorios, cables, estado), en *Inventario y precios → Ficha*. Al alquilar se guarda una copia de con qué salió; al recibir aparece una lista para revisar y lo que no se marque queda anotado como "Faltó: …".
 - **Movimientos de potes** (pestaña *Potes*, solo admin registra): préstamo (sale, a una persona), abono de préstamo (entra), inversión (sale; compra de consolas, controles…), otro egreso, otro ingreso y traslado entre potes. Cada movimiento cuenta en su fecha. Saldo del pote = cobros de alquiler + entradas − salidas. Los préstamos quedan pendientes por persona hasta que se abonen.
+
+## Roles, productos y saldo inicial (2026-10-20)
+
+- **Roles**: *Admin* ve todo. *Trabajador* solo ve **Sala → En vivo**: abrir, cobrar, pausar, transferir y vender productos. No ve historial, dashboard, gastos, productos (inventario), usuarios ni nada de Alquiler; la base de datos se lo bloquea (RLS), no solo la pantalla.
+- **Usuarios**: el admin crea trabajadores (o admins) en *Sala → Usuarios*, cambia rol y contraseña, y desactiva cuentas (no se borran: su historial se conserva). Usa la función de servidor `usuarios` (Edge Function), que verifica que quien llama sea admin.
+- **Productos de la sala** (*Sala → Productos*, admin): nombre, precio de compra, precio de venta al público y cantidad. "+ Cantidad" registra entrada de mercancía. Las ventas se hacen desde *En vivo* (cualquier usuario) y descuentan el inventario; el admin puede anularlas (las unidades vuelven). Las ventas de productos suman en el Historial de la sala y en el Dashboard.
+- **Saldo inicial de potes**: movimiento "Saldo inicial (antes de la app)" en *Alquiler → Potes*, para cargar el dinero que ya había antes de usar la app.

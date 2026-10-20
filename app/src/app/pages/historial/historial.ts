@@ -2,7 +2,8 @@ import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Sesion } from '../../core/models';
+import { Sesion, VentaProducto } from '../../core/models';
+import { ProductosService } from '../../core/productos.service';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
 import {
@@ -18,6 +19,9 @@ interface GrupoDia {
   fecha: string;
   etiqueta: string;
   sesiones: Sesion[];
+  ventas: VentaProducto[];
+  totalSesiones: number;
+  totalProductos: number;
   total: number;
 }
 
@@ -31,26 +35,39 @@ type Rango = 'hoy' | '7' | '30';
 export class Historial implements OnInit {
   readonly sesiones = signal<Sesion[]>([]);
   readonly nombresPuestos = signal<Record<number, string>>({});
+  readonly ventas = signal<VentaProducto[]>([]);
+  readonly nombresProductos = signal<Record<number, string>>({});
   readonly cargando = signal(false);
   readonly rango = signal<Rango | null>('7');
   desde = sumarDias(fechaColombia(), -6);
   hasta = fechaColombia();
 
   private readonly finalizadas = computed(() => this.sesiones().filter((s) => s.estado === 'finalizada'));
-  readonly totalPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.precio_total ?? 0), 0));
+  readonly totalSala = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.precio_total ?? 0), 0));
+  readonly totalProductos = computed(() =>
+    this.ventas().filter((v) => v.estado === 'vendida').reduce((sum, v) => sum + v.total, 0),
+  );
+  readonly totalPeriodo = computed(() => this.totalSala() + this.totalProductos());
   readonly horasPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.horas_cobradas ?? 0), 0));
   readonly ticketPromedio = computed(() =>
-    this.finalizadas().length ? Math.round(this.totalPeriodo() / this.finalizadas().length) : 0,
+    this.finalizadas().length ? Math.round(this.totalSala() / this.finalizadas().length) : 0,
   );
 
   /** Sesiones agrupadas por día (hora de Colombia), del más reciente al más antiguo. */
   readonly grupos = computed<GrupoDia[]>(() => {
-    const porDia = new Map<string, Sesion[]>();
-    for (const s of this.sesiones()) {
-      const dia = fechaColombia(s.hora_inicio);
-      porDia.set(dia, [...(porDia.get(dia) ?? []), s]);
-    }
-    return Array.from(porDia.entries()).map(([fecha, sesiones]) => ({
+    const porDia = new Map<string, { sesiones: Sesion[]; ventas: VentaProducto[] }>();
+    const dia = (fecha: string) => {
+      if (!porDia.has(fecha)) porDia.set(fecha, { sesiones: [], ventas: [] });
+      return porDia.get(fecha)!;
+    };
+    for (const s of this.sesiones()) dia(fechaColombia(s.hora_inicio)).sesiones.push(s);
+    for (const v of this.ventas()) dia(fechaColombia(v.created_at)).ventas.push(v);
+    return Array.from(porDia.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([fecha, { sesiones, ventas }]) => {
+        const totalSesiones = sesiones.filter((s) => s.estado === 'finalizada').reduce((t, s) => t + (s.precio_total ?? 0), 0);
+        const totalProductos = ventas.filter((v) => v.estado === 'vendida').reduce((t, v) => t + v.total, 0);
+        return {
       fecha,
       etiqueta: new Date(`${fecha}T12:00:00${OFFSET_COLOMBIA}`).toLocaleDateString('es-CO', {
         weekday: 'long',
@@ -58,18 +75,26 @@ export class Historial implements OnInit {
         month: 'long',
         timeZone: ZONA_HORARIA,
       }),
-      sesiones,
-      total: sesiones.filter((s) => s.estado === 'finalizada').reduce((t, s) => t + (s.precio_total ?? 0), 0),
-    }));
+          sesiones,
+          ventas,
+          totalSesiones,
+          totalProductos,
+          total: totalSesiones + totalProductos,
+        };
+      });
   });
 
   constructor(
     private readonly sesionesService: SesionesService,
+    private readonly productosService: ProductosService,
     private readonly toast: ToastService,
   ) {}
 
   ngOnInit(): void {
     this.sesionesService.listarNombresPuestos().then((m) => this.nombresPuestos.set(m));
+    this.productosService
+      .listar()
+      .then((ps) => this.nombresProductos.set(Object.fromEntries(ps.map((p) => [p.id, p.nombre]))));
     this.cargar();
   }
 
@@ -88,18 +113,33 @@ export class Historial implements OnInit {
   async cargar(): Promise<void> {
     this.cargando.set(true);
     try {
-      this.sesiones.set(
-        await this.sesionesService.listarHistorial({
-          // Días completos en hora de Colombia (no en UTC del servidor ni del dispositivo).
-          desde: this.desde ? inicioDiaColombia(this.desde) : undefined,
-          hasta: this.hasta ? finDiaColombia(this.hasta) : undefined,
-        }),
-      );
+      // Días completos en hora de Colombia (no en UTC del servidor ni del dispositivo).
+      const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
+      const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
+      const [sesiones, ventas] = await Promise.all([
+        this.sesionesService.listarHistorial({ desde, hasta }),
+        this.productosService.ventas(desde, hasta),
+      ]);
+      this.sesiones.set(sesiones);
+      this.ventas.set(ventas);
     } catch (e) {
       this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo cargar el historial.');
     } finally {
       this.cargando.set(false);
     }
+  }
+
+  /** Ventas de productos de un día, resumidas: "3 × Gaseosa, 2 × Pan". */
+  resumenProductos(ventas: VentaProducto[]): { texto: string; unidades: number }[] {
+    const porProducto = new Map<number, number>();
+    for (const v of ventas) {
+      if (v.estado !== 'vendida') continue;
+      porProducto.set(v.producto_id, (porProducto.get(v.producto_id) ?? 0) + v.cantidad);
+    }
+    return Array.from(porProducto.entries()).map(([id, unidades]) => ({
+      texto: this.nombresProductos()[id] ?? `Producto #${id}`,
+      unidades,
+    }));
   }
 
   nombrePuesto(puestoId: number): string {

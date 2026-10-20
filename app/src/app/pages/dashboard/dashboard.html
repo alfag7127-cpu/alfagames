@@ -8,7 +8,7 @@
         <p class="stat-label text-xs uppercase tracking-wide">Ventas de hoy</p>
         <p class="text-2xl font-bold mt-1">{{ hoy()?.ventas ?? 0 | number: '1.0-0' }} COP</p>
         <p class="stat-label text-xs mt-1">
-          Sala {{ hoy()?.ventasSala ?? 0 | number: '1.0-0' }} · Alquiler {{ hoy()?.ventasAlquiler ?? 0 | number: '1.0-0' }}
+          Sala {{ hoy()?.ventasSala ?? 0 | number: '1.0-0' }} · Productos {{ hoy()?.ventasProductos ?? 0 | number: '1.0-0' }} · Alquiler {{ hoy()?.ventasAlquiler ?? 0 | number: '1.0-0' }}
         </p>
       </div>
       <div class="stat-tile rounded-xl shadow-sm p-4">
@@ -71,6 +71,7 @@
           <tr class="text-left border-b" style="border-color: var(--grid-line)">
             <th class="px-3 py-2 stat-label">Día</th>
             <th class="px-3 py-2 stat-label">Sala</th>
+            <th class="px-3 py-2 stat-label">Productos</th>
             <th class="px-3 py-2 stat-label">Alquiler</th>
             <th class="px-3 py-2 stat-label">Ventas</th>
             <th class="px-3 py-2 stat-label">Gastos</th>
@@ -82,6 +83,7 @@
             <tr class="border-b" style="border-color: var(--grid-line); color: var(--text-primary)">
               <td class="px-3 py-2">{{ d.etiqueta }}</td>
               <td class="px-3 py-2">{{ d.ventasSala | number: '1.0-0' }}</td>
+              <td class="px-3 py-2">{{ d.ventasProductos | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.ventasAlquiler | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.ventas | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.gastos | number: '1.0-0' }}</td>
@@ -98,6 +100,7 @@
         <tfoot>
           <tr class="font-semibold" style="color: var(--text-primary)">
             <td class="px-3 py-2">Total 7 días</td>
+            <td class="px-3 py-2"></td>
             <td class="px-3 py-2"></td>
             <td class="px-3 py-2"></td>
             <td class="px-3 py-2">{{ totalPeriodo().ventas | number: '1.0-0' }}</td>

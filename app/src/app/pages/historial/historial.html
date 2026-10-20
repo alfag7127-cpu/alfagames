@@ -42,7 +42,7 @@
   <div class="rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 text-white p-4 shadow-sm">
     <p class="text-[11px] uppercase tracking-wide text-indigo-200">Total cobrado</p>
     <p class="text-2xl font-bold tabular-nums">{{ totalPeriodo() | number: '1.0-0' }}</p>
-    <p class="text-xs text-indigo-200">COP</p>
+    <p class="text-xs text-indigo-200 tabular-nums">Sala {{ totalSala() | number: '1.0-0' }} · Productos {{ totalProductos() | number: '1.0-0' }}</p>
   </div>
   <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Sesiones</p>
@@ -64,7 +64,11 @@
     <header class="flex items-center justify-between gap-3 bg-slate-50 px-4 py-2.5 border-b border-slate-100">
       <h2 class="font-semibold text-slate-800 capitalize">{{ g.etiqueta }}</h2>
       <p class="text-sm text-slate-500">
-        {{ g.sesiones.length }} sesion{{ g.sesiones.length === 1 ? '' : 'es' }} ·
+        {{ g.sesiones.length }} sesion{{ g.sesiones.length === 1 ? '' : 'es' }}
+        @if (g.totalProductos) {
+          · 🛒 {{ g.totalProductos | number: '1.0-0' }}
+        }
+        ·
         <span class="font-bold text-slate-900 tabular-nums">{{ g.total | number: '1.0-0' }} COP</span>
       </p>
     </header>
@@ -131,6 +135,16 @@
         </tbody>
       </table>
     </div>
+
+    @if (resumenProductos(g.ventas).length) {
+      <div class="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-sky-50/50 px-4 py-2 text-xs text-slate-600">
+        <span class="font-semibold text-slate-700">🛒 Productos:</span>
+        @for (r of resumenProductos(g.ventas); track r.texto) {
+          <span class="rounded-full bg-white px-2 py-0.5 ring-1 ring-slate-200">{{ r.unidades }} × {{ r.texto }}</span>
+        }
+        <span class="ml-auto font-bold text-slate-900 tabular-nums">{{ g.totalProductos | number: '1.0-0' }}</span>
+      </div>
+    }
 
     <!-- Celular: tarjetas -->
     <ul class="md:hidden divide-y divide-slate-100">

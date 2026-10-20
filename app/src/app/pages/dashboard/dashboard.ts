@@ -3,13 +3,15 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { GastosService } from '../../core/gastos.service';
 import { SesionesService } from '../../core/sesiones.service';
 import { AlquilerService } from '../../core/alquiler.service';
+import { ProductosService } from '../../core/productos.service';
 import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 
 interface DiaResumen {
   fecha: string; // YYYY-MM-DD, hora de Colombia
   etiqueta: string; // "lun 15"
-  ventas: number; // sala + alquiler
+  ventas: number; // sala + productos + alquiler
   ventasSala: number;
+  ventasProductos: number;
   ventasAlquiler: number;
   gastos: number;
 }
@@ -47,6 +49,7 @@ export class Dashboard implements OnInit {
     private readonly sesionesService: SesionesService,
     private readonly gastosService: GastosService,
     private readonly alquilerService: AlquilerService,
+    private readonly productosService: ProductosService,
   ) {}
 
   ngOnInit(): void {
@@ -59,16 +62,23 @@ export class Dashboard implements OnInit {
     // Los 7 días se cuentan en hora de Colombia, no en la del dispositivo.
     const desde = sumarDias(fechaColombia(), -6);
 
-    const [sesiones, gastos, alquileres, extensiones] = await Promise.all([
+    const [sesiones, gastos, alquileres, extensiones, ventasProductos] = await Promise.all([
       this.sesionesService.listarHistorial({ desde: inicioDiaColombia(desde) }),
       this.gastosService.listar(desde),
       this.alquilerService.historial(inicioDiaColombia(desde)),
       this.alquilerService.pagosExtensiones(inicioDiaColombia(desde)),
+      this.productosService.ventas(inicioDiaColombia(desde)),
     ]);
 
-    const porFecha = new Map<string, { ventasSala: number; ventasAlquiler: number; gastos: number }>();
+    const porFecha = new Map<string, { ventasSala: number; ventasProductos: number; ventasAlquiler: number; gastos: number }>();
     for (let i = 0; i < 7; i++) {
-      porFecha.set(sumarDias(desde, i), { ventasSala: 0, ventasAlquiler: 0, gastos: 0 });
+      porFecha.set(sumarDias(desde, i), { ventasSala: 0, ventasProductos: 0, ventasAlquiler: 0, gastos: 0 });
+    }
+
+    for (const v of ventasProductos) {
+      if (v.estado !== 'vendida') continue;
+      const acc = porFecha.get(fechaColombia(v.created_at));
+      if (acc) acc.ventasProductos += v.total;
     }
 
     for (const s of sesiones) {
@@ -100,8 +110,9 @@ export class Dashboard implements OnInit {
       Array.from(porFecha.entries()).map(([fecha, v]) => ({
         fecha,
         etiqueta: etiquetaCorta(fecha),
-        ventas: v.ventasSala + v.ventasAlquiler,
+        ventas: v.ventasSala + v.ventasProductos + v.ventasAlquiler,
         ventasSala: v.ventasSala,
+        ventasProductos: v.ventasProductos,
         ventasAlquiler: v.ventasAlquiler,
         gastos: v.gastos,
       })),

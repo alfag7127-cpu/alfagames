@@ -6,7 +6,7 @@ import { Login } from './pages/login/login';
 import { Home } from './pages/home/home';
 import { Sala } from './pages/sala/sala';
 
-// Dos secciones: Sala (con sus pestañas) y Alquiler. La Sala en vivo carga de una vez
+// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo. La Sala en vivo carga de una vez
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
@@ -21,7 +21,21 @@ export const routes: Routes = [
         component: SalaLayout,
         children: [
           { path: '', component: Sala, pathMatch: 'full' },
-          { path: 'historial', loadComponent: () => import('./pages/historial/historial').then((m) => m.Historial) },
+          {
+            path: 'historial',
+            canActivate: [adminGuard],
+            loadComponent: () => import('./pages/historial/historial').then((m) => m.Historial),
+          },
+          {
+            path: 'productos',
+            canActivate: [adminGuard],
+            loadComponent: () => import('./pages/productos/productos').then((m) => m.Productos),
+          },
+          {
+            path: 'usuarios',
+            canActivate: [adminGuard],
+            loadComponent: () => import('./pages/usuarios/usuarios').then((m) => m.Usuarios),
+          },
           {
             path: 'dashboard',
             canActivate: [adminGuard],
@@ -39,7 +53,11 @@ export const routes: Routes = [
           },
         ],
       },
-      { path: 'alquiler', loadComponent: () => import('./pages/alquiler/alquiler').then((m) => m.AlquilerPage) },
+      {
+        path: 'alquiler',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./pages/alquiler/alquiler').then((m) => m.AlquilerPage),
+      },
       // Direcciones viejas (enlaces guardados) a su nuevo lugar dentro de Sala.
       { path: 'historial', redirectTo: 'sala/historial' },
       { path: 'dashboard', redirectTo: 'sala/dashboard' },

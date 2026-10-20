@@ -16,6 +16,7 @@ export interface NuevoMovimiento {
 export const TIPOS_SALIDA: TipoMovimiento[] = ['prestamo', 'inversion', 'otro_egreso'];
 
 export const NOMBRE_TIPO: Record<TipoMovimiento, string> = {
+  saldo_inicial: 'Saldo inicial (antes de la app)',
   prestamo: 'Préstamo',
   abono_prestamo: 'Abono de préstamo',
   inversion: 'Inversión (compras)',

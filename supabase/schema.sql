@@ -2719,3 +2719,211 @@ where tipo in ('prestamo', 'abono_prestamo')
 group by trim(persona);
 
 alter publication supabase_realtime add table public.pote_movimientos;
+
+-- ============================================================
+-- 22. SALDO INICIAL DE POTES, ALQUILER SOLO ADMIN Y PRODUCTOS DE LA SALA (2026-10-20)
+-- ============================================================
+
+-- ── Saldo inicial: lo que ya habia en cada pote antes de usar la app (entra al pote).
+alter table public.pote_movimientos drop constraint if exists pote_movimientos_tipo_check;
+alter table public.pote_movimientos add constraint pote_movimientos_tipo_check
+  check (tipo in ('saldo_inicial', 'prestamo', 'abono_prestamo', 'inversion', 'otro_egreso', 'otro_ingreso', 'traslado'));
+
+create or replace view public.vista_pote_efectos
+with (security_invoker = true) as
+select m.id, m.fecha, m.tipo, m.pote, -m.monto as monto
+from public.pote_movimientos m
+where m.tipo in ('prestamo', 'inversion', 'otro_egreso', 'traslado')
+union all
+select m.id, m.fecha, m.tipo, m.pote, m.monto
+from public.pote_movimientos m
+where m.tipo in ('saldo_inicial', 'abono_prestamo', 'otro_ingreso')
+union all
+select m.id, m.fecha, m.tipo, m.pote_destino, m.monto
+from public.pote_movimientos m
+where m.tipo = 'traslado';
+
+-- ── Alquiler y potes: solo el admin (el trabajador solo opera la sala en vivo).
+do $$
+declare
+  t text;
+  pol record;
+begin
+  foreach t in array array[
+    'alquiler_consolas', 'alquiler_tarifas', 'alquiler_config', 'alquileres',
+    'alquiler_extensiones', 'alquiler_pagos', 'pote_movimientos'
+  ] loop
+    for pol in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
+      execute format('drop policy %I on public.%I', pol.policyname, t);
+    end loop;
+    execute format(
+      'create policy %I on public.%I for all to authenticated using (private.is_admin()) with check (private.is_admin())',
+      t || '_solo_admin', t
+    );
+  end loop;
+end $$;
+
+drop policy if exists "contratos_select" on storage.objects;
+drop policy if exists "contratos_insert" on storage.objects;
+drop policy if exists "contratos_delete_admin" on storage.objects;
+create policy "contratos_solo_admin" on storage.objects
+  for all to authenticated
+  using (bucket_id = 'contratos' and private.is_admin())
+  with check (bucket_id = 'contratos' and private.is_admin());
+
+-- ── Productos de la sala (gaseosas, panes, snacks...).
+create table if not exists public.productos (
+  id bigint generated always as identity primary key,
+  nombre text not null check (length(trim(nombre)) > 0),
+  precio_compra numeric(10, 0) not null default 0 check (precio_compra >= 0),
+  precio_venta numeric(10, 0) not null check (precio_venta > 0),
+  stock int not null default 0 check (stock >= 0),
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists productos_nombre_unico on public.productos (lower(trim(nombre)));
+
+-- Cada vez que entra mercancia (compra), con su costo.
+create table if not exists public.producto_entradas (
+  id bigint generated always as identity primary key,
+  producto_id bigint not null references public.productos (id) on delete cascade,
+  cantidad int not null check (cantidad > 0),
+  precio_compra numeric(10, 0) not null check (precio_compra >= 0),
+  admin_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.ventas_productos (
+  id bigint generated always as identity primary key,
+  producto_id bigint not null references public.productos (id),
+  cantidad int not null check (cantidad > 0),
+  precio_unitario numeric(10, 0) not null check (precio_unitario >= 0),
+  costo_unitario numeric(10, 0) not null default 0,
+  total numeric(10, 0) not null check (total >= 0),
+  estado text not null default 'vendida' check (estado in ('vendida', 'anulada')),
+  empleado_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ventas_productos_por_fecha on public.ventas_productos (created_at);
+
+alter table public.productos enable row level security;
+alter table public.producto_entradas enable row level security;
+alter table public.ventas_productos enable row level security;
+
+-- El trabajador ve los productos para vender; solo el admin los crea o edita.
+create policy "productos_select" on public.productos for select to authenticated using (true);
+create policy "productos_admin" on public.productos for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+create policy "producto_entradas_admin" on public.producto_entradas for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+create policy "ventas_productos_select" on public.ventas_productos for select to authenticated using (true);
+create policy "ventas_productos_admin" on public.ventas_productos for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+
+-- Vender: descuenta inventario. SECURITY DEFINER porque el trabajador no puede editar
+-- productos directamente; la funcion valida todo (sesion iniciada, stock, cantidades).
+create or replace function public.vender_producto(
+  p_producto_id bigint,
+  p_cantidad int,
+  p_precio_unitario numeric default null
+)
+returns public.ventas_productos
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_producto public.productos;
+  v_precio numeric;
+  v_fila public.ventas_productos;
+begin
+  if auth.uid() is null then
+    raise exception 'Inicia sesion para vender';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser mayor a 0';
+  end if;
+  if p_precio_unitario is not null and p_precio_unitario < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select * into v_producto from public.productos where id = p_producto_id for update;
+  if v_producto.id is null or not v_producto.activo then
+    raise exception 'El producto no existe o no esta a la venta';
+  end if;
+  if v_producto.stock < p_cantidad then
+    raise exception 'Solo quedan % de %', v_producto.stock, v_producto.nombre;
+  end if;
+
+  v_precio := coalesce(p_precio_unitario, v_producto.precio_venta);
+  update public.productos set stock = stock - p_cantidad where id = p_producto_id;
+
+  insert into public.ventas_productos (producto_id, cantidad, precio_unitario, costo_unitario, total, empleado_id)
+  values (p_producto_id, p_cantidad, v_precio, v_producto.precio_compra, v_precio * p_cantidad, auth.uid())
+  returning * into v_fila;
+  return v_fila;
+end;
+$$;
+
+-- Anular una venta (solo admin): devuelve las unidades al inventario.
+create or replace function public.anular_venta_producto(p_venta_id bigint)
+returns public.ventas_productos
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_fila public.ventas_productos;
+begin
+  if not private.is_admin() then
+    raise exception 'Solo el admin puede anular ventas';
+  end if;
+  update public.ventas_productos set estado = 'anulada'
+  where id = p_venta_id and estado = 'vendida'
+  returning * into v_fila;
+  if v_fila.id is null then
+    raise exception 'La venta % no existe o ya estaba anulada', p_venta_id;
+  end if;
+  update public.productos set stock = stock + v_fila.cantidad where id = v_fila.producto_id;
+  return v_fila;
+end;
+$$;
+
+-- Entrada de mercancia (solo admin): suma al inventario y actualiza el precio de compra.
+create or replace function public.agregar_stock(p_producto_id bigint, p_cantidad int, p_precio_compra numeric default null)
+returns public.productos
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_producto public.productos;
+begin
+  if not private.is_admin() then
+    raise exception 'Solo el admin puede cargar inventario';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser mayor a 0';
+  end if;
+  update public.productos
+  set stock = stock + p_cantidad,
+      precio_compra = coalesce(p_precio_compra, precio_compra)
+  where id = p_producto_id
+  returning * into v_producto;
+  if v_producto.id is null then
+    raise exception 'El producto % no existe', p_producto_id;
+  end if;
+  insert into public.producto_entradas (producto_id, cantidad, precio_compra)
+  values (p_producto_id, p_cantidad, v_producto.precio_compra);
+  return v_producto;
+end;
+$$;
+
+revoke all on function public.vender_producto(bigint, int, numeric) from public, anon;
+revoke all on function public.anular_venta_producto(bigint) from public, anon;
+revoke all on function public.agregar_stock(bigint, int, numeric) from public, anon;
+grant execute on function public.vender_producto(bigint, int, numeric) to authenticated;
+grant execute on function public.anular_venta_producto(bigint) to authenticated;
+grant execute on function public.agregar_stock(bigint, int, numeric) to authenticated;
+
+alter publication supabase_realtime add table public.productos, public.ventas_productos;

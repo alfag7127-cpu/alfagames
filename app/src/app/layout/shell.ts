@@ -23,7 +23,7 @@ export class Shell {
   /** Solo dos secciones; cada una tiene sus pestañas adentro. */
   readonly enlaces: EnlaceMenu[] = [
     { ruta: '/sala', icono: '🎮', texto: 'Sala', soloAdmin: false },
-    { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', soloAdmin: false },
+    { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', soloAdmin: true },
   ];
 
   constructor(

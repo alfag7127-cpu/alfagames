@@ -1,6 +1,6 @@
 <div class="min-h-screen flex items-center justify-center p-4 banner-sala !rounded-none">
   <form
-    class="w-full max-w-sm bg-white rounded-xl shadow p-8 space-y-4"
+    class="w-full max-w-sm bg-white text-slate-900 rounded-xl shadow-2xl p-8 space-y-4"
     (ngSubmit)="submit()"
   >
     <img src="img/alfa-games.jpg" alt="Alfa Games" class="mx-auto w-56 h-auto mix-blend-multiply" />
@@ -13,7 +13,7 @@
         name="email"
         [(ngModel)]="email"
         required
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
     </div>
 
@@ -24,7 +24,7 @@
         name="password"
         [(ngModel)]="password"
         required
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
     </div>
 

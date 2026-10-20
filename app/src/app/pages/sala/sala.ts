@@ -1,4 +1,5 @@
 import { formatearDuracion } from '../../shared/duracion.pipe';
+import { VentaProductos } from '../../shared/venta-productos';
 import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
@@ -72,7 +73,7 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 
 @Component({
   selector: 'app-sala',
-  imports: [DuracionPipe, FormsModule, DecimalPipe],
+  imports: [DuracionPipe, VentaProductos, FormsModule, DecimalPipe],
   templateUrl: './sala.html',
 })
 export class Sala implements OnInit, OnDestroy {

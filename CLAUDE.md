@@ -17,6 +17,10 @@ Si cambia una tarifa, actualiza los dos lados, `docs/PLAN.md` y los casos de `pr
 
 Módulo aparte (página `/alquiler`): tablas `alquiler_consolas`, `alquiler_tarifas`, `alquiler_config` (fila única: controles sueltos y precio por control extra) y `alquileres`; vista `vista_alquiler_consolas`; RPC `alquilar_consola`, `extender_alquiler` (pagos en `alquiler_extensiones`), `devolver_alquiler`, `cancelar_alquiler`, `alquiler_controles_libres`. Pagos por pote (`llave` = Daviplata, `efectivo`) en `alquiler_pagos`, repartidos por `private.registrar_pagos`; componente `shared/pago-potes.ts`. Ficha por consola (`capacidad`, `juegos`, `detalles`) copiada al alquiler (`juegos_entregados`, `detalles_entregados`). Movimientos de dinero en `pote_movimientos` (solo admin), saldos en `vista_potes`, préstamos en `vista_prestamos_pendientes`. Contratos en el bucket privado `contratos` de Storage (`<alquiler_id>/<archivo>`), componente `shared/contratos.ts`. Reglas en `docs/PLAN.md`.
 
+## Roles, productos y usuarios
+
+Admin ve todo; empleado (trabajador) solo Sala → En vivo. Alquiler y potes son solo admin también en RLS (políticas `*_solo_admin`). Productos: `productos`, `producto_entradas`, `ventas_productos`; RPC `vender_producto` (SECURITY DEFINER, descuenta stock), `agregar_stock`, `anular_venta_producto`. Usuarios: Edge Function `supabase/functions/usuarios` (listar, crear, rol, password, desactivar/activar) con verificación de admin.
+
 ## Fechas
 
 Todo en hora de Colombia: usar `app/src/app/core/zona-horaria.ts` para días y filtros (nunca `toISOString().slice(0, 10)` para "hoy"). `DatePipe` ya viene configurado con locale `es-CO` y zona `-0500` en `app.config.ts`.
