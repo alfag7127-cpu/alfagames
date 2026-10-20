@@ -26,7 +26,6 @@ interface PestanaSala {
       </div>
     </section>
 
-    @if (auth.isAdmin()) {
     <div class="flex gap-1 mb-4 rounded-xl bg-slate-200/70 p-1 text-sm font-medium w-full sm:w-fit overflow-x-auto">
       @for (p of pestanas; track p.ruta) {
         @if (!p.soloAdmin || auth.isAdmin()) {
@@ -41,19 +40,18 @@ interface PestanaSala {
         }
       }
     </div>
-    }
     <router-outlet />
   `,
 })
 export class SalaLayout {
   readonly pestanas: PestanaSala[] = [
     { ruta: '/sala', texto: '🎮 En vivo', soloAdmin: false, exacta: true },
+    { ruta: '/sala/ventas', texto: '🛒 Ventas', soloAdmin: false, exacta: false },
     { ruta: '/sala/historial', texto: '📋 Historial', soloAdmin: true, exacta: false },
-    { ruta: '/sala/productos', texto: '🛒 Productos', soloAdmin: true, exacta: false },
+    { ruta: '/sala/productos', texto: '📦 Productos', soloAdmin: true, exacta: false },
     { ruta: '/sala/dashboard', texto: '📊 Dashboard', soloAdmin: true, exacta: false },
     { ruta: '/sala/gastos', texto: '💸 Gastos', soloAdmin: true, exacta: false },
     { ruta: '/sala/puestos', texto: '🕹️ Puestos', soloAdmin: true, exacta: false },
-    { ruta: '/sala/usuarios', texto: '👥 Usuarios', soloAdmin: true, exacta: false },
   ];
 
   constructor(readonly auth: AuthService) {}

@@ -6,7 +6,7 @@ import { Login } from './pages/login/login';
 import { Home } from './pages/home/home';
 import { Sala } from './pages/sala/sala';
 
-// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo. La Sala en vivo carga de una vez
+// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo y Ventas. La Sala en vivo carga de una vez
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
@@ -31,11 +31,9 @@ export const routes: Routes = [
             canActivate: [adminGuard],
             loadComponent: () => import('./pages/productos/productos').then((m) => m.Productos),
           },
-          {
-            path: 'usuarios',
-            canActivate: [adminGuard],
-            loadComponent: () => import('./pages/usuarios/usuarios').then((m) => m.Usuarios),
-          },
+          // Ventas de productos: también para el trabajador.
+          { path: 'ventas', loadComponent: () => import('./pages/ventas/ventas').then((m) => m.Ventas) },
+          { path: 'usuarios', redirectTo: '/usuarios' },
           {
             path: 'dashboard',
             canActivate: [adminGuard],
@@ -52,6 +50,11 @@ export const routes: Routes = [
             loadComponent: () => import('./pages/puestos/puestos').then((m) => m.Puestos),
           },
         ],
+      },
+      {
+        path: 'usuarios',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./pages/usuarios/usuarios').then((m) => m.Usuarios),
       },
       {
         path: 'alquiler',
