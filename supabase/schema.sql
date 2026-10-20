@@ -2927,3 +2927,52 @@ grant execute on function public.anular_venta_producto(bigint) to authenticated;
 grant execute on function public.agregar_stock(bigint, int, numeric) to authenticated;
 
 alter publication supabase_realtime add table public.productos, public.ventas_productos;
+
+-- ============================================================
+-- 23. VENDER PRODUCTO: PRECIO DISTINTO AL DE LISTA SOLO ADMIN (2026-10-20)
+-- ============================================================
+-- vender_producto es SECURITY DEFINER (el trabajador vende pero no edita productos).
+-- Para que no se pueda vender por la API a un precio inventado, el precio manual
+-- solo aplica si quien vende es admin.
+create or replace function public.vender_producto(
+  p_producto_id bigint,
+  p_cantidad int,
+  p_precio_unitario numeric default null
+)
+returns public.ventas_productos
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_producto public.productos;
+  v_precio numeric;
+  v_fila public.ventas_productos;
+begin
+  if auth.uid() is null then
+    raise exception 'Inicia sesion para vender';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser mayor a 0';
+  end if;
+  if p_precio_unitario is not null and p_precio_unitario < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select * into v_producto from public.productos where id = p_producto_id for update;
+  if v_producto.id is null or not v_producto.activo then
+    raise exception 'El producto no existe o no esta a la venta';
+  end if;
+  if v_producto.stock < p_cantidad then
+    raise exception 'Solo quedan % de %', v_producto.stock, v_producto.nombre;
+  end if;
+
+  v_precio := case when private.is_admin() then coalesce(p_precio_unitario, v_producto.precio_venta) else v_producto.precio_venta end;
+  update public.productos set stock = stock - p_cantidad where id = p_producto_id;
+
+  insert into public.ventas_productos (producto_id, cantidad, precio_unitario, costo_unitario, total, empleado_id)
+  values (p_producto_id, p_cantidad, v_precio, v_producto.precio_compra, v_precio * p_cantidad, auth.uid())
+  returning * into v_fila;
+  return v_fila;
+end;
+$$;
