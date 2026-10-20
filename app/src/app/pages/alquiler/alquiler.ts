@@ -9,11 +9,12 @@ import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { Contratos } from '../../shared/contratos';
 import { GraficaProducido } from './grafica-producido';
+import { Potes } from './potes';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
-type Pestana = 'consolas' | 'historial' | 'graficas' | 'inventario';
+type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'inventario';
 
 interface ConsolaVM extends ConsolaConEstado {
   procesando: boolean;
@@ -40,6 +41,10 @@ interface ConsolaVM extends ConsolaConEstado {
   extPagoModo: ModoPago | null;
   extPagoLlave: number | null;
   verContrato: boolean;
+  /** Ficha visible (juegos, capacidad, detalles). */
+  verFicha: boolean;
+  /** Devolución: lo que ya se revisó de la ficha entregada. */
+  revisados: string[];
   // Formulario de devolución
   devolverAbierto: boolean;
   ajustarPrecioDevolucion: boolean;
@@ -71,6 +76,8 @@ const FORM_VACIO = {
   extPagoModo: null,
   extPagoLlave: null,
   verContrato: false,
+  verFicha: false,
+  revisados: [] as string[],
   devolverAbierto: false,
   ajustarPrecioDevolucion: false,
   precioDevolucion: null,
@@ -80,7 +87,7 @@ const FORM_VACIO = {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido, Potes],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -117,6 +124,12 @@ export class AlquilerPage implements OnInit, OnDestroy {
       .filter((a) => a.estado !== 'cancelado')
       .reduce((s, a) => s + this.totalPagado(a), 0),
   );
+  // Admin: ficha de inventario de una consola
+  readonly fichaAbierta = signal<number | null>(null);
+  fichaCapacidad = '';
+  fichaJuegos = '';
+  fichaDetalles = '';
+
   /** Historial: qué fila tiene abierto su contrato. */
   readonly contratoAbierto = signal<number | null>(null);
   /** Pagos del período por pote (cuentan el día en que entró el dinero). */
@@ -363,7 +376,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
   // ── Devolver / cancelar ──
 
   abrirDevolucion(c: ConsolaVM): void {
-    this.actualizar(c.id, { devolverAbierto: true, extenderAbierto: false, ajustarPrecioDevolucion: false, precioDevolucion: c.precio_total, notasDevolucion: '' });
+    this.actualizar(c.id, {
+      devolverAbierto: true,
+      extenderAbierto: false,
+      ajustarPrecioDevolucion: false,
+      precioDevolucion: c.precio_total,
+      notasDevolucion: '',
+      revisados: [],
+    });
   }
 
   async devolver(c: ConsolaVM): Promise<void> {
@@ -374,12 +394,19 @@ export class AlquilerPage implements OnInit, OnDestroy {
     if (this.hayDiferenciaDevolucion(c) && !c.devPote) {
       return this.toast.error('Indica en qué pote entra (o sale) la diferencia.');
     }
+    const faltantes = this.itemsRevision(c).filter((i) => !c.revisados.includes(i));
+    if (faltantes.length && !confirm(`No marcaste como revisado: ${faltantes.join(', ')}.\n¿Registrar la devolución con eso como faltante?`)) {
+      return;
+    }
+    const notasDevolucion = [c.notasDevolucion.trim(), faltantes.length ? `Faltó: ${faltantes.join(', ')}` : '']
+      .filter(Boolean)
+      .join(' · ');
     this.actualizar(c.id, { procesando: true });
     try {
       const a = await this.alquiler.devolver(
         c.alquiler_id,
         c.ajustarPrecioDevolucion ? c.precioDevolucion : null,
-        c.notasDevolucion || null,
+        notasDevolucion || null,
         this.hayDiferenciaDevolucion(c) ? c.devPote : null,
       );
       this.toast.exito(`${c.nombre} recibida. Total: $${a.precio_total.toLocaleString('es-CO')} COP.`);
@@ -388,6 +415,22 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.toast.error(this.mensajeError(e));
       this.actualizar(c.id, { procesando: false });
     }
+  }
+
+  /** Lo que hay que revisar al recoger: juegos entregados y los detalles de la ficha. */
+  itemsRevision(c: ConsolaVM): string[] {
+    const items = [...(c.juegos_entregados ?? [])];
+    if (c.detalles_entregados) items.push(`Detalles: ${c.detalles_entregados}`);
+    return items;
+  }
+
+  toggleRevisado(c: ConsolaVM, item: string): void {
+    const revisados = c.revisados.includes(item) ? c.revisados.filter((x) => x !== item) : [...c.revisados, item];
+    this.actualizar(c.id, { revisados });
+  }
+
+  marcarTodoRevisado(c: ConsolaVM): void {
+    this.actualizar(c.id, { revisados: this.itemsRevision(c) });
   }
 
   hayDiferenciaDevolucion(c: ConsolaVM): boolean {
@@ -459,6 +502,37 @@ export class AlquilerPage implements OnInit, OnDestroy {
     if (c.activo && !confirm(`¿Quitar ${c.nombre} del inventario? Su historial se conserva.`)) return;
     try {
       await this.alquiler.actualizarConsola(c.id, { activo: !c.activo });
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    }
+  }
+
+  abrirFicha(c: ConsolaVM): void {
+    if (this.fichaAbierta() === c.id) {
+      this.fichaAbierta.set(null);
+      return;
+    }
+    this.fichaCapacidad = c.capacidad ?? '';
+    this.fichaJuegos = (c.juegos ?? []).join('\n');
+    this.fichaDetalles = c.detalles ?? '';
+    this.fichaAbierta.set(c.id);
+  }
+
+  /** Juegos: uno por línea (también acepta comas). */
+  async guardarFicha(c: ConsolaVM): Promise<void> {
+    const juegos = this.fichaJuegos
+      .split(/[\n,]/)
+      .map((j) => j.trim())
+      .filter(Boolean);
+    try {
+      await this.alquiler.actualizarConsola(c.id, {
+        capacidad: this.fichaCapacidad.trim() || null,
+        juegos,
+        detalles: this.fichaDetalles.trim() || null,
+      });
+      this.toast.exito(`Ficha de ${c.nombre} guardada (${juegos.length} juego${juegos.length === 1 ? '' : 's'}).`);
+      this.fichaAbierta.set(null);
       await this.cargar();
     } catch (e) {
       this.toast.error(this.mensajeError(e));

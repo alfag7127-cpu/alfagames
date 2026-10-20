@@ -96,6 +96,9 @@ export interface AlquilerConsola {
   controles_incluidos: number;
   activo: boolean;
   created_at: string;
+  capacidad: string | null;
+  juegos: string[];
+  detalles: string | null;
 }
 
 export interface AlquilerTarifa {
@@ -138,6 +141,9 @@ export interface Alquiler {
   estado: EstadoAlquiler;
   notas: string | null;
   created_at: string;
+  /** Copia de la ficha de la consola al momento de entregarla. */
+  juegos_entregados: string[];
+  detalles_entregados: string | null;
   /** Pagos por más tiempo (viene embebido en el historial). */
   alquiler_extensiones?: AlquilerExtension[];
   /** Cómo entró el dinero, por pote (viene embebido en el historial). */
@@ -186,4 +192,42 @@ export interface ConsolaConEstado {
   notas: string | null;
   extensiones: number | null;
   total_extensiones: number | null;
+  capacidad: string | null;
+  juegos: string[];
+  detalles: string | null;
+  juegos_entregados: string[] | null;
+  detalles_entregados: string | null;
+}
+
+// ── Potes: movimientos de dinero (préstamos, inversiones, traslados) ──
+
+export type TipoMovimiento = 'prestamo' | 'abono_prestamo' | 'inversion' | 'otro_egreso' | 'otro_ingreso' | 'traslado';
+
+export interface PoteMovimiento {
+  id: number;
+  fecha: string; // YYYY-MM-DD (Colombia)
+  tipo: TipoMovimiento;
+  pote: 'llave' | 'efectivo';
+  pote_destino: 'llave' | 'efectivo' | null;
+  monto: number;
+  persona: string | null;
+  descripcion: string | null;
+  created_at: string;
+}
+
+/** Fila de `vista_potes`: saldo actual de un pote. */
+export interface SaldoPote {
+  pote: 'llave' | 'efectivo';
+  cobros_alquiler: number;
+  entradas: number;
+  salidas: number;
+  saldo: number;
+}
+
+export interface PrestamoPendiente {
+  persona: string;
+  prestado: number;
+  abonado: number;
+  pendiente: number;
+  ultimo_movimiento: string;
 }

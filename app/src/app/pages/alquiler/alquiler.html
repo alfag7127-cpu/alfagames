@@ -71,6 +71,16 @@
   >
     📊 Gráficas
   </button>
+  <button
+    (click)="pestana.set('potes')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'potes'"
+    [class.shadow-sm]="pestana() === 'potes'"
+    [class.text-indigo-700]="pestana() === 'potes'"
+    [class.text-slate-600]="pestana() !== 'potes'"
+  >
+    💰 Potes
+  </button>
   @if (auth.isAdmin()) {
     <button
       (click)="pestana.set('inventario')"
@@ -110,7 +120,7 @@
             </span>
             <div class="min-w-0">
               <h2 class="font-semibold text-slate-800 truncate">{{ c.nombre }}</h2>
-              <p class="text-xs text-slate-500 truncate">{{ c.descripcion || '—' }} · 🎮 {{ c.controles_incluidos }} controles</p>
+              <p class="text-xs text-slate-500 truncate">{{ c.descripcion || '—' }} · 🎮 {{ c.controles_incluidos }} controles{{ c.capacidad ? ' · 💾 ' + c.capacidad : '' }}</p>
             </div>
           </div>
           <span
@@ -125,6 +135,33 @@
             {{ !c.alquiler_id ? 'Disponible' : minutosRestantes(c) < 0 ? 'Vencida' : 'Alquilada' }}
           </span>
         </div>
+
+        <!-- Ficha: con qué sale / con qué salió -->
+        @if (c.alquiler_id ? (c.juegos_entregados ?? []).length || c.detalles_entregados : c.juegos.length || c.capacidad || c.detalles) {
+          <button type="button" (click)="c.verFicha = !c.verFicha"
+            class="mb-3 flex w-full items-center justify-between rounded-lg bg-indigo-50/70 px-3 py-1.5 text-xs text-indigo-800 hover:bg-indigo-100">
+            <span>
+              {{ c.alquiler_id ? 'Salió con' : 'Ficha' }}:
+              🎮 {{ (c.alquiler_id ? c.juegos_entregados : c.juegos)?.length ?? 0 }} juego{{ ((c.alquiler_id ? c.juegos_entregados : c.juegos)?.length ?? 0) === 1 ? '' : 's' }}
+              @if (c.capacidad) {
+                · 💾 {{ c.capacidad }}
+              }
+            </span>
+            <span>{{ c.verFicha ? '▲' : '▼' }}</span>
+          </button>
+          @if (c.verFicha) {
+            <div class="mb-3 rounded-lg bg-slate-50 p-3 text-xs space-y-2">
+              <div class="flex flex-wrap gap-1">
+                @for (j of (c.alquiler_id ? c.juegos_entregados : c.juegos) ?? []; track j) {
+                  <span class="rounded-full bg-white px-2 py-0.5 ring-1 ring-slate-200 text-slate-700">{{ j }}</span>
+                }
+              </div>
+              @if (c.alquiler_id ? c.detalles_entregados : c.detalles) {
+                <p class="text-slate-600">📦 {{ c.alquiler_id ? c.detalles_entregados : c.detalles }}</p>
+              }
+            </div>
+          }
+        }
 
         @if (!c.alquiler_id) {
           <!-- ── DISPONIBLE ── -->
@@ -347,6 +384,20 @@
             </button>
           } @else {
             <div class="space-y-3">
+              @if (itemsRevision(c).length) {
+                <div class="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-amber-800">Revisa lo que se entregó</span>
+                    <button type="button" (click)="marcarTodoRevisado(c)" class="text-xs text-amber-700 hover:underline">Todo completo</button>
+                  </div>
+                  @for (item of itemsRevision(c); track item) {
+                    <label class="flex items-start gap-2 text-xs text-slate-700">
+                      <input type="checkbox" class="mt-0.5 rounded" [checked]="c.revisados.includes(item)" (change)="toggleRevisado(c, item)" />
+                      {{ item }}
+                    </label>
+                  }
+                </div>
+              }
               <label class="flex items-center gap-2 text-xs text-slate-600">
                 <input type="checkbox" [(ngModel)]="c.ajustarPrecioDevolucion" name="ajustar-{{ c.id }}" class="rounded" />
                 Ajustar precio final (ej. recargo por entrega tarde)
@@ -560,6 +611,11 @@
   </ul>
 }
 
+<!-- ═══ POTES ═══ -->
+@if (pestana() === 'potes') {
+  <app-potes />
+}
+
 <!-- ═══ GRÁFICAS ═══ -->
 @if (pestana() === 'graficas') {
   <app-grafica-producido />
@@ -591,14 +647,44 @@
 
       <ul class="divide-y divide-slate-100">
         @for (c of consolas(); track c.id) {
-          <li class="flex items-center justify-between py-2 text-sm" [class.opacity-50]="!c.activo">
-            <span>
-              <span class="font-medium text-slate-800">{{ c.nombre }}</span>
-              <span class="text-slate-500"> · {{ c.tipo }} · {{ c.descripcion || '—' }} · {{ c.controles_incluidos }} controles</span>
-            </span>
-            <button (click)="cambiarActivo(c)" class="hover:underline" [class.text-red-600]="c.activo" [class.text-emerald-600]="!c.activo">
-              {{ c.activo ? 'Quitar' : 'Reactivar' }}
-            </button>
+          <li class="py-2 text-sm" [class.opacity-50]="!c.activo">
+            <div class="flex items-center justify-between gap-2">
+              <span>
+                <span class="font-medium text-slate-800">{{ c.nombre }}</span>
+                <span class="text-slate-500"> · {{ c.tipo }} · {{ c.descripcion || '—' }} · {{ c.controles_incluidos }} controles</span>
+                <span class="block text-xs text-slate-400">
+                  🎮 {{ c.juegos.length }} juego{{ c.juegos.length === 1 ? '' : 's' }}{{ c.capacidad ? ' · 💾 ' + c.capacidad : '' }}
+                </span>
+              </span>
+              <span class="flex gap-3 shrink-0">
+                <button (click)="abrirFicha(c)" class="text-indigo-600 hover:underline">{{ fichaAbierta() === c.id ? 'Cerrar' : 'Ficha' }}</button>
+                <button (click)="cambiarActivo(c)" class="hover:underline" [class.text-red-600]="c.activo" [class.text-emerald-600]="!c.activo">
+                  {{ c.activo ? 'Quitar' : 'Reactivar' }}
+                </button>
+              </span>
+            </div>
+            @if (fichaAbierta() === c.id) {
+              <div class="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
+                <label class="block text-xs font-medium text-slate-500">
+                  Capacidad
+                  <input [(ngModel)]="fichaCapacidad" name="ficha-cap-{{ c.id }}" placeholder="Ej. 500 GB, 1 TB"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                </label>
+                <label class="block text-xs font-medium text-slate-500">
+                  Juegos instalados (uno por línea)
+                  <textarea [(ngModel)]="fichaJuegos" name="ficha-juegos-{{ c.id }}" rows="6" placeholder="FIFA 25&#10;GTA V&#10;Call of Duty"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"></textarea>
+                </label>
+                <label class="block text-xs font-medium text-slate-500">
+                  Detalles (accesorios, cables, estado)
+                  <textarea [(ngModel)]="fichaDetalles" name="ficha-det-{{ c.id }}" rows="2" placeholder="Cable HDMI, cable de poder, caja…"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"></textarea>
+                </label>
+                <button type="button" (click)="guardarFicha(c)" class="w-full rounded-lg bg-indigo-600 py-1.5 text-sm text-white hover:bg-indigo-700">
+                  Guardar ficha
+                </button>
+              </div>
+            }
           </li>
         }
       </ul>

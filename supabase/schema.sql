@@ -2507,3 +2507,215 @@ begin
   return v_fila;
 end;
 $$;
+
+-- ============================================================
+-- 20. FICHA DE INVENTARIO POR CONSOLA (2026-10-20)
+-- ============================================================
+-- Cada consola de alquiler tiene capacidad, lista de juegos y detalles (accesorios,
+-- cables, estado). Al alquilar se guarda una copia de con que salio, para saber que
+-- se le dejo al cliente y revisarlo al recogerla (aunque luego cambie la ficha).
+
+alter table public.alquiler_consolas
+  add column if not exists capacidad text,
+  add column if not exists juegos text[] not null default '{}',
+  add column if not exists detalles text;
+
+alter table public.alquileres
+  add column if not exists juegos_entregados text[] not null default '{}',
+  add column if not exists detalles_entregados text;
+
+create or replace function public.alquilar_consola(
+  p_consola_id bigint,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text default null,
+  p_cliente_direccion text default null,
+  p_controles_extra int default 0,
+  p_precio_final numeric default null,
+  p_notas text default null,
+  p_pago_llave numeric default null,
+  p_pago_efectivo numeric default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_sugerido numeric;
+  v_libres int;
+  v_fila public.alquileres;
+begin
+  select * into v_consola from public.alquiler_consolas where id = p_consola_id;
+  if v_consola.id is null or not v_consola.activo then
+    raise exception 'La consola no existe o no esta en el inventario';
+  end if;
+  if exists (select 1 from public.alquileres where consola_id = p_consola_id and estado = 'activo') then
+    raise exception '% ya esta alquilada', v_consola.nombre;
+  end if;
+
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+  if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+    raise exception 'Elige un plan de %', v_consola.tipo;
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_controles_extra < 0 then
+    raise exception 'Los controles extra no pueden ser negativos';
+  end if;
+  v_libres := public.alquiler_controles_libres(v_consola.tipo);
+  if p_controles_extra > v_libres then
+    raise exception 'Solo hay % control(es) suelto(s) de % disponible(s)', v_libres, v_consola.tipo;
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+  v_sugerido := v_tarifa.precio + p_controles_extra * coalesce(v_precio_extra, 0);
+
+  insert into public.alquileres (
+    consola_id, empleado_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    tarifa_id, plan_nombre, inicio, fin_pactado, controles, controles_extra,
+    precio_sugerido, precio_total, notas, juegos_entregados, detalles_entregados
+  ) values (
+    p_consola_id, auth.uid(), trim(p_cliente_nombre), nullif(trim(p_cliente_telefono), ''),
+    nullif(trim(p_cliente_direccion), ''), v_tarifa.id, v_tarifa.nombre, now(),
+    private.fin_alquiler(now(), v_tarifa), v_consola.controles_incluidos + p_controles_extra,
+    p_controles_extra, v_sugerido, coalesce(p_precio_final, v_sugerido), nullif(trim(p_notas), ''),
+    v_consola.juegos, v_consola.detalles
+  )
+  returning * into v_fila;
+
+  perform private.registrar_pagos(v_fila.id, null, 'entrega', v_fila.precio_total, p_pago_llave, p_pago_efectivo);
+
+  return v_fila;
+end;
+$$;
+
+-- Vista en vivo: agrega la ficha de la consola y lo que se entrego (columnas al final).
+create or replace view public.vista_alquiler_consolas
+with (security_invoker = true) as
+select
+  c.id,
+  c.nombre,
+  c.tipo,
+  c.descripcion,
+  c.controles_incluidos,
+  c.activo,
+  a.id as alquiler_id,
+  a.cliente_nombre,
+  a.cliente_telefono,
+  a.cliente_direccion,
+  a.plan_nombre,
+  a.inicio,
+  a.fin_pactado,
+  a.controles,
+  a.controles_extra,
+  a.precio_total,
+  a.notas,
+  coalesce((select count(*) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0)::int as extensiones,
+  coalesce((select sum(e.precio) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0) as total_extensiones,
+  c.capacidad,
+  c.juegos,
+  c.detalles,
+  a.juegos_entregados,
+  a.detalles_entregados
+from public.alquiler_consolas c
+left join public.alquileres a on a.consola_id = c.id and a.estado = 'activo';
+
+-- ============================================================
+-- 21. MOVIMIENTOS DE POTES: PRESTAMOS, INVERSIONES Y TRASLADOS (2026-10-20)
+-- ============================================================
+-- El producido del alquiler se usa para prestar o invertir (ej. comprar consolas o
+-- controles). Cada uso es un movimiento del pote en su fecha. Saldo de un pote =
+-- cobros de alquiler (no anulados) + entradas - salidas.
+--   prestamo       sale del pote (a una persona)
+--   abono_prestamo entra al pote (la persona devuelve)
+--   inversion      sale del pote (compra de consolas, controles, juegos...)
+--   otro_egreso    sale del pote
+--   otro_ingreso   entra al pote
+--   traslado       sale de un pote y entra al otro (ej. retirar Daviplata a efectivo)
+
+create table if not exists public.pote_movimientos (
+  id bigint generated always as identity primary key,
+  fecha date not null default (now() at time zone 'America/Bogota')::date,
+  tipo text not null check (tipo in ('prestamo', 'abono_prestamo', 'inversion', 'otro_egreso', 'otro_ingreso', 'traslado')),
+  pote text not null check (pote in ('llave', 'efectivo')),
+  pote_destino text check (pote_destino in ('llave', 'efectivo')),
+  monto numeric(10, 0) not null check (monto > 0),
+  persona text,
+  descripcion text,
+  admin_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now(),
+  constraint pote_movimientos_traslado check (
+    (tipo = 'traslado') = (pote_destino is not null) and (pote_destino is null or pote_destino <> pote)
+  ),
+  constraint pote_movimientos_persona check (
+    tipo not in ('prestamo', 'abono_prestamo') or length(trim(coalesce(persona, ''))) > 0
+  )
+);
+
+create index if not exists pote_movimientos_por_fecha on public.pote_movimientos (fecha);
+
+alter table public.pote_movimientos enable row level security;
+
+-- Todos ven; solo el admin mueve dinero de los potes.
+create policy "pote_movimientos_select" on public.pote_movimientos
+  for select to authenticated using (true);
+create policy "pote_movimientos_admin" on public.pote_movimientos
+  for all to authenticated using (private.is_admin()) with check (private.is_admin());
+
+-- Efecto de cada movimiento sobre cada pote (positivo entra, negativo sale).
+create or replace view public.vista_pote_efectos
+with (security_invoker = true) as
+select m.id, m.fecha, m.tipo, m.pote, -m.monto as monto
+from public.pote_movimientos m
+where m.tipo in ('prestamo', 'inversion', 'otro_egreso', 'traslado')
+union all
+select m.id, m.fecha, m.tipo, m.pote, m.monto
+from public.pote_movimientos m
+where m.tipo in ('abono_prestamo', 'otro_ingreso')
+union all
+select m.id, m.fecha, m.tipo, m.pote_destino, m.monto
+from public.pote_movimientos m
+where m.tipo = 'traslado';
+
+-- Saldo actual de cada pote.
+create or replace view public.vista_potes
+with (security_invoker = true) as
+select
+  p.pote,
+  coalesce((
+    select sum(ap.monto)
+    from public.alquiler_pagos ap
+    join public.alquileres a on a.id = ap.alquiler_id
+    where ap.pote = p.pote and a.estado <> 'cancelado'
+  ), 0) as cobros_alquiler,
+  coalesce((select sum(e.monto) from public.vista_pote_efectos e where e.pote = p.pote and e.monto > 0), 0) as entradas,
+  coalesce((select -sum(e.monto) from public.vista_pote_efectos e where e.pote = p.pote and e.monto < 0), 0) as salidas,
+  coalesce((
+    select sum(ap.monto)
+    from public.alquiler_pagos ap
+    join public.alquileres a on a.id = ap.alquiler_id
+    where ap.pote = p.pote and a.estado <> 'cancelado'
+  ), 0) + coalesce((select sum(e.monto) from public.vista_pote_efectos e where e.pote = p.pote), 0) as saldo
+from (values ('llave'), ('efectivo')) as p(pote);
+
+-- Prestamos pendientes por persona (prestado - abonado).
+create or replace view public.vista_prestamos_pendientes
+with (security_invoker = true) as
+select
+  trim(persona) as persona,
+  sum(case when tipo = 'prestamo' then monto else 0 end) as prestado,
+  sum(case when tipo = 'abono_prestamo' then monto else 0 end) as abonado,
+  sum(case when tipo = 'prestamo' then monto else -monto end) as pendiente,
+  max(fecha) as ultimo_movimiento
+from public.pote_movimientos
+where tipo in ('prestamo', 'abono_prestamo')
+group by trim(persona);
+
+alter publication supabase_realtime add table public.pote_movimientos;
