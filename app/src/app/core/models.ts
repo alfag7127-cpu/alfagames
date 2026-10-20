@@ -111,7 +111,9 @@ export interface AlquilerTarifa {
 
 export interface AlquilerConfig {
   id: number;
-  controles_sueltos: number;
+  /** Controles sueltos en inventario, por tipo (no son intercambiables). */
+  controles_sueltos_ps4: number;
+  controles_sueltos_ps5: number;
   precio_control_extra: number;
   noche_desde: string;
   noche_hasta: string;

@@ -88,7 +88,9 @@ export class AlquilerPage implements OnInit, OnDestroy {
   readonly consolas = signal<ConsolaVM[]>([]);
   readonly tarifas = signal<AlquilerTarifa[]>([]);
   readonly config = signal<AlquilerConfig | null>(null);
-  readonly controlesLibres = signal(0);
+  /** Controles sueltos libres por tipo de consola. */
+  readonly controlesLibres = signal<Record<TipoConsola, number>>({ PS4: 0, PS5: 0 });
+  readonly tipos: TipoConsola[] = ['PS4', 'PS5'];
   readonly historial = signal<Alquiler[]>([]);
   private readonly ahora = signal(Date.now());
   private timer?: ReturnType<typeof setInterval>;
@@ -149,11 +151,12 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   async cargar(): Promise<void> {
     try {
-      const [consolas, tarifas, config, libres] = await Promise.all([
+      const [consolas, tarifas, config, libresPs4, libresPs5] = await Promise.all([
         this.alquiler.listarConsolasConEstado(),
         this.alquiler.listarTarifas(),
         this.alquiler.obtenerConfig(),
-        this.alquiler.controlesLibres(),
+        this.alquiler.controlesLibres('PS4'),
+        this.alquiler.controlesLibres('PS5'),
       ]);
       // Conserva lo que el empleado está escribiendo si llega una actualización.
       const previas = new Map(this.consolas().map((c) => [c.id, c]));
@@ -165,7 +168,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
       );
       this.tarifas.set(tarifas);
       this.config.set(config);
-      this.controlesLibres.set(libres);
+      this.controlesLibres.set({ PS4: libresPs4, PS5: libresPs5 });
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     }
@@ -205,7 +208,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   ajustarControlesExtra(c: ConsolaVM, delta: number): void {
-    const valor = Math.min(this.controlesLibres(), Math.max(0, c.controlesExtra + delta));
+    const valor = Math.min(this.controlesLibres()[c.tipo], Math.max(0, c.controlesExtra + delta));
     this.actualizar(c.id, { controlesExtra: valor });
   }
 
@@ -473,7 +476,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
     }
   }
 
-  async guardarConfig(cambios: { controles_sueltos?: number; precio_control_extra?: number }): Promise<void> {
+  /** Controles sueltos en inventario de un tipo (según la configuración). */
+  sueltosDe(tipo: TipoConsola): number {
+    const cfg = this.config();
+    if (!cfg) return 0;
+    return tipo === 'PS4' ? cfg.controles_sueltos_ps4 : cfg.controles_sueltos_ps5;
+  }
+
+  async guardarConfig(cambios: { controles_sueltos_ps4?: number; controles_sueltos_ps5?: number; precio_control_extra?: number }): Promise<void> {
     try {
       await this.alquiler.actualizarConfig(cambios);
       this.toast.exito('Configuración guardada.');

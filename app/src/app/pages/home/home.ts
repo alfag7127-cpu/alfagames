@@ -11,7 +11,7 @@ export class Home {
   constructor(auth: AuthService, router: Router) {
     effect(() => {
       if (!auth.isReady()) return;
-      router.navigateByUrl(auth.isAdmin() ? '/dashboard' : '/sala');
+      router.navigateByUrl(auth.isAdmin() ? '/sala/dashboard' : '/sala');
     });
   }
 }

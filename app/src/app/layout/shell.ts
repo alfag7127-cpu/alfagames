@@ -20,13 +20,10 @@ export class Shell {
   /** Menú lateral en el celular: se abre con ☰ y se esconde al elegir una sección. */
   readonly menuAbierto = signal(false);
 
+  /** Solo dos secciones; cada una tiene sus pestañas adentro. */
   readonly enlaces: EnlaceMenu[] = [
     { ruta: '/sala', icono: '🎮', texto: 'Sala', soloAdmin: false },
     { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', soloAdmin: false },
-    { ruta: '/historial', icono: '📋', texto: 'Historial', soloAdmin: false },
-    { ruta: '/dashboard', icono: '📊', texto: 'Dashboard', soloAdmin: true },
-    { ruta: '/gastos', icono: '💸', texto: 'Gastos', soloAdmin: true },
-    { ruta: '/puestos', icono: '🕹️', texto: 'Puestos', soloAdmin: true },
   ];
 
   constructor(

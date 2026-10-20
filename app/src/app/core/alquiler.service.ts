@@ -99,8 +99,9 @@ export class AlquilerService {
     return data as AlquilerConfig;
   }
 
-  async controlesLibres(): Promise<number> {
-    const { data, error } = await this.supabase.client.rpc('alquiler_controles_libres');
+  /** Controles sueltos libres de un tipo (los de PS4 no sirven en PS5 y viceversa). */
+  async controlesLibres(tipo: TipoConsola): Promise<number> {
+    const { data, error } = await this.supabase.client.rpc('alquiler_controles_libres', { p_tipo: tipo });
     if (error) throw error;
     return data as number;
   }
@@ -248,7 +249,7 @@ export class AlquilerService {
     if (error) throw error;
   }
 
-  async actualizarConfig(cambios: Partial<Pick<AlquilerConfig, 'controles_sueltos' | 'precio_control_extra'>>): Promise<void> {
+  async actualizarConfig(cambios: Partial<Pick<AlquilerConfig, 'controles_sueltos_ps4' | 'controles_sueltos_ps5' | 'precio_control_extra'>>): Promise<void> {
     const { error } = await this.supabase.client.from('alquiler_config').update(cambios).eq('id', 1);
     if (error) throw error;
   }

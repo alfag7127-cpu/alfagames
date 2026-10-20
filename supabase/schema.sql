@@ -2391,3 +2391,119 @@ grant execute on function public.extender_alquiler(bigint, bigint, int, numeric,
 grant execute on function public.devolver_alquiler(bigint, numeric, text, text) to authenticated;
 
 alter publication supabase_realtime add table public.alquiler_pagos;
+
+-- ============================================================
+-- 19. CONTROLES SUELTOS POR TIPO DE CONSOLA (2026-10-20)
+-- ============================================================
+-- Los controles de PS4 no sirven en PS5 y viceversa: el inventario de controles
+-- sueltos se lleva por tipo, y una consola solo puede llevar extras de su tipo.
+-- Los 2 controles sueltos que habia quedan como controles de PS4.
+
+alter table public.alquiler_config
+  add column if not exists controles_sueltos_ps4 int not null default 0 check (controles_sueltos_ps4 >= 0),
+  add column if not exists controles_sueltos_ps5 int not null default 0 check (controles_sueltos_ps5 >= 0);
+
+update public.alquiler_config set controles_sueltos_ps4 = controles_sueltos where id = 1;
+
+alter table public.alquiler_config drop column if exists controles_sueltos;
+
+-- Controles sueltos libres de un tipo (sin tipo: la suma de ambos).
+drop function if exists public.alquiler_controles_libres();
+
+create or replace function public.alquiler_controles_libres(p_tipo text default null)
+returns int
+language sql
+stable
+set search_path = public
+as $$
+  select (
+    case p_tipo
+      when 'PS4' then c.controles_sueltos_ps4
+      when 'PS5' then c.controles_sueltos_ps5
+      else c.controles_sueltos_ps4 + c.controles_sueltos_ps5
+    end
+    - coalesce((
+      select sum(a.controles_extra)
+      from public.alquileres a
+      join public.alquiler_consolas co on co.id = a.consola_id
+      where a.estado = 'activo' and (p_tipo is null or co.tipo = p_tipo)
+    ), 0)
+  )::int
+  from public.alquiler_config c
+  where c.id = 1;
+$$;
+
+revoke all on function public.alquiler_controles_libres(text) from public, anon;
+grant execute on function public.alquiler_controles_libres(text) to authenticated;
+
+-- Alquilar: los controles extra se validan contra los sueltos del mismo tipo.
+create or replace function public.alquilar_consola(
+  p_consola_id bigint,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text default null,
+  p_cliente_direccion text default null,
+  p_controles_extra int default 0,
+  p_precio_final numeric default null,
+  p_notas text default null,
+  p_pago_llave numeric default null,
+  p_pago_efectivo numeric default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_sugerido numeric;
+  v_libres int;
+  v_fila public.alquileres;
+begin
+  select * into v_consola from public.alquiler_consolas where id = p_consola_id;
+  if v_consola.id is null or not v_consola.activo then
+    raise exception 'La consola no existe o no esta en el inventario';
+  end if;
+  if exists (select 1 from public.alquileres where consola_id = p_consola_id and estado = 'activo') then
+    raise exception '% ya esta alquilada', v_consola.nombre;
+  end if;
+
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+  if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+    raise exception 'Elige un plan de %', v_consola.tipo;
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_controles_extra < 0 then
+    raise exception 'Los controles extra no pueden ser negativos';
+  end if;
+  v_libres := public.alquiler_controles_libres(v_consola.tipo);
+  if p_controles_extra > v_libres then
+    raise exception 'Solo hay % control(es) suelto(s) de % disponible(s)', v_libres, v_consola.tipo;
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+  v_sugerido := v_tarifa.precio + p_controles_extra * coalesce(v_precio_extra, 0);
+
+  insert into public.alquileres (
+    consola_id, empleado_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    tarifa_id, plan_nombre, inicio, fin_pactado, controles, controles_extra,
+    precio_sugerido, precio_total, notas
+  ) values (
+    p_consola_id, auth.uid(), trim(p_cliente_nombre), nullif(trim(p_cliente_telefono), ''),
+    nullif(trim(p_cliente_direccion), ''), v_tarifa.id, v_tarifa.nombre, now(),
+    private.fin_alquiler(now(), v_tarifa), v_consola.controles_incluidos + p_controles_extra,
+    p_controles_extra, v_sugerido, coalesce(p_precio_final, v_sugerido), nullif(trim(p_notas), '')
+  )
+  returning * into v_fila;
+
+  perform private.registrar_pagos(v_fila.id, null, 'entrega', v_fila.precio_total, p_pago_llave, p_pago_efectivo);
+
+  return v_fila;
+end;
+$$;

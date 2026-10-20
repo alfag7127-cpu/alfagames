@@ -26,8 +26,15 @@
       <p class="text-[11px] uppercase tracking-wide text-slate-300">Vencidas</p>
     </div>
     <div class="rounded-xl bg-white/10 px-3 py-2">
-      <p class="text-2xl font-bold text-amber-300">{{ controlesLibres() }}<span class="text-sm text-slate-400">/{{ config()?.controles_sueltos ?? 0 }}</span></p>
-      <p class="text-[11px] uppercase tracking-wide text-slate-300">Controles sueltos</p>
+      <p class="text-[11px] uppercase tracking-wide text-slate-300 mb-1">🎮 Controles sueltos libres</p>
+      <div class="flex justify-center gap-3 text-sm">
+        @for (t of tipos; track t) {
+          <span>
+            <span class="text-slate-300">{{ t }}</span>
+            <span class="text-lg font-bold text-amber-300 tabular-nums">{{ controlesLibres()[t] }}</span><span class="text-xs text-slate-400">/{{ sueltosDe(t) }}</span>
+          </span>
+        }
+      </div>
     </div>
   </div>
 </section>
@@ -164,12 +171,13 @@
                 <span class="text-xs text-slate-600">
                   🎮 {{ c.controles_incluidos + c.controlesExtra }} controles
                   <span class="text-slate-400">({{ c.controles_incluidos }} incluidos{{ c.controlesExtra ? ' + ' + c.controlesExtra + ' extra' : '' }})</span>
+                  <span class="block text-[11px] text-slate-400">Sueltos de {{ c.tipo }} libres: {{ controlesLibres()[c.tipo] - c.controlesExtra }}</span>
                 </span>
                 <div class="flex items-center gap-1">
                   <button type="button" (click)="ajustarControlesExtra(c, -1)" [disabled]="!c.controlesExtra"
                     class="h-7 w-7 rounded-lg border border-slate-300 bg-white text-slate-600 disabled:opacity-40">−</button>
-                  <button type="button" (click)="ajustarControlesExtra(c, 1)" [disabled]="c.controlesExtra >= controlesLibres()"
-                    [title]="controlesLibres() === 0 ? 'No hay controles sueltos libres' : 'Agregar control suelto'"
+                  <button type="button" (click)="ajustarControlesExtra(c, 1)" [disabled]="c.controlesExtra >= controlesLibres()[c.tipo]"
+                    [title]="controlesLibres()[c.tipo] === 0 ? 'No hay controles sueltos de ' + c.tipo + ' libres' : 'Agregar control suelto de ' + c.tipo"
                     class="h-7 w-7 rounded-lg border border-slate-300 bg-white text-slate-600 disabled:opacity-40">+</button>
                 </div>
               </div>
@@ -600,11 +608,17 @@
       <div class="bg-white rounded-xl shadow-sm p-4">
         <h2 class="font-semibold text-slate-800 mb-3">Controles sueltos y extras</h2>
         @if (config(); as cfg) {
-          <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="grid grid-cols-3 gap-3 text-sm">
             <label class="text-slate-600">
-              Controles sueltos en inventario
-              <input #sueltos type="number" min="0" [value]="cfg.controles_sueltos"
-                (change)="guardarConfig({ controles_sueltos: +sueltos.value })"
+              Controles sueltos PS4
+              <input #sueltosPs4 type="number" min="0" [value]="cfg.controles_sueltos_ps4"
+                (change)="guardarConfig({ controles_sueltos_ps4: +sueltosPs4.value })"
+                class="block w-full rounded-lg border border-slate-300 px-2 py-1 mt-1" />
+            </label>
+            <label class="text-slate-600">
+              Controles sueltos PS5
+              <input #sueltosPs5 type="number" min="0" [value]="cfg.controles_sueltos_ps5"
+                (change)="guardarConfig({ controles_sueltos_ps5: +sueltosPs5.value })"
                 class="block w-full rounded-lg border border-slate-300 px-2 py-1 mt-1" />
             </label>
             <label class="text-slate-600">
@@ -614,7 +628,10 @@
                 class="block w-full rounded-lg border border-slate-300 px-2 py-1 mt-1" />
             </label>
           </div>
-          <p class="text-xs text-slate-500 mt-2">Libres ahora: {{ controlesLibres() }}. Cada consola sale con sus controles incluidos; los sueltos se suman como extra.</p>
+          <p class="text-xs text-slate-500 mt-2">
+            Libres ahora: PS4 {{ controlesLibres().PS4 }} · PS5 {{ controlesLibres().PS5 }}.
+            Cada consola sale con sus controles incluidos; los sueltos de su mismo tipo se suman como extra.
+          </p>
         }
       </div>
 
