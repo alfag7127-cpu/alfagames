@@ -42,8 +42,10 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 
 - **Precio al cobrar**: el sistema muestra un **precio sugerido** con el estándar, y quien cobra puede marcar "Cambiar precio" y poner otro valor según la situación. Se guardan ambos (`precio_sugerido` y `precio_total`); el Historial muestra el sugerido cuando se cambió.
 - **Precio especial al abrir (conteo regresivo)**: se puede pactar un precio base fijo al abrir; los controles adicionales se siguen sumando aparte.
+- **Cambiar de modalidad con la sesión abierta**: de cronometrado a conteo regresivo se indica el tiempo **total** pactado (incluye lo ya jugado) y el precio queda pactado; de conteo regresivo a cronometrado se cobra al cerrar por el tiempo real.
 - **Transferir sesión**: una sesión activa se puede mover completa (tiempo, pausas, controles y precio) a otra consola libre, por ejemplo si el cliente cambia de consola o la consola falla.
 - **Puestos**: el admin agrega, renombra o quita consolas desde la página *Puestos*. Quitar una consola la saca de la Sala pero conserva su historial y se puede reactivar. No se puede quitar una consola con una sesión abierta.
+- **Hora de Colombia**: toda la app muestra y filtra fechas en hora de Colombia (UTC-5), sin importar la zona del dispositivo o del servidor.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 
 ### Modalidades de cobro (por sesión, elegible en cada PS5 al abrir)
@@ -106,3 +108,25 @@ Ver [`supabase/schema.sql`](../supabase/schema.sql) — ya escrito, listo para c
 
 - Crear un proyecto en [supabase.com](https://supabase.com) (gratis para empezar) y darme (o pegar tú mismo en `src/environments/environment.ts`) la **Project URL** y la **anon public key**.
 - Confirmar nombres de puestos iniciales (cuántos y cómo se llaman: "PS5-1", "PC-1", etc.) para la carga inicial.
+
+## Alquiler de consolas (2026-10-19)
+
+Negocio aparte de la sala: el cliente se lleva la consola a su casa.
+
+- **Inventario inicial**: 1 PS5 Slim (2 controles originales), 2 PS4 Programadas y 1 PS4 Original (2 controles cada una), y 2 controles sueltos. El admin agrega o quita consolas y ajusta los controles sueltos en *Alquiler → Inventario y precios*.
+- **Controles**: cada consola sale por defecto con sus 2 controles incluidos. Se pueden sumar controles sueltos mientras haya libres. El precio por control extra es configurable (hoy $0).
+- **Planes** (afiche Alfa Games & Frank Over):
+
+  | Consola | Plan | Precio |
+  |---|---|---|
+  | PS4 | 4 horas | $20.000 |
+  | PS4 | 10 horas | $35.000 |
+  | PS4 | 24 horas | $50.000 |
+  | PS4 | La noche (7 PM a 9 AM) | $30.000 |
+  | PS5 | 10 horas | $40.000 |
+  | PS5 | 24 horas | $75.000 |
+  | PS5 | La noche (7 PM a 9 AM) | $50.000 |
+
+- **La noche** termina a las 9:00 AM (hora de Colombia) siguientes a la entrega.
+- **Cobro**: se cobra al entregar (precio sugerido editable). Al recibir se puede ajustar el precio final, por ejemplo con un recargo por entrega tarde. Anular un alquiler no cuenta como venta.
+- **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. El Dashboard suma las ventas de alquiler (por día de entrega) junto a las de la sala.

@@ -82,3 +82,79 @@ export interface Gasto {
   admin_id: string;
   created_at: string;
 }
+
+// ── Alquiler de consolas ───────────────────────────────────────────────
+
+export type TipoConsola = 'PS4' | 'PS5';
+export type EstadoAlquiler = 'activo' | 'devuelto' | 'cancelado';
+
+export interface AlquilerConsola {
+  id: number;
+  nombre: string;
+  tipo: TipoConsola;
+  descripcion: string | null;
+  controles_incluidos: number;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface AlquilerTarifa {
+  id: number;
+  tipo: TipoConsola;
+  nombre: string;
+  horas: number | null;
+  es_noche: boolean;
+  precio: number;
+  orden: number;
+  activo: boolean;
+}
+
+export interface AlquilerConfig {
+  id: number;
+  controles_sueltos: number;
+  precio_control_extra: number;
+  noche_desde: string;
+  noche_hasta: string;
+}
+
+export interface Alquiler {
+  id: number;
+  consola_id: number;
+  empleado_id: string;
+  cliente_nombre: string;
+  cliente_telefono: string | null;
+  cliente_direccion: string | null;
+  tarifa_id: number | null;
+  plan_nombre: string;
+  inicio: string;
+  fin_pactado: string;
+  devuelto_en: string | null;
+  controles: number;
+  controles_extra: number;
+  precio_sugerido: number | null;
+  precio_total: number;
+  estado: EstadoAlquiler;
+  notas: string | null;
+  created_at: string;
+}
+
+/** Fila de `vista_alquiler_consolas`: consola + su alquiler activo, si tiene. */
+export interface ConsolaConEstado {
+  id: number;
+  nombre: string;
+  tipo: TipoConsola;
+  descripcion: string | null;
+  controles_incluidos: number;
+  activo: boolean;
+  alquiler_id: number | null;
+  cliente_nombre: string | null;
+  cliente_telefono: string | null;
+  cliente_direccion: string | null;
+  plan_nombre: string | null;
+  inicio: string | null;
+  fin_pactado: string | null;
+  controles: number | null;
+  controles_extra: number | null;
+  precio_total: number | null;
+  notas: string | null;
+}

@@ -1,6 +1,7 @@
+import { formatearDuracion } from '../../shared/duracion.pipe';
 import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DecimalPipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { Modalidad, PuestoConEstado } from '../../core/models';
@@ -31,6 +32,9 @@ interface PuestoVM extends PuestoConEstado {
   // Transferir la sesión a otra consola
   transferirAbierto: boolean;
   destinoInput: number | null;
+  // Cambiar de modalidad con la sesión abierta
+  cambioModoAbierto: boolean;
+  minutosCambio: number;
   procesando: boolean;
 }
 
@@ -136,6 +140,8 @@ export class Sala implements OnInit, OnDestroy {
             precioFinalInput: null,
             transferirAbierto: false,
             destinoInput: null,
+            cambioModoAbierto: false,
+            minutosCambio: 60,
             procesando: false,
           };
         }),
@@ -242,6 +248,46 @@ export class Sala implements OnInit, OnDestroy {
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  toggleCambioModo(p: PuestoVM): void {
+    // Sugerencia: la siguiente hora completa por encima de lo ya jugado.
+    const sugerido = Math.max(60, Math.ceil((this.minutosTranscurridos(p) + 1) / 60) * 60);
+    this.puestos.update((list) =>
+      list.map((x) =>
+        x.id === p.id ? { ...x, cambioModoAbierto: !x.cambioModoAbierto, minutosCambio: sugerido } : x,
+      ),
+    );
+  }
+
+  async cambiarModalidad(p: PuestoVM, modalidad: Modalidad): Promise<void> {
+    if (!p.sesion_id) return;
+    if (modalidad === 'conteo_regresivo' && (!p.minutosCambio || p.minutosCambio <= 0)) {
+      this.toast.error('Indica el tiempo total del conteo regresivo.');
+      return;
+    }
+    if (modalidad === 'cronometrado' && !confirm(`¿Pasar ${p.nombre} a cronometrado? Se cobrará por el tiempo real jugado.`)) {
+      return;
+    }
+    this.marcarProcesando(p.id, true);
+    try {
+      const s = await this.sesiones.cambiarModalidad(
+        p.sesion_id,
+        modalidad,
+        modalidad === 'conteo_regresivo' ? p.minutosCambio : null,
+      );
+      // Los avisos de tiempo se recalculan con el nuevo final.
+      this.avisosEnviados.delete(p.sesion_id);
+      await this.cargar();
+      this.toast.exito(
+        modalidad === 'conteo_regresivo'
+          ? `${p.nombre}: conteo regresivo de ${formatearDuracion(p.minutosCambio)}, ${(s.precio_total ?? 0).toLocaleString('es-CO')} COP.`
+          : `${p.nombre}: ahora es cronometrado.`,
+      );
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
       this.marcarProcesando(p.id, false);
     }
   }
@@ -373,6 +419,8 @@ export class Sala implements OnInit, OnDestroy {
   }
 
   readonly maxControles = MAX_CONTROLES_ADICIONALES;
+  readonly libres = computed(() => this.puestos().filter((p) => !p.sesion_id).length);
+  readonly ocupadas = computed(() => this.puestos().filter((p) => !!p.sesion_id).length);
   /** Atajos de conteo regresivo: de 30 min a 6 h (lo máximo que suelen jugar). */
   readonly presetsMinutos = [30, 60, 90, 120, 180, 240, 300, 360];
 

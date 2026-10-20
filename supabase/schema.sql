@@ -1561,3 +1561,377 @@ from public.puestos p
 left join public.sesiones s
   on s.puesto_id = p.id and s.estado = 'activa'
 where p.activo;
+
+-- ============================================================
+-- 15. ALQUILER DE CONSOLAS, CAMBIO DE MODALIDAD Y FECHAS EN HORA DE COLOMBIA (2026-10-19)
+-- ============================================================
+-- Alquiler: el cliente se lleva una consola a su casa por un plan (4h, 10h, 24h o
+-- La noche 7 PM a 9 AM). Cada consola sale con sus controles incluidos (2) y se le
+-- pueden sumar controles sueltos del inventario. Se cobra al entregar; al devolver se
+-- puede ajustar el precio (ej. recargo por entrega tarde).
+
+create table if not exists public.alquiler_consolas (
+  id bigint generated always as identity primary key,
+  nombre text not null check (length(trim(nombre)) > 0),
+  tipo text not null check (tipo in ('PS4', 'PS5')),
+  descripcion text,
+  controles_incluidos int not null default 2 check (controles_incluidos >= 0),
+  activo boolean not null default true, -- false = sacada del inventario
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists alquiler_consolas_nombre_unico
+  on public.alquiler_consolas (lower(trim(nombre)));
+
+create table if not exists public.alquiler_tarifas (
+  id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('PS4', 'PS5')),
+  nombre text not null,
+  horas int check (horas is null or horas > 0), -- null = plan "La noche"
+  es_noche boolean not null default false,
+  precio numeric(10, 0) not null check (precio > 0),
+  orden int not null default 0,
+  activo boolean not null default true,
+  constraint alquiler_tarifas_horas_o_noche check ((es_noche and horas is null) or (not es_noche and horas is not null))
+);
+
+-- Configuracion del negocio de alquiler (una sola fila).
+create table if not exists public.alquiler_config (
+  id int primary key default 1 check (id = 1),
+  controles_sueltos int not null default 0 check (controles_sueltos >= 0),
+  precio_control_extra numeric(10, 0) not null default 0 check (precio_control_extra >= 0),
+  noche_desde time not null default '19:00',
+  noche_hasta time not null default '09:00'
+);
+
+create table if not exists public.alquileres (
+  id bigint generated always as identity primary key,
+  consola_id bigint not null references public.alquiler_consolas (id),
+  empleado_id uuid not null references public.profiles (id) default auth.uid(),
+  cliente_nombre text not null check (length(trim(cliente_nombre)) > 0),
+  cliente_telefono text,
+  cliente_direccion text,
+  tarifa_id bigint references public.alquiler_tarifas (id),
+  plan_nombre text not null,
+  inicio timestamptz not null default now(),
+  fin_pactado timestamptz not null,
+  devuelto_en timestamptz,
+  controles int not null default 2 check (controles >= 0),
+  controles_extra int not null default 0 check (controles_extra >= 0),
+  precio_sugerido numeric(10, 0),
+  precio_total numeric(10, 0) not null check (precio_total >= 0),
+  estado text not null default 'activo' check (estado in ('activo', 'devuelto', 'cancelado')),
+  notas text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists alquileres_uno_activo_por_consola
+  on public.alquileres (consola_id) where estado = 'activo';
+create index if not exists alquileres_por_inicio on public.alquileres (inicio);
+
+alter table public.alquiler_consolas enable row level security;
+alter table public.alquiler_tarifas enable row level security;
+alter table public.alquiler_config enable row level security;
+alter table public.alquileres enable row level security;
+
+-- Inventario, tarifas y configuracion: todos ven, solo admin cambia.
+create policy "alquiler_consolas_select" on public.alquiler_consolas for select to authenticated using (true);
+create policy "alquiler_consolas_admin" on public.alquiler_consolas for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+create policy "alquiler_tarifas_select" on public.alquiler_tarifas for select to authenticated using (true);
+create policy "alquiler_tarifas_admin" on public.alquiler_tarifas for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+create policy "alquiler_config_select" on public.alquiler_config for select to authenticated using (true);
+create policy "alquiler_config_admin" on public.alquiler_config for all to authenticated
+  using (private.is_admin()) with check (private.is_admin());
+
+-- Alquileres: cualquier empleado entrega y recibe (un alquiler dura horas y puede
+-- recibirlo otro turno); solo admin borra.
+create policy "alquileres_select" on public.alquileres for select to authenticated using (true);
+create policy "alquileres_insert" on public.alquileres for insert to authenticated
+  with check (empleado_id = auth.uid() or private.is_admin());
+create policy "alquileres_update" on public.alquileres for update to authenticated using (true) with check (true);
+create policy "alquileres_delete_admin" on public.alquileres for delete to authenticated using (private.is_admin());
+
+-- Fin del plan: horas fijas, o "La noche" hasta la proxima hora de cierre (9 AM Colombia).
+create or replace function private.fin_alquiler(p_inicio timestamptz, p_tarifa public.alquiler_tarifas)
+returns timestamptz
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_hasta time;
+  v_local timestamp;
+  v_fin_local timestamp;
+begin
+  if not p_tarifa.es_noche then
+    return p_inicio + make_interval(hours => p_tarifa.horas);
+  end if;
+  select noche_hasta into v_hasta from public.alquiler_config where id = 1;
+  v_local := p_inicio at time zone 'America/Bogota';
+  v_fin_local := date_trunc('day', v_local) + coalesce(v_hasta, '09:00');
+  if v_fin_local <= v_local then
+    v_fin_local := v_fin_local + interval '1 day';
+  end if;
+  return v_fin_local at time zone 'America/Bogota';
+end;
+$$;
+
+-- Controles sueltos libres = inventario - los que estan afuera en alquileres activos.
+create or replace function public.alquiler_controles_libres()
+returns int
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce((select controles_sueltos from public.alquiler_config where id = 1), 0)
+       - coalesce((select sum(controles_extra) from public.alquileres where estado = 'activo'), 0)::int;
+$$;
+
+create or replace function public.alquilar_consola(
+  p_consola_id bigint,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text default null,
+  p_cliente_direccion text default null,
+  p_controles_extra int default 0,
+  p_precio_final numeric default null,
+  p_notas text default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_sugerido numeric;
+  v_fila public.alquileres;
+begin
+  select * into v_consola from public.alquiler_consolas where id = p_consola_id;
+  if v_consola.id is null or not v_consola.activo then
+    raise exception 'La consola no existe o no esta en el inventario';
+  end if;
+  if exists (select 1 from public.alquileres where consola_id = p_consola_id and estado = 'activo') then
+    raise exception '% ya esta alquilada', v_consola.nombre;
+  end if;
+
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+  if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+    raise exception 'Elige un plan de %', v_consola.tipo;
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_controles_extra < 0 then
+    raise exception 'Los controles extra no pueden ser negativos';
+  end if;
+  if p_controles_extra > public.alquiler_controles_libres() then
+    raise exception 'Solo hay % control(es) suelto(s) disponible(s)', public.alquiler_controles_libres();
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+  v_sugerido := v_tarifa.precio + p_controles_extra * coalesce(v_precio_extra, 0);
+
+  insert into public.alquileres (
+    consola_id, empleado_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    tarifa_id, plan_nombre, inicio, fin_pactado, controles, controles_extra,
+    precio_sugerido, precio_total, notas
+  ) values (
+    p_consola_id, auth.uid(), trim(p_cliente_nombre), nullif(trim(p_cliente_telefono), ''),
+    nullif(trim(p_cliente_direccion), ''), v_tarifa.id, v_tarifa.nombre, now(),
+    private.fin_alquiler(now(), v_tarifa), v_consola.controles_incluidos + p_controles_extra,
+    p_controles_extra, v_sugerido, coalesce(p_precio_final, v_sugerido), nullif(trim(p_notas), '')
+  )
+  returning * into v_fila;
+
+  return v_fila;
+end;
+$$;
+
+-- Devolucion: libera consola y controles; p_precio_final ajusta el cobro (ej. recargo).
+create or replace function public.devolver_alquiler(
+  p_alquiler_id bigint,
+  p_precio_final numeric default null,
+  p_notas text default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_fila public.alquileres;
+begin
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  update public.alquileres
+  set estado = 'devuelto',
+      devuelto_en = now(),
+      precio_total = coalesce(p_precio_final, precio_total),
+      notas = coalesce(nullif(trim(p_notas), ''), notas)
+  where id = p_alquiler_id and estado = 'activo'
+  returning * into v_fila;
+
+  if v_fila.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+  return v_fila;
+end;
+$$;
+
+create or replace function public.cancelar_alquiler(p_alquiler_id bigint)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_fila public.alquileres;
+begin
+  update public.alquileres
+  set estado = 'cancelado', devuelto_en = now()
+  where id = p_alquiler_id and estado = 'activo'
+  returning * into v_fila;
+  if v_fila.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+  return v_fila;
+end;
+$$;
+
+-- Estado del inventario en vivo: cada consola con su alquiler activo, si tiene.
+create or replace view public.vista_alquiler_consolas
+with (security_invoker = true) as
+select
+  c.id,
+  c.nombre,
+  c.tipo,
+  c.descripcion,
+  c.controles_incluidos,
+  c.activo,
+  a.id as alquiler_id,
+  a.cliente_nombre,
+  a.cliente_telefono,
+  a.cliente_direccion,
+  a.plan_nombre,
+  a.inicio,
+  a.fin_pactado,
+  a.controles,
+  a.controles_extra,
+  a.precio_total,
+  a.notas
+from public.alquiler_consolas c
+left join public.alquileres a on a.consola_id = c.id and a.estado = 'activo';
+
+revoke all on function private.fin_alquiler(timestamptz, public.alquiler_tarifas) from public, anon;
+grant execute on function private.fin_alquiler(timestamptz, public.alquiler_tarifas) to authenticated;
+revoke all on function public.alquiler_controles_libres() from public, anon;
+revoke all on function public.alquilar_consola(bigint, bigint, text, text, text, int, numeric, text) from public, anon;
+revoke all on function public.devolver_alquiler(bigint, numeric, text) from public, anon;
+revoke all on function public.cancelar_alquiler(bigint) from public, anon;
+grant execute on function public.alquiler_controles_libres() to authenticated;
+grant execute on function public.alquilar_consola(bigint, bigint, text, text, text, int, numeric, text) to authenticated;
+grant execute on function public.devolver_alquiler(bigint, numeric, text) to authenticated;
+grant execute on function public.cancelar_alquiler(bigint) to authenticated;
+
+-- Datos iniciales (2026-10-19): inventario y precios del afiche de alquiler.
+insert into public.alquiler_config (id, controles_sueltos, precio_control_extra) values (1, 2, 0)
+on conflict (id) do nothing;
+
+insert into public.alquiler_consolas (nombre, tipo, descripcion, controles_incluidos) values
+  ('PS5 Slim', 'PS5', '2 controles originales', 2),
+  ('PS4 Programada 1', 'PS4', 'Programada', 2),
+  ('PS4 Programada 2', 'PS4', 'Programada', 2),
+  ('PS4 Original', 'PS4', 'Original', 2)
+on conflict do nothing;
+
+insert into public.alquiler_tarifas (tipo, nombre, horas, es_noche, precio, orden)
+select * from (values
+  ('PS4', '4 horas', 4, false, 20000, 1),
+  ('PS4', '10 horas', 10, false, 35000, 2),
+  ('PS4', '24 horas', 24, false, 50000, 3),
+  ('PS4', 'La noche (7 PM a 9 AM)', null::int, true, 30000, 4),
+  ('PS5', '10 horas', 10, false, 40000, 1),
+  ('PS5', '24 horas', 24, false, 75000, 2),
+  ('PS5', 'La noche (7 PM a 9 AM)', null::int, true, 50000, 3)
+) as t(tipo, nombre, horas, es_noche, precio, orden)
+where not exists (select 1 from public.alquiler_tarifas);
+
+-- ── Sala: cambiar de modalidad con la sesion abierta ──────────────────────
+-- A conteo regresivo: p_minutos es el tiempo TOTAL pactado (incluye lo ya jugado);
+-- el precio queda pactado con el estandar. A cronometrado: se cobra al cerrar por
+-- tiempo real, como si hubiera empezado cronometrado.
+create or replace function public.cambiar_modalidad(
+  p_sesion_id bigint,
+  p_modalidad text,
+  p_minutos int default null
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'La sesion % no esta activa', p_sesion_id;
+  end if;
+  if p_modalidad not in ('cronometrado', 'conteo_regresivo') then
+    raise exception 'Modalidad invalida: %', p_modalidad;
+  end if;
+  if p_modalidad = v_s.modalidad and p_modalidad = 'cronometrado' then
+    raise exception 'La sesion ya es cronometrada';
+  end if;
+
+  if p_modalidad = 'conteo_regresivo' then
+    if p_minutos is null or p_minutos <= 0 then
+      raise exception 'Indica el tiempo total del conteo regresivo';
+    end if;
+    update public.sesiones
+    set modalidad = 'conteo_regresivo', minutos_asignados = p_minutos
+    where id = p_sesion_id and estado = 'activa'
+    returning * into v_s;
+    if v_s.id is null then
+      raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+    end if;
+    perform private.recalcular_regresiva(p_sesion_id);
+  else
+    update public.sesiones
+    set modalidad = 'cronometrado',
+        minutos_asignados = null,
+        precio_manual = null,
+        horas_cobradas = null,
+        horas_controles = 0,
+        precio_base = null,
+        precio_total = null
+    where id = p_sesion_id and estado = 'activa'
+    returning * into v_s;
+    if v_s.id is null then
+      raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+    end if;
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  return v_s;
+end;
+$$;
+
+revoke all on function public.cambiar_modalidad(bigint, text, int) from public, anon;
+grant execute on function public.cambiar_modalidad(bigint, text, int) to authenticated;
+
+-- Gastos: "hoy" en hora de Colombia, no en UTC del servidor.
+alter table public.gastos alter column fecha set default (now() at time zone 'America/Bogota')::date;
+
+-- ============================================================
+-- 16. REALTIME (2026-10-19)
+-- ============================================================
+-- La Sala y el Alquiler se suscriben a cambios para sincronizar varios dispositivos.
+-- Sin estas tablas en la publicacion, cada pantalla solo veia sus propios cambios.
+alter publication supabase_realtime add table public.sesiones, public.alquileres;

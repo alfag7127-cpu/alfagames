@@ -1,0 +1,415 @@
+<!-- Encabezado -->
+<section class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950 to-emerald-950 text-white p-5 mb-5 shadow-lg">
+  <div class="flex items-center gap-4">
+    <img
+      src="img/alfa-frank-over.jpg"
+      alt="Alfa Games & Frank Over"
+      class="h-20 w-20 sm:h-24 sm:w-24 rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_24px_rgba(52,211,153,0.35)] shrink-0"
+    />
+    <div class="min-w-0">
+      <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Alquiler de consolas</h1>
+      <p class="text-sm text-slate-300">Para jugar en la comodidad de la casa · Alfa Games &amp; Frank Over</p>
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+    <div class="rounded-xl bg-white/10 px-3 py-2">
+      <p class="text-2xl font-bold text-emerald-300">{{ disponibles() }}</p>
+      <p class="text-[11px] uppercase tracking-wide text-slate-300">Disponibles</p>
+    </div>
+    <div class="rounded-xl bg-white/10 px-3 py-2">
+      <p class="text-2xl font-bold text-sky-300">{{ alquiladas() }}</p>
+      <p class="text-[11px] uppercase tracking-wide text-slate-300">Alquiladas</p>
+    </div>
+    <div class="rounded-xl bg-white/10 px-3 py-2">
+      <p class="text-2xl font-bold" [class.text-red-300]="vencidas() > 0" [class.text-slate-200]="vencidas() === 0">{{ vencidas() }}</p>
+      <p class="text-[11px] uppercase tracking-wide text-slate-300">Vencidas</p>
+    </div>
+    <div class="rounded-xl bg-white/10 px-3 py-2">
+      <p class="text-2xl font-bold text-amber-300">{{ controlesLibres() }}<span class="text-sm text-slate-400">/{{ config()?.controles_sueltos ?? 0 }}</span></p>
+      <p class="text-[11px] uppercase tracking-wide text-slate-300">Controles sueltos</p>
+    </div>
+  </div>
+</section>
+
+<!-- Pestañas -->
+<div class="flex gap-1 mb-4 rounded-xl bg-slate-200/70 p-1 text-sm font-medium w-full sm:w-fit overflow-x-auto">
+  <button
+    (click)="pestana.set('consolas')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'consolas'"
+    [class.shadow-sm]="pestana() === 'consolas'"
+    [class.text-indigo-700]="pestana() === 'consolas'"
+    [class.text-slate-600]="pestana() !== 'consolas'"
+  >
+    Consolas
+  </button>
+  <button
+    (click)="pestana.set('historial')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'historial'"
+    [class.shadow-sm]="pestana() === 'historial'"
+    [class.text-indigo-700]="pestana() === 'historial'"
+    [class.text-slate-600]="pestana() !== 'historial'"
+  >
+    Historial
+  </button>
+  @if (auth.isAdmin()) {
+    <button
+      (click)="pestana.set('inventario')"
+      class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+      [class.bg-white]="pestana() === 'inventario'"
+      [class.shadow-sm]="pestana() === 'inventario'"
+      [class.text-indigo-700]="pestana() === 'inventario'"
+      [class.text-slate-600]="pestana() !== 'inventario'"
+    >
+      Inventario y precios
+    </button>
+  }
+</div>
+
+<!-- ═══ CONSOLAS ═══ -->
+@if (pestana() === 'consolas') {
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    @for (c of enInventario(); track c.id) {
+      <article
+        class="rounded-2xl bg-white shadow-sm ring-1 p-5 transition-all"
+        [class.ring-emerald-200]="!c.alquiler_id"
+        [class.ring-sky-300]="!!c.alquiler_id && minutosRestantes(c) >= 0"
+        [class.ring-red-400]="!!c.alquiler_id && minutosRestantes(c) < 0"
+      >
+        <div class="flex items-start justify-between gap-2 mb-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-black"
+              [class.bg-slate-900]="c.tipo === 'PS4'"
+              [class.text-sky-300]="c.tipo === 'PS4'"
+              [class.bg-slate-100]="c.tipo === 'PS5'"
+              [class.text-slate-900]="c.tipo === 'PS5'"
+              [class.ring-1]="c.tipo === 'PS5'"
+              [class.ring-slate-300]="c.tipo === 'PS5'"
+            >
+              {{ c.tipo }}
+            </span>
+            <div class="min-w-0">
+              <h2 class="font-semibold text-slate-800 truncate">{{ c.nombre }}</h2>
+              <p class="text-xs text-slate-500 truncate">{{ c.descripcion || '—' }} · 🎮 {{ c.controles_incluidos }} controles</p>
+            </div>
+          </div>
+          <span
+            class="text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap"
+            [class.bg-emerald-100]="!c.alquiler_id"
+            [class.text-emerald-700]="!c.alquiler_id"
+            [class.bg-sky-100]="!!c.alquiler_id && minutosRestantes(c) >= 0"
+            [class.text-sky-700]="!!c.alquiler_id && minutosRestantes(c) >= 0"
+            [class.bg-red-100]="!!c.alquiler_id && minutosRestantes(c) < 0"
+            [class.text-red-700]="!!c.alquiler_id && minutosRestantes(c) < 0"
+          >
+            {{ !c.alquiler_id ? 'Disponible' : minutosRestantes(c) < 0 ? 'Vencida' : 'Alquilada' }}
+          </span>
+        </div>
+
+        @if (!c.alquiler_id) {
+          <!-- ── DISPONIBLE ── -->
+          @if (!c.formAbierto) {
+            <button
+              (click)="abrirFormulario(c)"
+              class="w-full rounded-xl bg-emerald-600 text-white text-sm font-medium py-2.5 hover:bg-emerald-700"
+            >
+              Alquilar
+            </button>
+          } @else {
+            <div class="space-y-3">
+              <div>
+                <span class="block text-xs font-medium text-slate-500 mb-1">Plan</span>
+                <div class="grid grid-cols-2 gap-1.5">
+                  @for (t of tarifasDe(c.tipo); track t.id) {
+                    <button
+                      type="button"
+                      (click)="c.tarifaId = t.id"
+                      class="rounded-lg border px-2 py-1.5 text-left transition-colors"
+                      [class.border-indigo-600]="c.tarifaId === t.id"
+                      [class.bg-indigo-600]="c.tarifaId === t.id"
+                      [class.text-white]="c.tarifaId === t.id"
+                      [class.border-slate-300]="c.tarifaId !== t.id"
+                      [class.text-slate-700]="c.tarifaId !== t.id"
+                    >
+                      <span class="block text-xs font-semibold">{{ t.nombre }}</span>
+                      <span class="block text-xs opacity-80">{{ t.precio | number: '1.0-0' }} COP</span>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <input [(ngModel)]="c.clienteNombre" name="cliente-{{ c.id }}" placeholder="Nombre del cliente *"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+              <div class="grid grid-cols-2 gap-2">
+                <input [(ngModel)]="c.clienteTelefono" name="tel-{{ c.id }}" type="tel" placeholder="Teléfono"
+                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+                <input [(ngModel)]="c.clienteDireccion" name="dir-{{ c.id }}" placeholder="Dirección"
+                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+              </div>
+
+              <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span class="text-xs text-slate-600">
+                  🎮 {{ c.controles_incluidos + c.controlesExtra }} controles
+                  <span class="text-slate-400">({{ c.controles_incluidos }} incluidos{{ c.controlesExtra ? ' + ' + c.controlesExtra + ' extra' : '' }})</span>
+                </span>
+                <div class="flex items-center gap-1">
+                  <button type="button" (click)="ajustarControlesExtra(c, -1)" [disabled]="!c.controlesExtra"
+                    class="h-7 w-7 rounded-lg border border-slate-300 bg-white text-slate-600 disabled:opacity-40">−</button>
+                  <button type="button" (click)="ajustarControlesExtra(c, 1)" [disabled]="c.controlesExtra >= controlesLibres()"
+                    [title]="controlesLibres() === 0 ? 'No hay controles sueltos libres' : 'Agregar control suelto'"
+                    class="h-7 w-7 rounded-lg border border-slate-300 bg-white text-slate-600 disabled:opacity-40">+</button>
+                </div>
+              </div>
+
+              <input [(ngModel)]="c.notasEntrega" name="notas-{{ c.id }}" placeholder="Notas (juegos, accesorios, depósito…)"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+
+              <div class="rounded-lg bg-indigo-50 px-3 py-2 flex items-center justify-between">
+                <span class="text-xs text-indigo-700">Precio sugerido</span>
+                <span class="text-sm font-bold text-indigo-900" [class.line-through]="c.cambiarPrecio" [class.opacity-60]="c.cambiarPrecio">
+                  {{ precioSugerido(c) | number: '1.0-0' }} COP
+                </span>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" [checked]="c.cambiarPrecio" (change)="toggleCambiarPrecio(c)" class="rounded" />
+                Cambiar precio
+              </label>
+              @if (c.cambiarPrecio) {
+                <input type="number" min="0" step="1000" [(ngModel)]="c.precioFinal" name="precio-{{ c.id }}"
+                  class="w-full text-sm font-semibold rounded-lg border border-indigo-300 px-3 py-1.5" />
+              }
+
+              <div class="flex gap-2">
+                <button (click)="alquilar(c)" [disabled]="c.procesando"
+                  class="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 hover:bg-emerald-700 disabled:opacity-50">
+                  {{ c.procesando ? 'Guardando...' : 'Entregar y cobrar' }}
+                </button>
+                <button (click)="cerrarFormularios(c)" [disabled]="c.procesando"
+                  class="rounded-lg bg-slate-100 text-slate-700 text-sm px-3 hover:bg-slate-200">Cancelar</button>
+              </div>
+            </div>
+          }
+        } @else {
+          <!-- ── ALQUILADA ── -->
+          <div class="space-y-1 text-sm mb-3">
+            <p class="font-medium text-slate-800">{{ c.cliente_nombre }}</p>
+            @if (c.cliente_telefono) {
+              <p class="text-slate-600">
+                📞 {{ c.cliente_telefono }}
+                @if (enlaceWhatsapp(c.cliente_telefono); as wa) {
+                  · <a [href]="wa" target="_blank" rel="noopener" class="text-emerald-600 hover:underline">WhatsApp</a>
+                }
+              </p>
+            }
+            @if (c.cliente_direccion) {
+              <p class="text-slate-600">📍 {{ c.cliente_direccion }}</p>
+            }
+            <p class="text-slate-600">{{ c.plan_nombre }} · 🎮 {{ c.controles }} controles · <span class="font-semibold">{{ c.precio_total | number: '1.0-0' }} COP</span></p>
+            <p class="text-xs text-slate-500">Entregada {{ c.inicio | date }} · devolver {{ c.fin_pactado | date }}</p>
+            @if (c.notas) {
+              <p class="text-xs text-slate-500 italic">{{ c.notas }}</p>
+            }
+          </div>
+
+          <p
+            class="text-center text-sm font-semibold rounded-lg py-2 mb-3"
+            [class.bg-sky-50]="minutosRestantes(c) >= 0"
+            [class.text-sky-800]="minutosRestantes(c) >= 0"
+            [class.bg-red-50]="minutosRestantes(c) < 0"
+            [class.text-red-700]="minutosRestantes(c) < 0"
+            [class.animate-pulse]="minutosRestantes(c) < 0"
+          >
+            {{ textoRestante(c) }}
+          </p>
+
+          @if (!c.devolverAbierto) {
+            <div class="flex gap-2">
+              <button (click)="abrirDevolucion(c)"
+                class="flex-1 rounded-xl bg-sky-600 text-white text-sm font-medium py-2.5 hover:bg-sky-700">
+                Recibir consola
+              </button>
+              <button (click)="cancelar(c)" [disabled]="c.procesando" title="Anular (no cuenta como venta)"
+                class="rounded-xl bg-slate-100 text-slate-600 text-sm px-3 hover:bg-slate-200">Anular</button>
+            </div>
+          } @else {
+            <div class="space-y-3">
+              <label class="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" [(ngModel)]="c.ajustarPrecioDevolucion" name="ajustar-{{ c.id }}" class="rounded" />
+                Ajustar precio final (ej. recargo por entrega tarde)
+              </label>
+              @if (c.ajustarPrecioDevolucion) {
+                <input type="number" min="0" step="1000" [(ngModel)]="c.precioDevolucion" name="precio-dev-{{ c.id }}"
+                  class="w-full text-sm font-semibold rounded-lg border border-sky-300 px-3 py-1.5" />
+              }
+              <input [(ngModel)]="c.notasDevolucion" name="notas-dev-{{ c.id }}" placeholder="Notas de la devolución (estado, faltantes…)"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+              <div class="flex gap-2">
+                <button (click)="devolver(c)" [disabled]="c.procesando"
+                  class="flex-1 rounded-lg bg-sky-600 text-white text-sm font-medium py-2 hover:bg-sky-700 disabled:opacity-50">
+                  {{ c.procesando ? 'Guardando...' : 'Confirmar devolución' }}
+                </button>
+                <button (click)="cerrarFormularios(c)" class="rounded-lg bg-slate-100 text-slate-700 text-sm px-3 hover:bg-slate-200">Cancelar</button>
+              </div>
+            </div>
+          }
+        }
+      </article>
+    } @empty {
+      <p class="text-slate-500">No hay consolas en el inventario de alquiler.</p>
+    }
+  </div>
+}
+
+<!-- ═══ HISTORIAL ═══ -->
+@if (pestana() === 'historial') {
+  <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
+    <label class="text-sm text-slate-600">
+      Desde
+      <input type="date" [(ngModel)]="desde" name="desde" class="block rounded border border-slate-300 px-2 py-1" />
+    </label>
+    <label class="text-sm text-slate-600">
+      Hasta
+      <input type="date" [(ngModel)]="hasta" name="hasta" class="block rounded border border-slate-300 px-2 py-1" />
+    </label>
+    <button (click)="cargarHistorial()" class="rounded-lg bg-indigo-600 text-white text-sm px-4 py-2 hover:bg-indigo-700">Filtrar</button>
+    <p class="ml-auto text-sm text-slate-600">
+      Total del período: <span class="font-bold text-slate-800">{{ totalHistorial() | number: '1.0-0' }} COP</span>
+    </p>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Consola</th>
+          <th class="px-3 py-2">Cliente</th>
+          <th class="px-3 py-2">Plan</th>
+          <th class="px-3 py-2">Entregada</th>
+          <th class="px-3 py-2">Devuelta</th>
+          <th class="px-3 py-2">Controles</th>
+          <th class="px-3 py-2">Total</th>
+          <th class="px-3 py-2">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (a of historial(); track a.id) {
+          <tr class="border-t border-slate-100" [class.opacity-50]="a.estado === 'cancelado'">
+            <td class="px-3 py-2 whitespace-nowrap">{{ nombreConsola(a.consola_id) }}</td>
+            <td class="px-3 py-2">
+              {{ a.cliente_nombre }}
+              @if (a.cliente_telefono) {
+                <span class="block text-xs text-slate-400">{{ a.cliente_telefono }}</span>
+              }
+            </td>
+            <td class="px-3 py-2 whitespace-nowrap">{{ a.plan_nombre }}</td>
+            <td class="px-3 py-2 whitespace-nowrap">{{ a.inicio | date }}</td>
+            <td class="px-3 py-2 whitespace-nowrap">
+              {{ a.devuelto_en ? (a.devuelto_en | date) : '—' }}
+              @if (a.devuelto_en && a.devuelto_en > a.fin_pactado && a.estado === 'devuelto') {
+                <span class="block text-xs text-red-500">tarde</span>
+              }
+            </td>
+            <td class="px-3 py-2">{{ a.controles }}</td>
+            <td class="px-3 py-2 font-medium whitespace-nowrap">
+              {{ a.precio_total | number: '1.0-0' }}
+              @if (a.precio_sugerido != null && a.precio_sugerido !== a.precio_total) {
+                <span class="block text-xs font-normal text-slate-400">sugerido {{ a.precio_sugerido | number: '1.0-0' }}</span>
+              }
+            </td>
+            <td class="px-3 py-2 capitalize">{{ a.estado }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="8" class="px-3 py-6 text-center text-slate-500">Sin alquileres en este período.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<!-- ═══ INVENTARIO Y PRECIOS (admin) ═══ -->
+@if (pestana() === 'inventario' && auth.isAdmin()) {
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <section class="bg-white rounded-xl shadow-sm p-4">
+      <h2 class="font-semibold text-slate-800 mb-3">Consolas del inventario</h2>
+      <form (ngSubmit)="agregarConsola()" class="grid grid-cols-2 gap-2 mb-4">
+        <input [(ngModel)]="nuevaNombre" name="nuevaNombre" placeholder="Nombre (ej. PS4 Programada 3)"
+          class="col-span-2 text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+        <select [(ngModel)]="nuevaTipo" name="nuevaTipo" class="text-sm rounded-lg border border-slate-300 px-2 py-1.5">
+          <option value="PS4">PS4</option>
+          <option value="PS5">PS5</option>
+        </select>
+        <label class="text-xs text-slate-600 flex items-center gap-2">
+          Controles incluidos
+          <input type="number" min="0" [(ngModel)]="nuevaControles" name="nuevaControles"
+            class="w-16 text-sm rounded-lg border border-slate-300 px-2 py-1" />
+        </label>
+        <input [(ngModel)]="nuevaDescripcion" name="nuevaDescripcion" placeholder="Descripción (Original, Programada…)"
+          class="col-span-2 text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+        <button type="submit" class="col-span-2 rounded-lg bg-indigo-600 text-white text-sm py-2 hover:bg-indigo-700">
+          Agregar consola
+        </button>
+      </form>
+
+      <ul class="divide-y divide-slate-100">
+        @for (c of consolas(); track c.id) {
+          <li class="flex items-center justify-between py-2 text-sm" [class.opacity-50]="!c.activo">
+            <span>
+              <span class="font-medium text-slate-800">{{ c.nombre }}</span>
+              <span class="text-slate-500"> · {{ c.tipo }} · {{ c.descripcion || '—' }} · {{ c.controles_incluidos }} controles</span>
+            </span>
+            <button (click)="cambiarActivo(c)" class="hover:underline" [class.text-red-600]="c.activo" [class.text-emerald-600]="!c.activo">
+              {{ c.activo ? 'Quitar' : 'Reactivar' }}
+            </button>
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section class="space-y-4">
+      <div class="bg-white rounded-xl shadow-sm p-4">
+        <h2 class="font-semibold text-slate-800 mb-3">Controles sueltos y extras</h2>
+        @if (config(); as cfg) {
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <label class="text-slate-600">
+              Controles sueltos en inventario
+              <input #sueltos type="number" min="0" [value]="cfg.controles_sueltos"
+                (change)="guardarConfig({ controles_sueltos: +sueltos.value })"
+                class="block w-full rounded-lg border border-slate-300 px-2 py-1 mt-1" />
+            </label>
+            <label class="text-slate-600">
+              Precio por control extra (COP)
+              <input #extra type="number" min="0" step="1000" [value]="cfg.precio_control_extra"
+                (change)="guardarConfig({ precio_control_extra: +extra.value })"
+                class="block w-full rounded-lg border border-slate-300 px-2 py-1 mt-1" />
+            </label>
+          </div>
+          <p class="text-xs text-slate-500 mt-2">Libres ahora: {{ controlesLibres() }}. Cada consola sale con sus controles incluidos; los sueltos se suman como extra.</p>
+        }
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm p-4">
+        <h2 class="font-semibold text-slate-800 mb-3">Precios por plan</h2>
+        <table class="w-full text-sm">
+          <tbody>
+            @for (t of tarifas(); track t.id) {
+              <tr class="border-t border-slate-100 first:border-0">
+                <td class="py-1.5 pr-2 font-medium text-slate-700 w-12">{{ t.tipo }}</td>
+                <td class="py-1.5 pr-2 text-slate-600">{{ t.nombre }}</td>
+                <td class="py-1.5 text-right">
+                  <input #precio type="number" min="0" step="1000" [value]="t.precio"
+                    (change)="guardarTarifa(t, +precio.value)"
+                    class="w-28 text-right rounded-lg border border-slate-300 px-2 py-1" />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+}

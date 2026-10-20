@@ -67,6 +67,21 @@ export class SesionesService {
     return data as Sesion;
   }
 
+  /**
+   * Cambia la modalidad de una sesión abierta. A conteo regresivo, `minutosTotales`
+   * es el tiempo TOTAL pactado (incluye lo ya jugado) y el precio queda pactado.
+   * A cronometrado, se cobra al cerrar por tiempo real.
+   */
+  async cambiarModalidad(sesionId: number, modalidad: Modalidad, minutosTotales: number | null): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('cambiar_modalidad', {
+      p_sesion_id: sesionId,
+      p_modalidad: modalidad,
+      p_minutos: minutosTotales,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
   /** Pausa el tiempo de la sesión: mientras dure no se cobra. */
   async pausarSesion(sesionId: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('pausar_sesion', { p_sesion_id: sesionId });

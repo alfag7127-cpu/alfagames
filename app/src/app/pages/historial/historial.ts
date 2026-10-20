@@ -4,6 +4,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Sesion } from '../../core/models';
 import { SesionesService } from '../../core/sesiones.service';
+import { finDiaColombia, inicioDiaColombia } from '../../core/zona-horaria';
 
 @Component({
   selector: 'app-historial',
@@ -25,8 +26,9 @@ export class Historial implements OnInit {
 
   async cargar(): Promise<void> {
     const data = await this.sesionesService.listarHistorial({
-      desde: this.desde ? new Date(this.desde).toISOString() : undefined,
-      hasta: this.hasta ? new Date(this.hasta + 'T23:59:59').toISOString() : undefined,
+      // Días completos en hora de Colombia (no en UTC del servidor ni del dispositivo).
+      desde: this.desde ? inicioDiaColombia(this.desde) : undefined,
+      hasta: this.hasta ? finDiaColombia(this.hasta) : undefined,
     });
     this.sesiones.set(data);
   }

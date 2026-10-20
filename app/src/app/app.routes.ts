@@ -4,11 +4,8 @@ import { Shell } from './layout/shell';
 import { Login } from './pages/login/login';
 import { Home } from './pages/home/home';
 import { Sala } from './pages/sala/sala';
-import { Historial } from './pages/historial/historial';
-import { Gastos } from './pages/gastos/gastos';
-import { Dashboard } from './pages/dashboard/dashboard';
-import { Puestos } from './pages/puestos/puestos';
 
+// La Sala carga de una vez (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
   {
@@ -18,10 +15,23 @@ export const routes: Routes = [
     children: [
       { path: '', component: Home, pathMatch: 'full' },
       { path: 'sala', component: Sala },
-      { path: 'historial', component: Historial },
-      { path: 'gastos', component: Gastos, canActivate: [adminGuard] },
-      { path: 'dashboard', component: Dashboard, canActivate: [adminGuard] },
-      { path: 'puestos', component: Puestos, canActivate: [adminGuard] },
+      { path: 'historial', loadComponent: () => import('./pages/historial/historial').then((m) => m.Historial) },
+      { path: 'alquiler', loadComponent: () => import('./pages/alquiler/alquiler').then((m) => m.AlquilerPage) },
+      {
+        path: 'gastos',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./pages/gastos/gastos').then((m) => m.Gastos),
+      },
+      {
+        path: 'dashboard',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.Dashboard),
+      },
+      {
+        path: 'puestos',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./pages/puestos/puestos').then((m) => m.Puestos),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

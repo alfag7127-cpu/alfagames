@@ -2,23 +2,21 @@ import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { GastosService } from '../../core/gastos.service';
 import { SesionesService } from '../../core/sesiones.service';
+import { AlquilerService } from '../../core/alquiler.service';
+import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 
 interface DiaResumen {
-  fecha: string; // YYYY-MM-DD, hora local
+  fecha: string; // YYYY-MM-DD, hora de Colombia
   etiqueta: string; // "lun 15"
-  ventas: number;
+  ventas: number; // sala + alquiler
+  ventasSala: number;
+  ventasAlquiler: number;
   gastos: number;
 }
 
-/** Fecha local (America/Bogota corre en UTC-5 sin horario de verano) en formato YYYY-MM-DD. */
-function fechaLocalISO(fecha: Date | string): string {
-  const d = typeof fecha === 'string' ? new Date(fecha) : fecha;
-  return d.toLocaleDateString('sv-SE');
-}
-
 function etiquetaCorta(fechaISO: string): string {
-  const d = new Date(fechaISO + 'T00:00:00');
-  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' });
+  const d = new Date(fechaISO + 'T12:00:00' + OFFSET_COLOMBIA);
+  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', timeZone: ZONA_HORARIA });
 }
 
 @Component({
@@ -48,6 +46,7 @@ export class Dashboard implements OnInit {
   constructor(
     private readonly sesionesService: SesionesService,
     private readonly gastosService: GastosService,
+    private readonly alquilerService: AlquilerService,
   ) {}
 
   ngOnInit(): void {
@@ -57,28 +56,31 @@ export class Dashboard implements OnInit {
   async cargar(): Promise<void> {
     this.cargando.set(true);
 
-    const hoy = new Date();
-    const hace6dias = new Date(hoy);
-    hace6dias.setDate(hoy.getDate() - 6);
-    hace6dias.setHours(0, 0, 0, 0);
+    // Los 7 días se cuentan en hora de Colombia, no en la del dispositivo.
+    const desde = sumarDias(fechaColombia(), -6);
 
-    const [sesiones, gastos] = await Promise.all([
-      this.sesionesService.listarHistorial({ desde: hace6dias.toISOString() }),
-      this.gastosService.listar(fechaLocalISO(hace6dias)),
+    const [sesiones, gastos, alquileres] = await Promise.all([
+      this.sesionesService.listarHistorial({ desde: inicioDiaColombia(desde) }),
+      this.gastosService.listar(desde),
+      this.alquilerService.historial(inicioDiaColombia(desde)),
     ]);
 
-    const porFecha = new Map<string, { ventas: number; gastos: number }>();
+    const porFecha = new Map<string, { ventasSala: number; ventasAlquiler: number; gastos: number }>();
     for (let i = 0; i < 7; i++) {
-      const d = new Date(hace6dias);
-      d.setDate(hace6dias.getDate() + i);
-      porFecha.set(fechaLocalISO(d), { ventas: 0, gastos: 0 });
+      porFecha.set(sumarDias(desde, i), { ventasSala: 0, ventasAlquiler: 0, gastos: 0 });
     }
 
     for (const s of sesiones) {
       if (s.estado !== 'finalizada' || s.precio_total == null) continue;
-      const key = fechaLocalISO(s.hora_inicio);
-      const acc = porFecha.get(key);
-      if (acc) acc.ventas += s.precio_total;
+      const acc = porFecha.get(fechaColombia(s.hora_inicio));
+      if (acc) acc.ventasSala += s.precio_total;
+    }
+
+    // El alquiler se cobra al entregar: cuenta el día de la entrega.
+    for (const a of alquileres) {
+      if (a.estado === 'cancelado') continue;
+      const acc = porFecha.get(fechaColombia(a.inicio));
+      if (acc) acc.ventasAlquiler += a.precio_total;
     }
 
     for (const g of gastos) {
@@ -90,7 +92,9 @@ export class Dashboard implements OnInit {
       Array.from(porFecha.entries()).map(([fecha, v]) => ({
         fecha,
         etiqueta: etiquetaCorta(fecha),
-        ventas: v.ventas,
+        ventas: v.ventasSala + v.ventasAlquiler,
+        ventasSala: v.ventasSala,
+        ventasAlquiler: v.ventasAlquiler,
         gastos: v.gastos,
       })),
     );

@@ -1,3 +1,4 @@
+import { fechaColombia } from '../../core/zona-horaria';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -5,8 +6,9 @@ import { AuthService } from '../../core/auth.service';
 import { GastosService } from '../../core/gastos.service';
 import { Gasto } from '../../core/models';
 
+/** "Hoy" en hora de Colombia: con UTC, después de las 7 PM ya marcaba el día siguiente. */
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return fechaColombia();
 }
 
 @Component({

@@ -13,6 +13,14 @@ App para administrar una sala de videojuegos (5 PS5): sesiones en vivo, cobro, h
 
 Si cambia una tarifa, actualiza los dos lados, `docs/PLAN.md` y los casos de `pricing.spec.ts`.
 
+## Alquiler de consolas
+
+Módulo aparte (página `/alquiler`): tablas `alquiler_consolas`, `alquiler_tarifas`, `alquiler_config` (fila única: controles sueltos y precio por control extra) y `alquileres`; vista `vista_alquiler_consolas`; RPC `alquilar_consola`, `devolver_alquiler`, `cancelar_alquiler`, `alquiler_controles_libres`. Reglas en `docs/PLAN.md`.
+
+## Fechas
+
+Todo en hora de Colombia: usar `app/src/app/core/zona-horaria.ts` para días y filtros (nunca `toISOString().slice(0, 10)` para "hoy"). `DatePipe` ya viene configurado con locale `es-CO` y zona `-0500` en `app.config.ts`.
+
 ## Supabase
 
 - Proyecto: `xncbflbvcggrnoypaqcr`. La URL y la clave publishable de `app/src/environments/` son públicas por diseño; la seguridad la da RLS. Nunca subas la `service_role` key.

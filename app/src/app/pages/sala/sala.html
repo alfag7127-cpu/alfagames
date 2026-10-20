@@ -1,9 +1,22 @@
-<div class="mb-5 flex items-center justify-between">
-  <div>
-    <h1 class="text-xl font-bold text-slate-800">Sala — estado en vivo</h1>
-    <p class="text-sm text-slate-500">5 PlayStation 5 · cronometrado o conteo regresivo</p>
+<section class="mb-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-sky-100">
+  <div class="flex flex-col sm:flex-row items-center gap-4 p-4 sm:p-5 bg-gradient-to-r from-white via-sky-50 to-indigo-100">
+    <img src="img/alfa-games.jpg" alt="Alfa Games" class="h-20 sm:h-24 w-auto rounded-xl mix-blend-multiply" />
+    <div class="flex-1 text-center sm:text-left">
+      <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Sala de videojuegos</h1>
+      <p class="text-sm text-slate-500">Estado en vivo · cronometrado o conteo regresivo</p>
+    </div>
+    <div class="flex gap-2 text-center">
+      <div class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2">
+        <p class="text-2xl font-bold text-emerald-700">{{ libres() }}</p>
+        <p class="text-[11px] uppercase tracking-wide text-emerald-700/80">Libres</p>
+      </div>
+      <div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-2">
+        <p class="text-2xl font-bold text-amber-700">{{ ocupadas() }}</p>
+        <p class="text-[11px] uppercase tracking-wide text-amber-700/80">Ocupadas</p>
+      </div>
+    </div>
   </div>
-</div>
+</section>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
   @for (p of puestos(); track p.id) {
@@ -293,6 +306,67 @@
             ⇄ Transferir
           </button>
         </div>
+
+        <button
+          type="button"
+          (click)="toggleCambioModo(p)"
+          [disabled]="p.procesando"
+          class="w-full mb-3 rounded-lg border border-dashed border-slate-300 text-xs font-medium text-slate-600 py-1.5 hover:bg-slate-50 disabled:opacity-40"
+        >
+          {{ p.modalidad === 'conteo_regresivo' ? '⏱ Pasar a cronometrado' : '⏳ Pasar a conteo regresivo' }}
+        </button>
+
+        @if (p.cambioModoAbierto) {
+          <div class="rounded-lg bg-slate-50 p-3 mb-3 space-y-2">
+            @if (p.modalidad === 'cronometrado') {
+              <p class="text-xs text-slate-600">
+                Tiempo <span class="font-semibold">total</span> pactado (ya jugó {{ minutosTranscurridos(p) | duracion }}):
+              </p>
+              <div class="grid grid-cols-4 gap-1.5">
+                @for (preset of presetsMinutos; track preset) {
+                  <button
+                    type="button"
+                    (click)="p.minutosCambio = preset"
+                    class="rounded-lg border text-xs font-medium py-1"
+                    [class.bg-indigo-600]="p.minutosCambio === preset"
+                    [class.text-white]="p.minutosCambio === preset"
+                    [class.border-indigo-600]="p.minutosCambio === preset"
+                    [class.border-slate-300]="p.minutosCambio !== preset"
+                    [class.text-slate-600]="p.minutosCambio !== preset"
+                    [class.opacity-40]="preset <= minutosTranscurridos(p)"
+                  >
+                    {{ preset | duracion }}
+                  </button>
+                }
+              </div>
+              <input
+                type="number"
+                min="1"
+                [(ngModel)]="p.minutosCambio"
+                name="min-cambio-{{ p.id }}"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1"
+              />
+              <button
+                type="button"
+                (click)="cambiarModalidad(p, 'conteo_regresivo')"
+                [disabled]="p.procesando"
+                class="w-full rounded-lg bg-indigo-600 text-white text-xs font-medium py-1.5 hover:bg-indigo-700 disabled:opacity-40"
+              >
+                Pasar a regresivo · {{ p.minutosCambio | duracion }}
+              </button>
+            } @else {
+              <p class="text-xs text-slate-600">El cronómetro sigue desde el inicio ({{ minutosTranscurridos(p) | duracion }} jugados) y se cobra al cerrar por tiempo real.</p>
+              <button
+                type="button"
+                (click)="cambiarModalidad(p, 'cronometrado')"
+                [disabled]="p.procesando"
+                class="w-full rounded-lg bg-slate-800 text-white text-xs font-medium py-1.5 hover:bg-slate-900 disabled:opacity-40"
+              >
+                Pasar a cronometrado
+              </button>
+            }
+          </div>
+        }
 
         @if (p.transferirAbierto) {
           <div class="flex items-center gap-1.5 mb-3">
