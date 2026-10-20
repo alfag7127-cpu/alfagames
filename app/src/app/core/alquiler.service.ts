@@ -18,6 +18,9 @@ export interface NuevoAlquiler {
   controlesExtra: number;
   precioFinal: number | null;
   notas: string | null;
+  /** Reparto del cobro entre potes (Llave = Daviplata, Efectivo = físico). */
+  pagoLlave: number;
+  pagoEfectivo: number;
 }
 
 export interface Extension {
@@ -25,6 +28,17 @@ export interface Extension {
   tarifaId: number | null;
   horas: number | null;
   precioFinal: number | null;
+  pagoLlave: number;
+  pagoEfectivo: number;
+}
+
+/** Un pago con su alquiler (para el resumen de potes por fechas). */
+export interface PagoConAlquiler {
+  pote: 'llave' | 'efectivo';
+  monto: number;
+  concepto: string;
+  created_at: string;
+  alquileres: { estado: string };
 }
 
 export interface ArchivoContrato {
@@ -101,17 +115,25 @@ export class AlquilerService {
       p_controles_extra: a.controlesExtra,
       p_precio_final: a.precioFinal,
       p_notas: a.notas,
+      p_pago_llave: a.pagoLlave,
+      p_pago_efectivo: a.pagoEfectivo,
     });
     if (error) throw error;
     return data as Alquiler;
   }
 
   /** Recibe la consola. `precioFinal` ajusta lo cobrado (ej. recargo por entrega tarde). */
-  async devolver(alquilerId: number, precioFinal: number | null, notas: string | null): Promise<Alquiler> {
+  async devolver(
+    alquilerId: number,
+    precioFinal: number | null,
+    notas: string | null,
+    poteAjuste: 'llave' | 'efectivo' | null,
+  ): Promise<Alquiler> {
     const { data, error } = await this.supabase.client.rpc('devolver_alquiler', {
       p_alquiler_id: alquilerId,
       p_precio_final: precioFinal,
       p_notas: notas,
+      p_pote_ajuste: poteAjuste,
     });
     if (error) throw error;
     return data as Alquiler;
@@ -124,9 +146,21 @@ export class AlquilerService {
       p_tarifa_id: e.tarifaId,
       p_horas: e.horas,
       p_precio_final: e.precioFinal,
+      p_pago_llave: e.pagoLlave,
+      p_pago_efectivo: e.pagoEfectivo,
     });
     if (error) throw error;
     return data as Alquiler;
+  }
+
+/** Pagos por pote en un rango de fechas (cuentan el día en que entró el dinero). */
+  async pagosPotes(desde?: string, hasta?: string): Promise<PagoConAlquiler[]> {
+    let query = this.supabase.client.from('alquiler_pagos').select('pote, monto, concepto, created_at, alquileres!inner(estado)');
+    if (desde) query = query.gte('created_at', desde);
+    if (hasta) query = query.lte('created_at', hasta);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data as unknown as PagoConAlquiler[];
   }
 
   async pagosExtensiones(desde: string): Promise<PagoExtension[]> {
@@ -183,7 +217,7 @@ export class AlquilerService {
   async historial(desde?: string, hasta?: string): Promise<Alquiler[]> {
     let query = this.supabase.client
       .from('alquileres')
-      .select('*, alquiler_extensiones(*)')
+      .select('*, alquiler_extensiones(*), alquiler_pagos(*)')
       .order('inicio', { ascending: false });
     if (desde) query = query.gte('inicio', desde);
     if (hasta) query = query.lte('inicio', hasta);
@@ -225,6 +259,7 @@ export class AlquilerService {
       .channel('alquileres-cambios')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alquileres' }, callback)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alquiler_extensiones' }, callback)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alquiler_pagos' }, callback)
       .subscribe();
     return () => {
       this.supabase.client.removeChannel(channel);

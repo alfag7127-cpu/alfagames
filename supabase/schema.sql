@@ -2093,3 +2093,301 @@ create policy "contratos_delete_admin" on storage.objects
   for delete to authenticated using (bucket_id = 'contratos' and private.is_admin());
 
 alter publication supabase_realtime add table public.alquiler_extensiones;
+
+-- ============================================================
+-- 18. POTES DE ALQUILER Y PS5 POR 4 HORAS (2026-10-19)
+-- ============================================================
+-- Potes: donde entra el dinero del alquiler.
+--   llave    = cuenta Daviplata ("Pote Llave")
+--   efectivo = dinero fisico ("Pote Efectivo")
+-- Cada cobro (entrega, extension o ajuste al recibir) se registra en alquiler_pagos,
+-- y se puede dividir entre los dos potes. La suma de los pagos = lo cobrado.
+
+insert into public.alquiler_tarifas (tipo, nombre, horas, es_noche, precio, orden)
+select 'PS5', '4 horas', 4, false, 30000, 0
+where not exists (select 1 from public.alquiler_tarifas where tipo = 'PS5' and horas = 4);
+
+create table if not exists public.alquiler_pagos (
+  id bigint generated always as identity primary key,
+  alquiler_id bigint not null references public.alquileres (id) on delete cascade,
+  extension_id bigint references public.alquiler_extensiones (id) on delete cascade,
+  concepto text not null check (concepto in ('entrega', 'extension', 'ajuste')),
+  pote text not null check (pote in ('llave', 'efectivo')),
+  monto numeric(10, 0) not null check (monto <> 0), -- negativo = devolucion (solo en ajuste)
+  empleado_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now(),
+  constraint alquiler_pagos_negativo_solo_ajuste check (monto > 0 or concepto = 'ajuste')
+);
+
+create index if not exists alquiler_pagos_por_alquiler on public.alquiler_pagos (alquiler_id);
+create index if not exists alquiler_pagos_por_fecha on public.alquiler_pagos (created_at);
+
+alter table public.alquiler_pagos enable row level security;
+
+create policy "alquiler_pagos_select" on public.alquiler_pagos
+  for select to authenticated using (true);
+create policy "alquiler_pagos_insert" on public.alquiler_pagos
+  for insert to authenticated with check (empleado_id = auth.uid() or private.is_admin());
+create policy "alquiler_pagos_delete_admin" on public.alquiler_pagos
+  for delete to authenticated using (private.is_admin());
+
+-- Reparte un cobro entre los potes. Si solo viene un monto, el otro es el resto.
+create or replace function private.registrar_pagos(
+  p_alquiler_id bigint,
+  p_extension_id bigint,
+  p_concepto text,
+  p_total numeric,
+  p_llave numeric,
+  p_efectivo numeric
+)
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_llave numeric := p_llave;
+  v_efectivo numeric := p_efectivo;
+begin
+  if p_total = 0 then
+    return;
+  end if;
+  if v_llave is null and v_efectivo is null then
+    raise exception 'Indica en que pote entra el dinero (Llave o Efectivo)';
+  end if;
+  if v_llave is null then
+    v_llave := p_total - v_efectivo;
+  elsif v_efectivo is null then
+    v_efectivo := p_total - v_llave;
+  end if;
+  if p_concepto <> 'ajuste' and (v_llave < 0 or v_efectivo < 0) then
+    raise exception 'Los montos por pote no pueden ser negativos';
+  end if;
+  if v_llave + v_efectivo <> p_total then
+    raise exception 'Llave (%) + Efectivo (%) no suman el total (%)', v_llave, v_efectivo, p_total;
+  end if;
+
+  if v_llave <> 0 then
+    insert into public.alquiler_pagos (alquiler_id, extension_id, concepto, pote, monto)
+    values (p_alquiler_id, p_extension_id, p_concepto, 'llave', v_llave);
+  end if;
+  if v_efectivo <> 0 then
+    insert into public.alquiler_pagos (alquiler_id, extension_id, concepto, pote, monto)
+    values (p_alquiler_id, p_extension_id, p_concepto, 'efectivo', v_efectivo);
+  end if;
+end;
+$$;
+
+revoke all on function private.registrar_pagos(bigint, bigint, text, numeric, numeric, numeric) from public, anon;
+grant execute on function private.registrar_pagos(bigint, bigint, text, numeric, numeric, numeric) to authenticated;
+
+-- Alquilar: mismo comportamiento + pago por potes.
+drop function if exists public.alquilar_consola(bigint, bigint, text, text, text, int, numeric, text);
+
+create or replace function public.alquilar_consola(
+  p_consola_id bigint,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text default null,
+  p_cliente_direccion text default null,
+  p_controles_extra int default 0,
+  p_precio_final numeric default null,
+  p_notas text default null,
+  p_pago_llave numeric default null,
+  p_pago_efectivo numeric default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_sugerido numeric;
+  v_fila public.alquileres;
+begin
+  select * into v_consola from public.alquiler_consolas where id = p_consola_id;
+  if v_consola.id is null or not v_consola.activo then
+    raise exception 'La consola no existe o no esta en el inventario';
+  end if;
+  if exists (select 1 from public.alquileres where consola_id = p_consola_id and estado = 'activo') then
+    raise exception '% ya esta alquilada', v_consola.nombre;
+  end if;
+
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+  if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+    raise exception 'Elige un plan de %', v_consola.tipo;
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_controles_extra < 0 then
+    raise exception 'Los controles extra no pueden ser negativos';
+  end if;
+  if p_controles_extra > public.alquiler_controles_libres() then
+    raise exception 'Solo hay % control(es) suelto(s) disponible(s)', public.alquiler_controles_libres();
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+  v_sugerido := v_tarifa.precio + p_controles_extra * coalesce(v_precio_extra, 0);
+
+  insert into public.alquileres (
+    consola_id, empleado_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    tarifa_id, plan_nombre, inicio, fin_pactado, controles, controles_extra,
+    precio_sugerido, precio_total, notas
+  ) values (
+    p_consola_id, auth.uid(), trim(p_cliente_nombre), nullif(trim(p_cliente_telefono), ''),
+    nullif(trim(p_cliente_direccion), ''), v_tarifa.id, v_tarifa.nombre, now(),
+    private.fin_alquiler(now(), v_tarifa), v_consola.controles_incluidos + p_controles_extra,
+    p_controles_extra, v_sugerido, coalesce(p_precio_final, v_sugerido), nullif(trim(p_notas), '')
+  )
+  returning * into v_fila;
+
+  perform private.registrar_pagos(v_fila.id, null, 'entrega', v_fila.precio_total, p_pago_llave, p_pago_efectivo);
+
+  return v_fila;
+end;
+$$;
+
+-- Extender: mismo comportamiento + pago por potes.
+drop function if exists public.extender_alquiler(bigint, bigint, int, numeric);
+
+create or replace function public.extender_alquiler(
+  p_alquiler_id bigint,
+  p_tarifa_id bigint default null,
+  p_horas int default null,
+  p_precio_final numeric default null,
+  p_pago_llave numeric default null,
+  p_pago_efectivo numeric default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_a public.alquileres;
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_fin_nuevo timestamptz;
+  v_descripcion text;
+  v_sugerido numeric;
+  v_precio numeric;
+  v_extension_id bigint;
+begin
+  select * into v_a from public.alquileres where id = p_alquiler_id and estado = 'activo';
+  if v_a.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+  if (p_tarifa_id is null) = (p_horas is null) then
+    raise exception 'Elige un plan o un numero de horas para extender';
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select * into v_consola from public.alquiler_consolas where id = v_a.consola_id;
+
+  if p_tarifa_id is not null then
+    select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+    if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+      raise exception 'Elige un plan de %', v_consola.tipo;
+    end if;
+    select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+    v_fin_nuevo := private.fin_alquiler(v_a.fin_pactado, v_tarifa);
+    v_descripcion := v_tarifa.nombre;
+    v_sugerido := v_tarifa.precio + v_a.controles_extra * coalesce(v_precio_extra, 0);
+  else
+    if p_horas <= 0 then
+      raise exception 'Las horas deben ser mayores a 0';
+    end if;
+    v_fin_nuevo := v_a.fin_pactado + make_interval(hours => p_horas);
+    v_descripcion := p_horas || (case when p_horas = 1 then ' hora' else ' horas' end);
+    v_sugerido := null;
+  end if;
+
+  v_precio := coalesce(p_precio_final, v_sugerido);
+  if v_precio is null then
+    raise exception 'Escribe el precio de la extension';
+  end if;
+
+  insert into public.alquiler_extensiones (
+    alquiler_id, empleado_id, tarifa_id, descripcion, fin_anterior, fin_nuevo, precio_sugerido, precio
+  ) values (
+    v_a.id, auth.uid(), v_tarifa.id, v_descripcion, v_a.fin_pactado, v_fin_nuevo, v_sugerido, v_precio
+  )
+  returning id into v_extension_id;
+
+  perform private.registrar_pagos(v_a.id, v_extension_id, 'extension', v_precio, p_pago_llave, p_pago_efectivo);
+
+  update public.alquileres set fin_pactado = v_fin_nuevo where id = v_a.id and estado = 'activo'
+  returning * into v_a;
+  if v_a.id is null then
+    raise exception 'No se pudo extender el alquiler %', p_alquiler_id;
+  end if;
+
+  return v_a;
+end;
+$$;
+
+-- Devolver: si se cambia el precio, la diferencia (positiva o negativa) va a un pote.
+drop function if exists public.devolver_alquiler(bigint, numeric, text);
+
+create or replace function public.devolver_alquiler(
+  p_alquiler_id bigint,
+  p_precio_final numeric default null,
+  p_notas text default null,
+  p_pote_ajuste text default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_fila public.alquileres;
+  v_diferencia numeric;
+begin
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select * into v_fila from public.alquileres where id = p_alquiler_id and estado = 'activo';
+  if v_fila.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+
+  v_diferencia := coalesce(p_precio_final, v_fila.precio_total) - v_fila.precio_total;
+  if v_diferencia <> 0 then
+    if p_pote_ajuste not in ('llave', 'efectivo') or p_pote_ajuste is null then
+      raise exception 'Indica en que pote entra (o sale) la diferencia';
+    end if;
+    insert into public.alquiler_pagos (alquiler_id, concepto, pote, monto)
+    values (p_alquiler_id, 'ajuste', p_pote_ajuste, v_diferencia);
+  end if;
+
+  update public.alquileres
+  set estado = 'devuelto',
+      devuelto_en = now(),
+      precio_total = coalesce(p_precio_final, precio_total),
+      notas = coalesce(nullif(trim(p_notas), ''), notas)
+  where id = p_alquiler_id and estado = 'activo'
+  returning * into v_fila;
+
+  if v_fila.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+  return v_fila;
+end;
+$$;
+
+revoke all on function public.alquilar_consola(bigint, bigint, text, text, text, int, numeric, text, numeric, numeric) from public, anon;
+revoke all on function public.extender_alquiler(bigint, bigint, int, numeric, numeric, numeric) from public, anon;
+revoke all on function public.devolver_alquiler(bigint, numeric, text, text) from public, anon;
+grant execute on function public.alquilar_consola(bigint, bigint, text, text, text, int, numeric, text, numeric, numeric) to authenticated;
+grant execute on function public.extender_alquiler(bigint, bigint, int, numeric, numeric, numeric) to authenticated;
+grant execute on function public.devolver_alquiler(bigint, numeric, text, text) to authenticated;
+
+alter publication supabase_realtime add table public.alquiler_pagos;

@@ -1,6 +1,15 @@
-import { Component } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 import { AuthService } from '../core/auth.service';
+
+interface EnlaceMenu {
+  ruta: string;
+  icono: string;
+  texto: string;
+  soloAdmin: boolean;
+}
 
 @Component({
   selector: 'app-shell',
@@ -8,10 +17,29 @@ import { AuthService } from '../core/auth.service';
   templateUrl: './shell.html',
 })
 export class Shell {
+  /** Menú lateral en el celular: se abre con ☰ y se esconde al elegir una sección. */
+  readonly menuAbierto = signal(false);
+
+  readonly enlaces: EnlaceMenu[] = [
+    { ruta: '/sala', icono: '🎮', texto: 'Sala', soloAdmin: false },
+    { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', soloAdmin: false },
+    { ruta: '/historial', icono: '📋', texto: 'Historial', soloAdmin: false },
+    { ruta: '/dashboard', icono: '📊', texto: 'Dashboard', soloAdmin: true },
+    { ruta: '/gastos', icono: '💸', texto: 'Gastos', soloAdmin: true },
+    { ruta: '/puestos', icono: '🕹️', texto: 'Puestos', soloAdmin: true },
+  ];
+
   constructor(
     readonly auth: AuthService,
     private readonly router: Router,
-  ) {}
+  ) {
+    router.events
+      .pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(inject(DestroyRef)),
+      )
+      .subscribe(() => this.menuAbierto.set(false));
+  }
 
   async logout(): Promise<void> {
     await this.auth.signOut();

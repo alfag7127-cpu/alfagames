@@ -123,6 +123,7 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
   | PS4 | 10 horas | $35.000 |
   | PS4 | 24 horas | $50.000 |
   | PS4 | La noche (7 PM a 9 AM) | $30.000 |
+  | PS5 | 4 horas | $30.000 |
   | PS5 | 10 horas | $40.000 |
   | PS5 | 24 horas | $75.000 |
   | PS5 | La noche (7 PM a 9 AM) | $50.000 |
@@ -132,3 +133,5 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 - **Más tiempo (extensión)**: si el cliente pide más tiempo y envía el dinero, se registra una extensión: un plan (precio sugerido = plan + controles extra) u horas sueltas con precio a mano. La nueva entrega se cuenta desde la entrega pactada actual. Cada pago queda con su fecha y suma en ventas el día que se recibe.
 - **Contrato**: el cliente firma un contrato físico; se adjuntan fotos o PDF (al alquilar, durante el alquiler o desde el historial). Se guardan en un bucket privado de Supabase Storage (`contratos/<id del alquiler>/`); las fotos se comprimen antes de subir. Solo el admin puede borrar archivos.
 - **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. El Dashboard suma las ventas de alquiler (por día de entrega) junto a las de la sala.
+
+- **Potes** (dónde entra el dinero del alquiler): **Pote Llave** = cuenta Daviplata; **Pote Efectivo** = dinero físico. Cada cobro (entrega, extensión, ajuste al recibir) se registra por pote y se puede dividir (parte Llave, parte Efectivo); la suma debe dar el total. El historial de alquiler muestra cuánto entró a cada pote en el período (por fecha del pago).

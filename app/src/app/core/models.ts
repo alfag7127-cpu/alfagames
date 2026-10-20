@@ -138,6 +138,18 @@ export interface Alquiler {
   created_at: string;
   /** Pagos por más tiempo (viene embebido en el historial). */
   alquiler_extensiones?: AlquilerExtension[];
+  /** Cómo entró el dinero, por pote (viene embebido en el historial). */
+  alquiler_pagos?: AlquilerPago[];
+}
+
+export interface AlquilerPago {
+  id: number;
+  alquiler_id: number;
+  extension_id: number | null;
+  concepto: 'entrega' | 'extension' | 'ajuste';
+  pote: 'llave' | 'efectivo';
+  monto: number;
+  created_at: string;
 }
 
 export interface AlquilerExtension {

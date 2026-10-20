@@ -9,6 +9,8 @@ import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { Contratos } from '../../shared/contratos';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
+import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
+import { PagoConAlquiler } from '../../core/alquiler.service';
 
 type Pestana = 'consolas' | 'historial' | 'inventario';
 
@@ -24,6 +26,8 @@ interface ConsolaVM extends ConsolaConEstado {
   cambiarPrecio: boolean;
   precioFinal: number | null;
   notasEntrega: string;
+  pagoModo: ModoPago | null;
+  pagoLlave: number | null;
   /** Fotos o PDF del contrato, se suben al registrar el alquiler. */
   contratoArchivos: File[];
   // Extensión (más tiempo pagado)
@@ -32,12 +36,16 @@ interface ConsolaVM extends ConsolaConEstado {
   extHoras: number | null;
   extCambiarPrecio: boolean;
   extPrecio: number | null;
+  extPagoModo: ModoPago | null;
+  extPagoLlave: number | null;
   verContrato: boolean;
   // Formulario de devolución
   devolverAbierto: boolean;
   ajustarPrecioDevolucion: boolean;
   precioDevolucion: number | null;
   notasDevolucion: string;
+  /** Pote donde entra (o sale) la diferencia si se cambia el precio al recibir. */
+  devPote: Pote | null;
 }
 
 const FORM_VACIO = {
@@ -51,22 +59,27 @@ const FORM_VACIO = {
   cambiarPrecio: false,
   precioFinal: null,
   notasEntrega: '',
+  pagoModo: null,
+  pagoLlave: null,
   contratoArchivos: [] as File[],
   extenderAbierto: false,
   extTarifaId: null,
   extHoras: null,
   extCambiarPrecio: false,
   extPrecio: null,
+  extPagoModo: null,
+  extPagoLlave: null,
   verContrato: false,
   devolverAbierto: false,
   ajustarPrecioDevolucion: false,
   precioDevolucion: null,
   notasDevolucion: '',
+  devPote: null,
 };
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -103,6 +116,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
   );
   /** Historial: qué fila tiene abierto su contrato. */
   readonly contratoAbierto = signal<number | null>(null);
+  /** Pagos del período por pote (cuentan el día en que entró el dinero). */
+  readonly pagosPeriodo = signal<PagoConAlquiler[]>([]);
+  readonly potes = computed(() => {
+    const vigentes = this.pagosPeriodo().filter((p) => p.alquileres.estado !== 'cancelado');
+    const suma = (pote: Pote) => vigentes.filter((p) => p.pote === pote).reduce((s, p) => s + p.monto, 0);
+    return { llave: suma('llave'), efectivo: suma('efectivo') };
+  });
+  readonly nombrePote = NOMBRE_POTE;
 
   constructor(
     private readonly alquiler: AlquilerService,
@@ -151,12 +172,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   async cargarHistorial(): Promise<void> {
     try {
-      this.historial.set(
-        await this.alquiler.historial(
-          this.desde ? inicioDiaColombia(this.desde) : undefined,
-          this.hasta ? finDiaColombia(this.hasta) : undefined,
-        ),
-      );
+      const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
+      const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
+      const [historial, pagos] = await Promise.all([
+        this.alquiler.historial(desde, hasta),
+        this.alquiler.pagosPotes(desde, hasta),
+      ]);
+      this.historial.set(historial);
+      this.pagosPeriodo.set(pagos);
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     }
@@ -190,6 +213,11 @@ export class AlquilerPage implements OnInit, OnDestroy {
     return (tarifa?.precio ?? 0) + c.controlesExtra * (this.config()?.precio_control_extra ?? 0);
   }
 
+  /** Lo que se cobra al entregar: el sugerido o el precio cambiado a mano. */
+  totalAlquiler(c: ConsolaVM): number {
+    return c.cambiarPrecio ? (c.precioFinal ?? 0) : this.precioSugerido(c);
+  }
+
   toggleCambiarPrecio(c: ConsolaVM): void {
     this.actualizar(c.id, { cambiarPrecio: !c.cambiarPrecio, precioFinal: c.cambiarPrecio ? null : this.precioSugerido(c) });
   }
@@ -200,6 +228,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
     if (c.cambiarPrecio && (c.precioFinal == null || c.precioFinal < 0)) {
       return this.toast.error('Escribe el precio a cobrar (o desmarca "Cambiar precio").');
     }
+    const reparto = repartirPago(this.totalAlquiler(c), c.pagoModo, c.pagoLlave);
+    if (!reparto) return this.toast.error('Indica cómo pagó: Llave, Efectivo o Mixto (que cuadre con el total).');
     this.actualizar(c.id, { procesando: true });
     try {
       const a = await this.alquiler.alquilar({
@@ -211,6 +241,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
         controlesExtra: c.controlesExtra,
         precioFinal: c.cambiarPrecio ? c.precioFinal : null,
         notas: c.notasEntrega || null,
+        pagoLlave: reparto.llave,
+        pagoEfectivo: reparto.efectivo,
       });
       this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP.`);
       await this.subirContratosNuevos(a.id, c.contratoArchivos);
@@ -285,12 +317,16 @@ export class AlquilerPage implements OnInit, OnDestroy {
     if ((c.extCambiarPrecio || !c.extTarifaId) && (c.extPrecio == null || c.extPrecio < 0)) {
       return this.toast.error('Escribe el precio que pagó el cliente.');
     }
+    const reparto = repartirPago(this.totalExtension(c), c.extPagoModo, c.extPagoLlave);
+    if (!reparto) return this.toast.error('Indica cómo pagó: Llave, Efectivo o Mixto (que cuadre con el total).');
     this.actualizar(c.id, { procesando: true });
     try {
       const a = await this.alquiler.extender(c.alquiler_id, {
         tarifaId: c.extTarifaId,
         horas: c.extTarifaId ? null : c.extHoras,
         precioFinal: c.extCambiarPrecio || !c.extTarifaId ? c.extPrecio : null,
+        pagoLlave: reparto.llave,
+        pagoEfectivo: reparto.efectivo,
       });
       this.toast.exito(`${c.nombre}: tiempo extendido hasta ${new Date(a.fin_pactado).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' })}.`);
       this.actualizar(c.id, { extenderAbierto: false, procesando: false });
@@ -299,6 +335,16 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.toast.error(this.mensajeError(e));
       this.actualizar(c.id, { procesando: false });
     }
+  }
+
+  /** Lo que se cobra por la extensión: sugerido del plan o precio a mano. */
+  totalExtension(c: ConsolaVM): number {
+    return c.extCambiarPrecio || !c.extTarifaId ? (c.extPrecio ?? 0) : (this.precioSugeridoExtension(c) ?? 0);
+  }
+
+  /** Suma por pote de un alquiler (para la tabla del historial). */
+  porPote(a: Alquiler, pote: Pote): number {
+    return (a.alquiler_pagos ?? []).filter((p) => p.pote === pote).reduce((s, p) => s + p.monto, 0);
   }
 
   /** Lo que pagó el cliente: entrega + extensiones. */
@@ -321,12 +367,16 @@ export class AlquilerPage implements OnInit, OnDestroy {
     if (c.ajustarPrecioDevolucion && (c.precioDevolucion == null || c.precioDevolucion < 0)) {
       return this.toast.error('Escribe el precio final.');
     }
+    if (this.hayDiferenciaDevolucion(c) && !c.devPote) {
+      return this.toast.error('Indica en qué pote entra (o sale) la diferencia.');
+    }
     this.actualizar(c.id, { procesando: true });
     try {
       const a = await this.alquiler.devolver(
         c.alquiler_id,
         c.ajustarPrecioDevolucion ? c.precioDevolucion : null,
         c.notasDevolucion || null,
+        this.hayDiferenciaDevolucion(c) ? c.devPote : null,
       );
       this.toast.exito(`${c.nombre} recibida. Total: $${a.precio_total.toLocaleString('es-CO')} COP.`);
       await Promise.all([this.cargar(), this.cargarHistorial()]);
@@ -334,6 +384,10 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.toast.error(this.mensajeError(e));
       this.actualizar(c.id, { procesando: false });
     }
+  }
+
+  hayDiferenciaDevolucion(c: ConsolaVM): boolean {
+    return c.ajustarPrecioDevolucion && c.precioDevolucion != null && c.precioDevolucion !== c.precio_total;
   }
 
   async cancelar(c: ConsolaVM): Promise<void> {
