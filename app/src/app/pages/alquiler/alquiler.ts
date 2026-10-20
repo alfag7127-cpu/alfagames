@@ -8,11 +8,12 @@ import { ToastService } from '../../core/toast.service';
 import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { Contratos } from '../../shared/contratos';
+import { GraficaProducido } from './grafica-producido';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
-type Pestana = 'consolas' | 'historial' | 'inventario';
+type Pestana = 'consolas' | 'historial' | 'graficas' | 'inventario';
 
 interface ConsolaVM extends ConsolaConEstado {
   procesando: boolean;
@@ -79,7 +80,7 @@ const FORM_VACIO = {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {

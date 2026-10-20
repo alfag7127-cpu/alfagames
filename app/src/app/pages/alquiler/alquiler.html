@@ -54,6 +54,16 @@
   >
     Historial
   </button>
+  <button
+    (click)="pestana.set('graficas')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'graficas'"
+    [class.shadow-sm]="pestana() === 'graficas'"
+    [class.text-indigo-700]="pestana() === 'graficas'"
+    [class.text-slate-600]="pestana() !== 'graficas'"
+  >
+    📊 Gráficas
+  </button>
   @if (auth.isAdmin()) {
     <button
       (click)="pestana.set('inventario')"
@@ -540,6 +550,11 @@
       <li class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow-sm">Sin alquileres en este período.</li>
     }
   </ul>
+}
+
+<!-- ═══ GRÁFICAS ═══ -->
+@if (pestana() === 'graficas') {
+  <app-grafica-producido />
 }
 
 <!-- ═══ INVENTARIO Y PRECIOS (admin) ═══ -->

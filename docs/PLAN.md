@@ -135,3 +135,4 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 - **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. El Dashboard suma las ventas de alquiler (por día de entrega) junto a las de la sala.
 
 - **Potes** (dónde entra el dinero del alquiler): **Pote Llave** = cuenta Daviplata; **Pote Efectivo** = dinero físico. Cada cobro (entrega, extensión, ajuste al recibir) se registra por pote y se puede dividir (parte Llave, parte Efectivo); la suma debe dar el total. El historial de alquiler muestra cuánto entró a cada pote en el período (por fecha del pago).
+- **Gráficas**: pestaña *Alquiler → Gráficas* con el producido (dinero recibido) diario (30 días), semanal (12 semanas, lunes a domingo) y mensual (12 meses), apilado por pote, más el resumen de hoy, esta semana y este mes.
