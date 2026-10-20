@@ -283,4 +283,6 @@ export interface UsuarioApp {
   activo: boolean;
   ultimo_ingreso: string | null;
   yo: boolean;
+  /** Super usuario: nadie le cambia rol, contraseña ni lo desactiva. */
+  protegido: boolean;
 }

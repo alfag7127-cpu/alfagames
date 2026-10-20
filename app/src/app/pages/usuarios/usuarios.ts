@@ -61,11 +61,11 @@ import { UsuariosService } from '../../core/usuarios.service';
           @for (u of usuarios(); track u.id) {
             <tr [class.opacity-50]="!u.activo">
               <td class="px-4 py-2.5">
-                <p class="font-medium text-slate-800">{{ u.nombre || '—' }} @if (u.yo) {<span class="text-xs text-slate-400">(tú)</span>}</p>
+                <p class="font-medium text-slate-800">{{ u.nombre || '—' }} @if (u.yo) {<span class="text-xs text-slate-400">(tú)</span>} @if (u.protegido) {<span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">🛡 Súper usuario</span>}</p>
                 <p class="text-xs text-slate-500">{{ u.email }}{{ u.activo ? '' : ' · desactivado' }}</p>
               </td>
               <td class="px-4 py-2.5">
-                <select [ngModel]="u.rol" (ngModelChange)="cambiarRol(u, $event)" [name]="'rol-' + u.id" [disabled]="u.yo"
+                <select [ngModel]="u.rol" (ngModelChange)="cambiarRol(u, $event)" [name]="'rol-' + u.id" [disabled]="u.yo || u.protegido"
                   class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900 disabled:opacity-60">
                   <option ngValue="empleado">Trabajador (Sala)</option>
                   <option ngValue="alquiler">Alquiler</option>
@@ -74,8 +74,10 @@ import { UsuariosService } from '../../core/usuarios.service';
               </td>
               <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{{ u.ultimo_ingreso ? (u.ultimo_ingreso | date) : 'nunca' }}</td>
               <td class="px-4 py-2.5 whitespace-nowrap">
-                <button type="button" (click)="cambiarPassword(u)" class="text-blue-600 hover:underline mr-3">Contraseña</button>
-                @if (!u.yo) {
+                @if (!u.protegido || u.yo) {
+                  <button type="button" (click)="cambiarPassword(u)" class="text-blue-600 hover:underline mr-3">Contraseña</button>
+                }
+                @if (!u.yo && !u.protegido) {
                   <button type="button" (click)="cambiarActivo(u)" class="hover:underline"
                     [class.text-red-600]="u.activo" [class.text-emerald-600]="!u.activo">
                     {{ u.activo ? 'Desactivar' : 'Activar' }}

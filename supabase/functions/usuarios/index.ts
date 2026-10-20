@@ -19,6 +19,10 @@ function respuesta(cuerpo: unknown, status = 200): Response {
 
 type Rol = "admin" | "empleado" | "alquiler";
 
+/** Super usuario: nadie le cambia rol, contraseña ni lo desactiva (solo él cambia su contraseña). */
+const SUPER_EMAIL = "prueba@alfagames.com";
+const esSuper = (email?: string | null) => (email ?? "").toLowerCase() === SUPER_EMAIL;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return respuesta({ error: "Método no permitido" }, 405);
@@ -58,6 +62,7 @@ Deno.serve(async (req) => {
           activo: !u.banned_until || new Date(u.banned_until) < new Date(),
           ultimo_ingreso: u.last_sign_in_at ?? null,
           yo: u.id === quien.user.id,
+          protegido: esSuper(u.email),
         })),
       });
     }
@@ -88,6 +93,10 @@ Deno.serve(async (req) => {
 
     const id = String(cuerpo.id ?? "");
     if (!id) return respuesta({ error: "Falta el usuario" }, 400);
+    const { data: objetivo } = await servicio.auth.admin.getUserById(id);
+    if (esSuper(objetivo?.user?.email) && !(accion === "password" && esSuper(quien.user.email))) {
+      return respuesta({ error: "El super usuario está protegido: nadie puede cambiarlo" }, 403);
+    }
     if (id === quien.user.id && (accion === "rol" || accion === "desactivar")) {
       return respuesta({ error: "No puedes quitarte el rol de admin ni desactivarte a ti mismo" }, 400);
     }

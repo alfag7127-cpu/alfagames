@@ -3284,3 +3284,45 @@ create policy "productos_select_sala" on public.productos
 drop policy if exists "ventas_productos_select" on public.ventas_productos;
 create policy "ventas_productos_select_sala" on public.ventas_productos
   for select to authenticated using (private.puede_sala());
+
+-- ============================================================
+-- 27. SUPER USUARIO PROTEGIDO (2026-10-20)
+-- ============================================================
+-- prueba@alfagames.com es el super usuario (control total del negocio). Su rol admin
+-- no lo cambia ni lo elimina nadie; la funcion "usuarios" tampoco deja cambiarle la
+-- contrasena (salvo el mismo) ni desactivarlo.
+create or replace function private.es_super(p_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from auth.users where id = p_id and lower(email) = 'prueba@alfagames.com');
+$$;
+
+revoke all on function private.es_super(uuid) from public, anon;
+grant execute on function private.es_super(uuid) to authenticated, service_role;
+
+create or replace function private.proteger_super()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if private.es_super(old.id) then
+      raise exception 'El super usuario no se puede eliminar';
+    end if;
+    return old;
+  end if;
+  if private.es_super(old.id) and new.role is distinct from 'admin' then
+    raise exception 'El rol del super usuario no se puede cambiar';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger profiles_proteger_super
+  before update or delete on public.profiles
+  for each row execute function private.proteger_super();
