@@ -36,10 +36,13 @@ Angular + Supabase para control de una sala de videojuegos: tiempo por puesto, c
 
   **5b. Quitar un control adicional.** Se puede retirar en cualquier momento; se cobra solo el tiempo que estuvo en uso, redondeado a la media hora más cercana. Ej.: 2h de sesión con un control adicional solo la 1.ª hora → 6.000 × 2 + 2.000 × 1 = **$14.000**. Máximo 2 adicionales en uso a la vez.
 
+  **5c. Pausa.** Cualquier sesión se puede pausar y reanudar. El tiempo en pausa no se cobra (ni el de la sesión ni el de los controles adicionales). En conteo regresivo el tiempo restante se congela y no suenan avisos mientras está en pausa.
+
   **6. Extensión de tiempo (conteo regresivo).** Si el cliente compra más tiempo, el precio se **recalcula sobre el tiempo total**: 1h + 1h = paquete de 2h = $10.000 (no 6.000 + 6.000).
 
 - **Precio al cobrar**: el sistema muestra un **precio sugerido** con el estándar, y quien cobra puede marcar "Cambiar precio" y poner otro valor según la situación. Se guardan ambos (`precio_sugerido` y `precio_total`); el Historial muestra el sugerido cuando se cambió.
 - **Precio especial al abrir (conteo regresivo)**: se puede pactar un precio base fijo al abrir; los controles adicionales se siguen sumando aparte.
+- **Transferir sesión**: una sesión activa se puede mover completa (tiempo, pausas, controles y precio) a otra consola libre, por ejemplo si el cliente cambia de consola o la consola falla.
 - **Puestos**: el admin agrega, renombra o quita consolas desde la página *Puestos*. Quitar una consola la saca de la Sala pero conserva su historial y se puede reactivar. No se puede quitar una consola con una sesión abierta.
 - **Ganancia neta**: Ventas del día − Gastos del día. Se necesita registrar gastos (arriendo, luz, insumos, etc.), no solo ventas.
 

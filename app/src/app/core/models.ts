@@ -61,12 +61,17 @@ export interface PuestoConEstado {
   precio_manual: number | null;
   /** Controles adicionales de la sesión: se cobra de `desde` a `hasta` (null = sigue en uso). */
   controles: ControlAdicional[];
+  pausada: boolean | null;
+  /** Pausas de la sesión: ese tiempo no se cobra (hasta = null: pausa en curso). */
+  pausas: Intervalo[];
 }
 
-export interface ControlAdicional {
+export interface Intervalo {
   desde: string;
   hasta: string | null;
 }
+
+export type ControlAdicional = Intervalo;
 
 export interface Gasto {
   id: number;

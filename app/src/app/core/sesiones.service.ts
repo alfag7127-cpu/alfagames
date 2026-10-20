@@ -67,6 +67,29 @@ export class SesionesService {
     return data as Sesion;
   }
 
+  /** Pausa el tiempo de la sesión: mientras dure no se cobra. */
+  async pausarSesion(sesionId: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('pausar_sesion', { p_sesion_id: sesionId });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
+  async reanudarSesion(sesionId: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('reanudar_sesion', { p_sesion_id: sesionId });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
+  /** Mueve la sesión completa (tiempo, controles, precio) a otra consola libre. */
+  async transferirSesion(sesionId: number, puestoDestinoId: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('transferir_sesion', {
+      p_sesion_id: sesionId,
+      p_puesto_destino: puestoDestinoId,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
   /** Conteo regresivo: suma minutos y el servidor recalcula el precio sobre el total. */
   async extenderSesion(sesionId: number, minutos: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('extender_sesion', {

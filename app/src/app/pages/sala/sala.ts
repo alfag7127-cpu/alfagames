@@ -28,6 +28,9 @@ interface PuestoVM extends PuestoConEstado {
   // Al cobrar: cambiar el precio sugerido por otro
   cambiarPrecio: boolean;
   precioFinalInput: number | null;
+  // Transferir la sesión a otra consola
+  transferirAbierto: boolean;
+  destinoInput: number | null;
   procesando: boolean;
 }
 
@@ -131,6 +134,8 @@ export class Sala implements OnInit, OnDestroy {
             precioManualInput: null,
             cambiarPrecio: false,
             precioFinalInput: null,
+            transferirAbierto: false,
+            destinoInput: null,
             procesando: false,
           };
         }),
@@ -222,6 +227,53 @@ export class Sala implements OnInit, OnDestroy {
     }
   }
 
+  async pausarOReanudar(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      if (p.pausada) {
+        await this.sesiones.reanudarSesion(p.sesion_id);
+        this.toast.exito(`${p.nombre}: tiempo reanudado.`);
+      } else {
+        await this.sesiones.pausarSesion(p.sesion_id);
+        this.toast.info(`${p.nombre}: tiempo en pausa.`);
+      }
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  toggleTransferir(puestoId: number): void {
+    this.puestos.update((list) =>
+      list.map((x) =>
+        x.id === puestoId ? { ...x, transferirAbierto: !x.transferirAbierto, destinoInput: null } : x,
+      ),
+    );
+  }
+
+  /** Consolas libres a las que se puede mover la sesión de `p`. */
+  consolasLibres(p: PuestoVM): PuestoVM[] {
+    return this.puestos().filter((x) => !x.sesion_id && x.id !== p.id);
+  }
+
+  async transferir(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id || !p.destinoInput) return;
+    const destino = this.puestos().find((x) => x.id === p.destinoInput);
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.transferirSesion(p.sesion_id, p.destinoInput);
+      // El aviso de tiempo ya enviado sigue valiendo: la sesión es la misma.
+      await this.cargar();
+      this.toast.exito(`Sesión movida de ${p.nombre} a ${destino?.nombre ?? 'la otra consola'}.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
   /** Conteo regresivo: el cliente compra más tiempo; el precio se recalcula sobre el total. */
   async extender(p: PuestoVM, minutos: number): Promise<void> {
     if (!p.sesion_id) return;
@@ -275,9 +327,22 @@ export class Sala implements OnInit, OnDestroy {
 
   // ── Tiempo ──────────────────────────────────────────────────────────────
 
+  /** Segundos jugados (sin contar pausas) desde el inicio hasta ahora. */
   segundosTranscurridos(p: PuestoVM): number {
     if (!p.hora_inicio) return 0;
-    return Math.max(0, Math.floor((this.ahora() - new Date(p.hora_inicio).getTime()) / 1000));
+    return Math.floor(this.msEfectivos(p, new Date(p.hora_inicio).getTime(), this.ahora()) / 1000);
+  }
+
+  /** Milisegundos entre desde y hasta descontando las pausas de la sesión (igual que el servidor). */
+  private msEfectivos(p: PuestoVM, desde: number, hasta: number): number {
+    const ahora = this.ahora();
+    let pausado = 0;
+    for (const pausa of p.pausas ?? []) {
+      const ini = Math.max(new Date(pausa.desde).getTime(), desde);
+      const fin = Math.min(pausa.hasta ? new Date(pausa.hasta).getTime() : ahora, hasta);
+      if (fin > ini) pausado += fin - ini;
+    }
+    return Math.max(0, hasta - desde - pausado);
   }
 
   minutosTranscurridos(p: PuestoVM): number {
@@ -324,9 +389,10 @@ export class Sala implements OnInit, OnDestroy {
   /** "Cuánto va" en una sesión cronometrada activa: cada control cuenta mientras estuvo en uso. */
   previewCronometrado(p: PuestoVM): number {
     const ahora = this.ahora();
+    const inicio = p.hora_inicio ? new Date(p.hora_inicio).getTime() : ahora;
     const minutosControles = (p.controles ?? []).map((c) => {
       const fin = c.hasta ? new Date(c.hasta).getTime() : ahora;
-      return Math.max(0, fin - new Date(c.desde).getTime()) / 60000;
+      return this.msEfectivos(p, Math.max(new Date(c.desde).getTime(), inicio), fin) / 60000;
     });
     return calcularCobro(this.segundosTranscurridos(p) / 60, minutosControles).precioTotal;
   }
@@ -351,7 +417,7 @@ export class Sala implements OnInit, OnDestroy {
 
   private revisarAlertas(): void {
     for (const p of this.puestos()) {
-      if (!p.sesion_id || p.modalidad !== 'conteo_regresivo') continue;
+      if (!p.sesion_id || p.modalidad !== 'conteo_regresivo' || p.pausada) continue;
       const nivel = this.nivelAlerta(p);
       if (nivel === 'normal') continue;
 

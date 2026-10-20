@@ -216,6 +216,9 @@
           [class.bg-red-50]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
         >
           {{ tiempoFormateado(p) }}
+          @if (p.pausada) {
+            <span class="block text-xs font-sans font-semibold tracking-wide text-indigo-600">⏸ EN PAUSA</span>
+          }
         </p>
 
         @if (nivelAlerta(p) === 'aviso') {
@@ -264,6 +267,55 @@
             </button>
           </div>
         </div>
+
+        <div class="grid grid-cols-2 gap-1.5 mb-3">
+          <button
+            type="button"
+            (click)="pausarOReanudar(p)"
+            [disabled]="p.procesando"
+            class="rounded-lg border text-xs font-medium py-1.5 disabled:opacity-40"
+            [class.border-indigo-300]="!p.pausada"
+            [class.bg-indigo-50]="!p.pausada"
+            [class.text-indigo-700]="!p.pausada"
+            [class.border-emerald-400]="p.pausada"
+            [class.bg-emerald-600]="p.pausada"
+            [class.text-white]="p.pausada"
+          >
+            {{ p.pausada ? '▶ Reanudar' : '⏸ Pausar' }}
+          </button>
+          <button
+            type="button"
+            (click)="toggleTransferir(p.id)"
+            [disabled]="p.procesando || consolasLibres(p).length === 0"
+            [title]="consolasLibres(p).length === 0 ? 'No hay consolas libres' : 'Mover esta sesión a otra consola'"
+            class="rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 py-1.5 hover:bg-slate-100 disabled:opacity-40"
+          >
+            ⇄ Transferir
+          </button>
+        </div>
+
+        @if (p.transferirAbierto) {
+          <div class="flex items-center gap-1.5 mb-3">
+            <select
+              [(ngModel)]="p.destinoInput"
+              name="destino-{{ p.id }}"
+              class="flex-1 text-sm rounded-lg border border-slate-300 px-2 py-1.5"
+            >
+              <option [ngValue]="null" disabled>Mover a…</option>
+              @for (libre of consolasLibres(p); track libre.id) {
+                <option [ngValue]="libre.id">{{ libre.nombre }}</option>
+              }
+            </select>
+            <button
+              type="button"
+              (click)="transferir(p)"
+              [disabled]="p.procesando || !p.destinoInput"
+              class="rounded-lg bg-indigo-600 text-white text-xs font-medium px-3 py-1.5 hover:bg-indigo-700 disabled:opacity-40"
+            >
+              Mover
+            </button>
+          </div>
+        }
 
         @if (p.modalidad === 'conteo_regresivo') {
           <div class="flex items-center gap-1.5 mb-3">

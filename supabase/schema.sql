@@ -1220,3 +1220,344 @@ left join public.sesiones s
 where p.activo;
 
 grant select on public.vista_puestos to authenticated;
+
+-- ============================================================
+-- 14. PAUSA DE TIEMPO Y TRANSFERENCIA DE CONSOLA (2026-10-19)
+-- ============================================================
+-- - Pausa: el tiempo pausado no se cobra (ni el de la sesion ni el de los controles
+--   adicionales). En conteo regresivo el tiempo restante se congela: el fin pactado
+--   se corre lo que dure la pausa.
+-- - Transferir: mueve una sesion activa completa (tiempo, controles, pausas, precio)
+--   a otra consola libre. Ej.: el cliente cambia de consola o la consola falla.
+
+create table if not exists public.sesion_pausas (
+  id bigint generated always as identity primary key,
+  sesion_id bigint not null references public.sesiones (id) on delete cascade,
+  desde timestamptz not null default now(),
+  hasta timestamptz,
+  created_at timestamptz not null default now(),
+  constraint sesion_pausas_hasta_valido check (hasta is null or hasta >= desde)
+);
+
+create index if not exists sesion_pausas_por_sesion on public.sesion_pausas (sesion_id);
+
+-- Solo una pausa abierta por sesion.
+create unique index if not exists sesion_pausas_una_abierta
+  on public.sesion_pausas (sesion_id) where hasta is null;
+
+alter table public.sesion_pausas enable row level security;
+
+create policy "sesion_pausas_select_authenticated" on public.sesion_pausas
+  for select to authenticated using (true);
+
+create policy "sesion_pausas_insert_propia" on public.sesion_pausas
+  for insert to authenticated with check (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  );
+
+create policy "sesion_pausas_update_propia" on public.sesion_pausas
+  for update to authenticated
+  using (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.sesiones s
+      where s.id = sesion_id and (s.empleado_id = auth.uid() or private.is_admin())
+    )
+  );
+
+create policy "sesion_pausas_delete_admin" on public.sesion_pausas
+  for delete to authenticated using (private.is_admin());
+
+-- Marca rapida para la Sala (y dispara realtime sobre sesiones).
+alter table public.sesiones
+  add column if not exists pausada boolean not null default false;
+
+-- Minutos entre p_desde y p_hasta descontando las pausas de la sesion.
+create or replace function private.minutos_efectivos(p_sesion_id bigint, p_desde timestamptz, p_hasta timestamptz)
+returns numeric
+language sql
+stable
+set search_path = public
+as $$
+  select greatest(
+    0,
+    extract(epoch from (p_hasta - p_desde))
+      - coalesce(
+          (
+            select sum(greatest(0, extract(epoch from (least(coalesce(pa.hasta, now()), p_hasta) - greatest(pa.desde, p_desde)))))
+            from public.sesion_pausas pa
+            where pa.sesion_id = p_sesion_id
+          ),
+          0
+        )
+  ) / 60.0;
+$$;
+
+-- Duracion total de las pausas (la abierta cuenta hasta ahora).
+create or replace function private.pausa_total(p_sesion_id bigint)
+returns interval
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(sum(coalesce(hasta, now()) - desde), interval '0')
+  from public.sesion_pausas
+  where sesion_id = p_sesion_id;
+$$;
+
+-- Cobro hasta p_fin, sin contar pausas (sesion y controles).
+create or replace function private.cobro_sesion(
+  p_sesion_id bigint,
+  p_fin timestamptz,
+  p_precio_manual numeric,
+  out horas numeric,
+  out horas_controles numeric,
+  out precio_base numeric,
+  out precio_total numeric
+)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_inicio timestamptz;
+  v_controles numeric[];
+begin
+  select hora_inicio into v_inicio from public.sesiones where id = p_sesion_id;
+
+  select coalesce(
+    array_agg(private.minutos_efectivos(p_sesion_id, greatest(c.desde, v_inicio), least(coalesce(c.hasta, p_fin), p_fin))),
+    '{}'
+  )
+    into v_controles
+  from public.sesion_controles c
+  where c.sesion_id = p_sesion_id and c.desde < p_fin;
+
+  select * into horas, horas_controles, precio_base, precio_total
+  from private.calcular_cobro(private.minutos_efectivos(p_sesion_id, v_inicio, p_fin), v_controles, p_precio_manual);
+end;
+$$;
+
+-- Fin pactado de un conteo regresivo: inicio + minutos asignados + pausas.
+create or replace function private.fin_regresiva(p_sesion_id bigint)
+returns timestamptz
+language sql
+stable
+set search_path = public
+as $$
+  select s.hora_inicio + make_interval(mins => s.minutos_asignados) + private.pausa_total(s.id)
+  from public.sesiones s
+  where s.id = p_sesion_id;
+$$;
+
+create or replace function private.recalcular_regresiva(p_sesion_id bigint)
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_c record;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  select * into v_c
+  from private.cobro_sesion(p_sesion_id, private.fin_regresiva(p_sesion_id), v_s.precio_manual);
+
+  update public.sesiones
+  set horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_base = v_c.precio_base,
+      precio_total = v_c.precio_total
+  where id = p_sesion_id;
+end;
+$$;
+
+create or replace function public.pausar_sesion(p_sesion_id bigint)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  update public.sesiones
+  set pausada = true
+  where id = p_sesion_id and estado = 'activa' and not pausada
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'La sesion % no esta activa, ya esta en pausa, o no tienes permiso', p_sesion_id;
+  end if;
+
+  insert into public.sesion_pausas (sesion_id) values (p_sesion_id);
+  return v_s;
+end;
+$$;
+
+create or replace function public.reanudar_sesion(p_sesion_id bigint)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  update public.sesiones
+  set pausada = false
+  where id = p_sesion_id and estado = 'activa' and pausada
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'La sesion % no esta en pausa o no tienes permiso', p_sesion_id;
+  end if;
+
+  update public.sesion_pausas set hasta = now() where sesion_id = p_sesion_id and hasta is null;
+  return v_s;
+end;
+$$;
+
+create or replace function public.transferir_sesion(p_sesion_id bigint, p_puesto_destino bigint)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_destino public.puestos;
+begin
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'La sesion % no esta activa', p_sesion_id;
+  end if;
+
+  select * into v_destino from public.puestos where id = p_puesto_destino;
+  if v_destino.id is null or not v_destino.activo then
+    raise exception 'La consola de destino no existe o no esta en la sala';
+  end if;
+  if v_destino.id = v_s.puesto_id then
+    raise exception 'La sesion ya esta en %', v_destino.nombre;
+  end if;
+  if exists (select 1 from public.sesiones where puesto_id = p_puesto_destino and estado = 'activa') then
+    raise exception '% esta ocupada', v_destino.nombre;
+  end if;
+
+  update public.sesiones
+  set puesto_id = p_puesto_destino
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+  end if;
+
+  return v_s;
+end;
+$$;
+
+-- Cerrar: cierra la pausa abierta y descuenta pausas del cobro.
+create or replace function public.cerrar_sesion(p_sesion_id bigint, p_precio_final numeric default null)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_fin timestamptz;
+  v_c record;
+begin
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio a cobrar no puede ser negativo';
+  end if;
+
+  select * into v_s from public.sesiones where id = p_sesion_id and estado = 'activa';
+  if v_s.id is null then
+    raise exception 'Sesion % no existe, ya esta cerrada, o no tienes permiso sobre ella', p_sesion_id;
+  end if;
+
+  update public.sesion_pausas set hasta = now() where sesion_id = p_sesion_id and hasta is null;
+
+  if v_s.modalidad = 'conteo_regresivo' then
+    v_fin := private.fin_regresiva(p_sesion_id);
+  else
+    v_fin := now();
+  end if;
+
+  select * into v_c from private.cobro_sesion(p_sesion_id, v_fin, v_s.precio_manual);
+
+  update public.sesiones
+  set hora_fin = now(),
+      horas_cobradas = v_c.horas,
+      horas_controles = v_c.horas_controles,
+      precio_base = v_c.precio_base,
+      precio_sugerido = v_c.precio_total,
+      precio_total = coalesce(p_precio_final, v_c.precio_total),
+      pausada = false,
+      estado = 'finalizada'
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+
+  if v_s.id is null then
+    raise exception 'No se pudo cerrar la sesion % (sin permiso o ya fue cerrada por otro)', p_sesion_id;
+  end if;
+
+  return v_s;
+end;
+$$;
+
+revoke all on function private.minutos_efectivos(bigint, timestamptz, timestamptz) from public, anon;
+revoke all on function private.pausa_total(bigint) from public, anon;
+revoke all on function private.fin_regresiva(bigint) from public, anon;
+grant execute on function private.minutos_efectivos(bigint, timestamptz, timestamptz) to authenticated;
+grant execute on function private.pausa_total(bigint) to authenticated;
+grant execute on function private.fin_regresiva(bigint) to authenticated;
+
+revoke all on function public.pausar_sesion(bigint) from public, anon;
+revoke all on function public.reanudar_sesion(bigint) from public, anon;
+revoke all on function public.transferir_sesion(bigint, bigint) from public, anon;
+grant execute on function public.pausar_sesion(bigint) to authenticated;
+grant execute on function public.reanudar_sesion(bigint) to authenticated;
+grant execute on function public.transferir_sesion(bigint, bigint) to authenticated;
+
+-- Vista en vivo: agrega estado de pausa y las pausas (columnas al final, compatible).
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles,
+  s.pausada,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', pa.desde, 'hasta', pa.hasta) order by pa.desde)
+      from public.sesion_pausas pa
+      where pa.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as pausas
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;
