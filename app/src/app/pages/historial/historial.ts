@@ -166,6 +166,19 @@ export class Historial implements OnInit {
     return s.modalidad === 'conteo_regresivo' ? Math.abs(d) >= 10 : Math.abs(d) > 15;
   }
 
+  /** Productos cargados a la cuenta de una sesión. */
+  productosDeSesion(sesionId: number): VentaProducto[] {
+    return this.ventas().filter((v) => v.sesion_id === sesionId && v.estado === 'vendida');
+  }
+
+  totalProductosSesion(sesionId: number): number {
+    return this.productosDeSesion(sesionId).reduce((t, v) => t + v.total, 0);
+  }
+
+  nombreProducto(id: number): string {
+    return this.nombresProductos()[id] ?? `Producto #${id}`;
+  }
+
   nombreUsuario(id: string | null): string {
     return id ? (this.nombresUsuarios()[id] ?? 'Otro usuario') : '—';
   }

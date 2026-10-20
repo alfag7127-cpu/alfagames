@@ -95,7 +95,12 @@
           @for (s of g.sesiones; track s.id) {
             <tr class="hover:bg-indigo-50/40 transition-colors" [class.opacity-50]="s.estado === 'cancelada'">
               <td class="px-4 py-2.5 font-semibold text-slate-800 whitespace-nowrap">{{ nombrePuesto(s.puesto_id) }}</td>
-              <td class="px-4 py-2.5 text-slate-700">{{ s.cliente_nombre || '—' }}</td>
+              <td class="px-4 py-2.5 text-slate-700">
+                {{ s.cliente_nombre || '—' }}
+                @for (v of productosDeSesion(s.id); track v.id) {
+                  <span class="block text-[11px] text-sky-700">🛒 {{ v.cantidad }} × {{ nombreProducto(v.producto_id) }} · {{ v.total | number: '1.0-0' }}</span>
+                }
+              </td>
               <td class="px-4 py-2.5">
                 <span
                   class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap"
@@ -129,6 +134,9 @@
               <td class="px-4 py-2.5 text-slate-500">{{ s.horas_controles ? (s.horas_controles | duracion: 'horas') : '—' }}</td>
               <td class="px-4 py-2.5 text-right font-bold text-slate-900 whitespace-nowrap tabular-nums">
                 {{ s.precio_total != null ? (s.precio_total | number: '1.0-0') : '—' }}
+                @if (totalProductosSesion(s.id)) {
+                  <span class="block text-xs font-normal text-sky-700">+ 🛒 {{ totalProductosSesion(s.id) | number: '1.0-0' }}</span>
+                }
                 @if (s.precio_sugerido != null && s.precio_sugerido !== s.precio_total) {
                   <span class="block text-xs font-normal text-amber-600" title="El precio se cambió al cobrar">
                     sugerido {{ s.precio_sugerido | number: '1.0-0' }}

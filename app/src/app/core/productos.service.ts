@@ -26,11 +26,18 @@ export class ProductosService {
     return data as Producto[];
   }
 
-  async vender(productoId: number, cantidad: number, precioUnitario: number | null = null): Promise<VentaProducto> {
+  /** `sesionId`: carga la venta a la cuenta de esa consola (null = venta de mostrador). */
+  async vender(
+    productoId: number,
+    cantidad: number,
+    sesionId: number | null = null,
+    precioUnitario: number | null = null,
+  ): Promise<VentaProducto> {
     const { data, error } = await this.supabase.client.rpc('vender_producto', {
       p_producto_id: productoId,
       p_cantidad: cantidad,
       p_precio_unitario: precioUnitario,
+      p_sesion_id: sesionId,
     });
     if (error) throw error;
     return data as VentaProducto;
@@ -67,7 +74,7 @@ export class ProductosService {
     if (error) throw error;
   }
 
-  async actualizar(id: number, cambios: Partial<Pick<Producto, 'nombre' | 'precio_compra' | 'precio_venta' | 'activo'>>): Promise<void> {
+  async actualizar(id: number, cambios: Partial<Pick<Producto, 'nombre' | 'precio_compra' | 'precio_venta' | 'activo' | 'stock'>>): Promise<void> {
     const { error } = await this.supabase.client.from('productos').update(cambios).eq('id', id);
     if (error) throw error;
   }

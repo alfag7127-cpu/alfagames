@@ -68,6 +68,16 @@ export interface PuestoConEstado {
   pausada: boolean | null;
   /** Pausas de la sesión: ese tiempo no se cobra (hasta = null: pausa en curso). */
   pausas: Intervalo[];
+  /** Productos pedidos a la cuenta de esta sesión. */
+  consumos: ConsumoSesion[];
+  total_consumos: number | null;
+}
+
+export interface ConsumoSesion {
+  id: number;
+  nombre: string;
+  cantidad: number;
+  total: number;
 }
 
 export interface Intervalo {
@@ -258,6 +268,8 @@ export interface VentaProducto {
   estado: 'vendida' | 'anulada';
   empleado_id: string;
   created_at: string;
+  /** Sesión (consola) a cuya cuenta se cargó la venta; null = mostrador. */
+  sesion_id: number | null;
 }
 
 // ── Usuarios (función "usuarios") ──────────────────────────────────────

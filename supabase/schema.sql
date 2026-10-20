@@ -3057,3 +3057,127 @@ begin
   return v_s;
 end;
 $$;
+
+-- ============================================================
+-- 25. PRODUCTOS ASOCIADOS A LA SESION DE UNA CONSOLA (2026-10-20)
+-- ============================================================
+-- Una venta de producto puede ir a la cuenta de una sesion activa (ej. PS5-2 pide
+-- 2 gaseosas): la tarjeta de la consola muestra lo pedido y el total a cobrar.
+-- La venta sigue contando como venta de productos el dia en que se hace.
+
+alter table public.ventas_productos
+  add column if not exists sesion_id bigint references public.sesiones (id);
+
+create index if not exists ventas_productos_por_sesion on public.ventas_productos (sesion_id);
+
+-- Nueva version con p_sesion_id (sin defaults, para no chocar con la de 3 argumentos de
+-- la seccion 23, que queda para clientes viejos; la app siempre llama con 4).
+create or replace function public.vender_producto(
+  p_producto_id bigint,
+  p_cantidad int,
+  p_precio_unitario numeric,
+  p_sesion_id bigint
+)
+returns public.ventas_productos
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_producto public.productos;
+  v_precio numeric;
+  v_fila public.ventas_productos;
+begin
+  if auth.uid() is null then
+    raise exception 'Inicia sesion para vender';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser mayor a 0';
+  end if;
+  if p_precio_unitario is not null and p_precio_unitario < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+  if p_sesion_id is not null and not exists (
+    select 1 from public.sesiones where id = p_sesion_id and estado = 'activa'
+  ) then
+    raise exception 'Esa consola ya no tiene una sesion abierta';
+  end if;
+
+  select * into v_producto from public.productos where id = p_producto_id for update;
+  if v_producto.id is null or not v_producto.activo then
+    raise exception 'El producto no existe o no esta a la venta';
+  end if;
+  if v_producto.stock < p_cantidad then
+    raise exception 'Solo quedan % de %', v_producto.stock, v_producto.nombre;
+  end if;
+
+  -- Solo el admin puede vender a un precio distinto al de lista.
+  v_precio := case when private.is_admin() then coalesce(p_precio_unitario, v_producto.precio_venta) else v_producto.precio_venta end;
+  update public.productos set stock = stock - p_cantidad where id = p_producto_id;
+
+  insert into public.ventas_productos (producto_id, cantidad, precio_unitario, costo_unitario, total, empleado_id, sesion_id)
+  values (p_producto_id, p_cantidad, v_precio, v_producto.precio_compra, v_precio * p_cantidad, auth.uid(), p_sesion_id)
+  returning * into v_fila;
+
+  -- Toca la sesion para que la Sala se refresque en vivo en todos los dispositivos.
+  if p_sesion_id is not null then
+    update public.sesiones set pausada = pausada where id = p_sesion_id;
+  end if;
+  return v_fila;
+end;
+$$;
+
+revoke all on function public.vender_producto(bigint, int, numeric, bigint) from public, anon;
+grant execute on function public.vender_producto(bigint, int, numeric, bigint) to authenticated;
+
+-- Vista en vivo: productos pedidos por la sesion activa (columnas al final, compatible).
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles,
+  s.pausada,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', pa.desde, 'hasta', pa.hasta) order by pa.desde)
+      from public.sesion_pausas pa
+      where pa.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as pausas,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', pr.nombre, 'cantidad', v.cantidad, 'total', v.total) order by v.created_at)
+      from public.ventas_productos v
+      join public.productos pr on pr.id = v.producto_id
+      where v.sesion_id = s.id and v.estado = 'vendida'
+    ),
+    '[]'::jsonb
+  ) as consumos,
+  coalesce(
+    (select sum(v.total) from public.ventas_productos v where v.sesion_id = s.id and v.estado = 'vendida'),
+    0
+  ) as total_consumos
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;

@@ -1,6 +1,8 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, input, signal } from '@angular/core';
-import { Producto, VentaProducto } from '../core/models';
+import { Producto, PuestoConEstado, VentaProducto } from '../core/models';
+import { SesionesService } from '../core/sesiones.service';
+import { FormsModule } from '@angular/forms';
 import { ProductosService } from '../core/productos.service';
 import { ToastService } from '../core/toast.service';
 import { fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
@@ -11,7 +13,7 @@ import { fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
  */
 @Component({
   selector: 'app-venta-productos',
-  imports: [DecimalPipe, DatePipe],
+  imports: [DecimalPipe, DatePipe, FormsModule],
   template: `
     <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-sky-100">
       <div class="flex items-center justify-between gap-2 mb-3">
@@ -46,6 +48,13 @@ import { fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
         @if (elegido(); as p) {
           <div class="flex flex-wrap items-center gap-3 rounded-xl bg-sky-50 p-3">
             <span class="text-sm font-medium text-slate-800">{{ p.nombre }}</span>
+            <select [ngModel]="sesionDestino()" (ngModelChange)="sesionDestino.set($event)" name="destino-venta"
+              class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
+              <option [ngValue]="null">🧾 Mostrador</option>
+              @for (o of ocupadas(); track o.sesion_id) {
+                <option [ngValue]="o.sesion_id">🎮 {{ o.nombre }}{{ o.cliente_nombre ? ' · ' + o.cliente_nombre : '' }}</option>
+              }
+            </select>
             <div class="flex items-center gap-1">
               <button type="button" (click)="ajustar(-1)" [disabled]="cantidad() <= 1"
                 class="h-8 w-8 rounded-lg border border-slate-300 bg-white text-slate-700 disabled:opacity-40">−</button>
@@ -66,7 +75,7 @@ import { fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
         <ul class="mt-3 divide-y divide-slate-100 text-sm">
           @for (v of ventasHoy().slice(0, 5); track v.id) {
             <li class="flex justify-between py-1.5" [class.opacity-40]="v.estado === 'anulada'">
-              <span class="text-slate-700">{{ v.cantidad }} × {{ nombre(v.producto_id) }} <span class="text-xs text-slate-400">{{ v.created_at | date: 'h:mm a' }}</span></span>
+              <span class="text-slate-700">{{ v.cantidad }} × {{ nombre(v.producto_id) }} <span class="text-xs text-slate-400">{{ v.created_at | date: 'h:mm a' }}{{ v.sesion_id ? ' · a una consola' : '' }}</span></span>
               <span class="font-semibold tabular-nums">{{ v.total | number: '1.0-0' }}</span>
             </li>
           }
@@ -83,6 +92,9 @@ export class VentaProductos implements OnInit, OnDestroy {
   readonly elegido = signal<Producto | null>(null);
   readonly cantidad = signal(1);
   readonly vendiendo = signal(false);
+  /** Consolas con sesión abierta, para cargar la venta a su cuenta. */
+  readonly ocupadas = signal<PuestoConEstado[]>([]);
+  readonly sesionDestino = signal<number | null>(null);
   readonly totalHoy = computed(() =>
     this.ventasHoy().filter((v) => v.estado === 'vendida').reduce((s, v) => s + v.total, 0),
   );
@@ -91,6 +103,7 @@ export class VentaProductos implements OnInit, OnDestroy {
 
   constructor(
     private readonly servicio: ProductosService,
+    private readonly sesiones: SesionesService,
     private readonly toast: ToastService,
   ) {}
 
@@ -105,10 +118,13 @@ export class VentaProductos implements OnInit, OnDestroy {
 
   async cargar(): Promise<void> {
     try {
-      const [productos, ventas] = await Promise.all([
+      const [productos, ventas, puestos] = await Promise.all([
         this.servicio.listar(true),
         this.servicio.ventas(inicioDiaColombia(fechaColombia())),
+        this.sesiones.listarPuestos(),
       ]);
+      this.ocupadas.set(puestos.filter((p) => !!p.sesion_id));
+      if (this.sesionDestino() && !puestos.some((p) => p.sesion_id === this.sesionDestino())) this.sesionDestino.set(null);
       this.productos.set(productos);
       this.nombres = new Map(productos.map((p) => [p.id, p.nombre]));
       this.ventasHoy.set(ventas);
@@ -139,8 +155,10 @@ export class VentaProductos implements OnInit, OnDestroy {
     if (!p) return;
     this.vendiendo.set(true);
     try {
-      const v = await this.servicio.vender(p.id, this.cantidad());
-      this.toast.exito(`Vendido: ${v.cantidad} × ${p.nombre} = $${v.total.toLocaleString('es-CO')}`);
+      const v = await this.servicio.vender(p.id, this.cantidad(), this.sesionDestino());
+      const consola = this.ocupadas().find((o) => o.sesion_id === this.sesionDestino())?.nombre;
+      this.toast.exito(`Vendido: ${v.cantidad} × ${p.nombre} = ${v.total.toLocaleString('es-CO')}${consola ? ' (a la cuenta de ' + consola + ')' : ''}`);
+      this.sesionDestino.set(null);
       this.elegido.set(null);
       this.cantidad.set(1);
       await this.cargar();

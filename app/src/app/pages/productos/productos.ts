@@ -84,7 +84,13 @@ import { VentaProductos } from '../../shared/venta-productos';
             <tbody class="divide-y divide-slate-100">
               @for (p of productos(); track p.id) {
                 <tr [class.opacity-50]="!p.activo">
-                  <td class="py-2 pr-3 font-medium text-slate-800">{{ p.nombre }}</td>
+                  <td class="py-2 pr-3 font-medium text-slate-800">
+                    @if (editandoId() === p.id) {
+                      <input [(ngModel)]="editNombre" name="edit-nombre" class="w-40 rounded-lg border border-blue-300 px-2 py-1 text-slate-900" />
+                    } @else {
+                      {{ p.nombre }}
+                    }
+                  </td>
                   <td class="py-2 pr-3 text-right">
                     <input #compra type="number" min="0" step="100" [value]="p.precio_compra"
                       (change)="guardarPrecio(p, 'precio_compra', +compra.value)"
@@ -99,8 +105,21 @@ import { VentaProductos } from '../../shared/venta-productos';
                     [class.text-emerald-700]="p.precio_venta > p.precio_compra" [class.text-red-600]="p.precio_venta <= p.precio_compra">
                     {{ p.precio_venta - p.precio_compra | number: '1.0-0' }}
                   </td>
-                  <td class="py-2 pr-3 text-right font-bold tabular-nums" [class.text-red-600]="p.stock === 0">{{ p.stock }}</td>
+                  <td class="py-2 pr-3 text-right font-bold tabular-nums" [class.text-red-600]="p.stock === 0">
+                    @if (editandoId() === p.id) {
+                      <input type="number" min="0" [(ngModel)]="editStock" name="edit-stock" title="Corrige la cantidad real (ej. tras contar)"
+                        class="w-20 rounded-lg border border-blue-300 px-2 py-1 text-right text-slate-900" />
+                    } @else {
+                      {{ p.stock }}
+                    }
+                  </td>
                   <td class="py-2 whitespace-nowrap">
+                    @if (editandoId() === p.id) {
+                      <button type="button" (click)="guardarEdicion(p)" class="text-blue-600 font-semibold hover:underline mr-3">Guardar</button>
+                      <button type="button" (click)="editandoId.set(null)" class="text-slate-500 hover:underline mr-3">Cancelar</button>
+                    } @else {
+                      <button type="button" (click)="editar(p)" class="text-slate-700 hover:underline mr-3">Editar</button>
+                    }
                     <button type="button" (click)="cargarMercancia(p)" class="text-blue-600 hover:underline mr-3">+ Cantidad</button>
                     <button type="button" (click)="cambiarActivo(p)" class="hover:underline"
                       [class.text-red-600]="p.activo" [class.text-emerald-600]="!p.activo">
@@ -149,6 +168,9 @@ import { VentaProductos } from '../../shared/venta-productos';
 export class Productos implements OnInit, OnDestroy {
   readonly productos = signal<Producto[]>([]);
   readonly ventas = signal<VentaProducto[]>([]);
+  readonly editandoId = signal<number | null>(null);
+  editNombre = '';
+  editStock = 0;
   private unsubscribe?: () => void;
 
   nuevoNombre = '';
@@ -234,6 +256,27 @@ export class Productos implements OnInit, OnDestroy {
     try {
       await this.servicio.agregarStock(p.id, Math.round(cantidad), costo);
       this.toast.exito(`+${Math.round(cantidad)} ${p.nombre}.`);
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensaje(e));
+    }
+  }
+
+  editar(p: Producto): void {
+    this.editNombre = p.nombre;
+    this.editStock = p.stock;
+    this.editandoId.set(p.id);
+  }
+
+  /** Nombre y corrección de cantidad (los precios se editan directo en la tabla). */
+  async guardarEdicion(p: Producto): Promise<void> {
+    const nombre = this.editNombre.trim();
+    if (!nombre) return this.toast.error('El nombre no puede quedar vacío.');
+    if (!(this.editStock >= 0)) return this.toast.error('La cantidad no puede ser negativa.');
+    try {
+      await this.servicio.actualizar(p.id, { nombre, stock: Math.round(this.editStock) });
+      this.toast.exito(`${nombre} actualizado.`);
+      this.editandoId.set(null);
       await this.cargar();
     } catch (e) {
       this.toast.error(this.mensaje(e));

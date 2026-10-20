@@ -1,4 +1,6 @@
 import { formatearDuracion } from '../../shared/duracion.pipe';
+import { ProductosService } from '../../core/productos.service';
+import { Producto } from '../../core/models';
 import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
@@ -35,6 +37,10 @@ interface PuestoVM extends PuestoConEstado {
   // Cambiar de modalidad con la sesión abierta
   cambioModoAbierto: boolean;
   minutosCambio: number;
+  // Cargar un producto a la cuenta de la consola
+  productoAbierto: boolean;
+  productoId: number | null;
+  productoCantidad: number;
   procesando: boolean;
 }
 
@@ -80,6 +86,9 @@ export class Sala implements OnInit, OnDestroy {
   private readonly ahora = signal(Date.now());
   private timerHandle?: ReturnType<typeof setInterval>;
   private unsubscribeRealtime?: () => void;
+  private unsubscribeProductos?: () => void;
+  /** Productos a la venta (para cargarlos a la cuenta de una consola). */
+  readonly productos = signal<Producto[]>([]);
   /** Qué umbrales ya se avisaron para cada sesión, para no repetir el aviso cada segundo. */
   private readonly avisosEnviados = new Map<number, Set<UmbralAvisado>>();
 
@@ -87,11 +96,17 @@ export class Sala implements OnInit, OnDestroy {
     private readonly sesiones: SesionesService,
     private readonly auth: AuthService,
     private readonly toast: ToastService,
+    private readonly productosService: ProductosService,
   ) {}
 
   ngOnInit(): void {
     this.cargar();
+    this.cargarProductos();
     this.unsubscribeRealtime = this.sesiones.onCambiosSesiones(() => this.cargar());
+    this.unsubscribeProductos = this.productosService.onCambios(() => {
+      this.cargar();
+      this.cargarProductos();
+    });
     this.timerHandle = setInterval(() => {
       this.ahora.set(Date.now());
       this.revisarAlertas();
@@ -102,6 +117,53 @@ export class Sala implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     clearInterval(this.timerHandle);
     this.unsubscribeRealtime?.();
+    this.unsubscribeProductos?.();
+  }
+
+  private async cargarProductos(): Promise<void> {
+    try {
+      this.productos.set(await this.productosService.listar(true));
+    } catch {
+      // Sin productos la sala sigue funcionando.
+    }
+  }
+
+  toggleProducto(p: PuestoVM): void {
+    this.puestos.update((list) =>
+      list.map((x) =>
+        x.id === p.id ? { ...x, productoAbierto: !x.productoAbierto, productoId: null, productoCantidad: 1 } : x,
+      ),
+    );
+  }
+
+  /** Vende un producto y lo carga a la cuenta de la sesión de esta consola. */
+  async cargarProducto(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id || !p.productoId) return;
+    const producto = this.productos().find((x) => x.id === p.productoId);
+    this.marcarProcesando(p.id, true);
+    try {
+      const v = await this.productosService.vender(p.productoId, p.productoCantidad, p.sesion_id);
+      this.toast.exito(`${p.nombre}: ${v.cantidad} × ${producto?.nombre ?? 'producto'} = ${v.total.toLocaleString('es-CO')}`);
+      this.puestos.update((list) =>
+        list.map((x) => (x.id === p.id ? { ...x, productoAbierto: false, productoId: null, productoCantidad: 1 } : x)),
+      );
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  /** Lo que se cobra al cerrar: el tiempo (sugerido o cambiado a mano) + los productos pedidos. */
+  totalACobrar(p: PuestoVM): number {
+    const tiempo = p.cambiarPrecio ? (p.precioFinalInput ?? 0) : this.precioSugerido(p);
+    return tiempo + (p.total_consumos ?? 0);
+  }
+
+  /** Lo que se cobra por tiempo (sugerido) + los productos pedidos. */
+  totalConProductos(p: PuestoVM): number {
+    return this.precioSugerido(p) + (p.total_consumos ?? 0);
   }
 
   private pedirPermisoNotificaciones(): void {
@@ -142,6 +204,9 @@ export class Sala implements OnInit, OnDestroy {
             destinoInput: null,
             cambioModoAbierto: false,
             minutosCambio: 60,
+            productoAbierto: false,
+            productoId: null,
+            productoCantidad: 1,
             procesando: false,
           };
         }),
@@ -351,7 +416,12 @@ export class Sala implements OnInit, OnDestroy {
       const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioFinal);
       await this.cargar();
       const total = sesion.precio_total ?? 0;
-      this.toast.exito(`${p.nombre}: cobrado $${total.toLocaleString('es-CO')} COP.`);
+      const productos = p.total_consumos ?? 0;
+      this.toast.exito(
+        productos
+          ? `${p.nombre}: tiempo ${total.toLocaleString('es-CO')} + productos ${productos.toLocaleString('es-CO')} = ${(total + productos).toLocaleString('es-CO')} COP.`
+          : `${p.nombre}: cobrado ${total.toLocaleString('es-CO')} COP.`,
+      );
     } catch (e) {
       // Ej: otro empleado ya cerró esta sesión desde otro puesto — refresca para ver el estado real.
       this.toast.error(this.mensajeError(e));
