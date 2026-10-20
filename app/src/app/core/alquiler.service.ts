@@ -20,6 +20,29 @@ export interface NuevoAlquiler {
   notas: string | null;
 }
 
+export interface Extension {
+  /** Un plan (desde el fin actual) o horas sueltas con precio manual. */
+  tarifaId: number | null;
+  horas: number | null;
+  precioFinal: number | null;
+}
+
+export interface ArchivoContrato {
+  path: string;
+  nombre: string;
+  creado: string | null;
+  esPdf: boolean;
+}
+
+/** Ventas por extensión: se cuentan el día que se recibe el pago. */
+export interface PagoExtension {
+  precio: number;
+  created_at: string;
+  alquileres: { estado: string };
+}
+
+const BUCKET_CONTRATOS = 'contratos';
+
 export interface NuevaConsola {
   nombre: string;
   tipo: TipoConsola;
@@ -94,13 +117,74 @@ export class AlquilerService {
     return data as Alquiler;
   }
 
+  /** El cliente pide más tiempo y paga: corre la entrega desde el fin actual. */
+  async extender(alquilerId: number, e: Extension): Promise<Alquiler> {
+    const { data, error } = await this.supabase.client.rpc('extender_alquiler', {
+      p_alquiler_id: alquilerId,
+      p_tarifa_id: e.tarifaId,
+      p_horas: e.horas,
+      p_precio_final: e.precioFinal,
+    });
+    if (error) throw error;
+    return data as Alquiler;
+  }
+
+  async pagosExtensiones(desde: string): Promise<PagoExtension[]> {
+    const { data, error } = await this.supabase.client
+      .from('alquiler_extensiones')
+      .select('precio, created_at, alquileres!inner(estado)')
+      .gte('created_at', desde);
+    if (error) throw error;
+    return data as unknown as PagoExtension[];
+  }
+
+  // ── Contratos (Supabase Storage, bucket privado) ──
+
+  async listarContratos(alquilerId: number): Promise<ArchivoContrato[]> {
+    const { data, error } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .list(String(alquilerId), { sortBy: { column: 'created_at', order: 'asc' } });
+    if (error) throw error;
+    return (data ?? [])
+      .filter((f) => f.id) // descarta marcadores de carpeta
+      .map((f) => ({
+        path: `${alquilerId}/${f.name}`,
+        nombre: f.name.replace(/^\d+-/, ''),
+        creado: f.created_at ?? null,
+        esPdf: f.name.toLowerCase().endsWith('.pdf'),
+      }));
+  }
+
+  async subirContrato(alquilerId: number, archivo: File): Promise<void> {
+    const limpio = archivo.name.normalize('NFD').replace(/[^\w.-]+/g, '_').slice(-80);
+    const { error } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .upload(`${alquilerId}/${Date.now()}-${limpio}`, archivo, { contentType: archivo.type || undefined });
+    if (error) throw error;
+  }
+
+  /** Enlace temporal (10 min) para ver un archivo del bucket privado. */
+  async urlContrato(path: string): Promise<string> {
+    const { data, error } = await this.supabase.client.storage.from(BUCKET_CONTRATOS).createSignedUrl(path, 600);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+
+  async eliminarContrato(path: string): Promise<void> {
+    const { error } = await this.supabase.client.storage.from(BUCKET_CONTRATOS).remove([path]);
+    if (error) throw error;
+  }
+
   async cancelar(alquilerId: number): Promise<void> {
     const { error } = await this.supabase.client.rpc('cancelar_alquiler', { p_alquiler_id: alquilerId });
     if (error) throw error;
   }
 
   async historial(desde?: string, hasta?: string): Promise<Alquiler[]> {
-    let query = this.supabase.client.from('alquileres').select('*').order('inicio', { ascending: false });
+    let query = this.supabase.client
+      .from('alquileres')
+      .select('*, alquiler_extensiones(*)')
+      .order('inicio', { ascending: false });
     if (desde) query = query.gte('inicio', desde);
     if (hasta) query = query.lte('inicio', hasta);
     const { data, error } = await query;
@@ -140,6 +224,7 @@ export class AlquilerService {
     const channel = this.supabase.client
       .channel('alquileres-cambios')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alquileres' }, callback)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alquiler_extensiones' }, callback)
       .subscribe();
     return () => {
       this.supabase.client.removeChannel(channel);

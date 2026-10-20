@@ -1935,3 +1935,161 @@ alter table public.gastos alter column fecha set default (now() at time zone 'Am
 -- La Sala y el Alquiler se suscriben a cambios para sincronizar varios dispositivos.
 -- Sin estas tablas en la publicacion, cada pantalla solo veia sus propios cambios.
 alter publication supabase_realtime add table public.sesiones, public.alquileres;
+
+-- ============================================================
+-- 17. EXTENSIONES DE ALQUILER, CONTRATOS ADJUNTOS Y PRECIO DE CONTROL EXTRA (2026-10-19)
+-- ============================================================
+-- - Control extra en alquiler: $5.000 (precio sugerido, editable al registrar).
+-- - Extension: el cliente pide mas tiempo y paga. La nueva entrega se cuenta desde
+--   el fin pactado actual (sin huecos). Cada pago queda en alquiler_extensiones con
+--   su fecha, para que cuente en ventas el dia en que se recibe.
+-- - Contratos: fotos o PDF del contrato fisico firmado, en el bucket privado
+--   "contratos", carpeta = id del alquiler.
+
+update public.alquiler_config set precio_control_extra = 5000 where id = 1;
+
+create table if not exists public.alquiler_extensiones (
+  id bigint generated always as identity primary key,
+  alquiler_id bigint not null references public.alquileres (id) on delete cascade,
+  empleado_id uuid not null references public.profiles (id) default auth.uid(),
+  tarifa_id bigint references public.alquiler_tarifas (id),
+  descripcion text not null,
+  fin_anterior timestamptz not null,
+  fin_nuevo timestamptz not null,
+  precio_sugerido numeric(10, 0),
+  precio numeric(10, 0) not null check (precio >= 0),
+  created_at timestamptz not null default now(),
+  constraint alquiler_extensiones_fin_valido check (fin_nuevo > fin_anterior)
+);
+
+create index if not exists alquiler_extensiones_por_alquiler on public.alquiler_extensiones (alquiler_id);
+create index if not exists alquiler_extensiones_por_fecha on public.alquiler_extensiones (created_at);
+
+alter table public.alquiler_extensiones enable row level security;
+
+create policy "alquiler_extensiones_select" on public.alquiler_extensiones
+  for select to authenticated using (true);
+create policy "alquiler_extensiones_insert" on public.alquiler_extensiones
+  for insert to authenticated with check (empleado_id = auth.uid() or private.is_admin());
+create policy "alquiler_extensiones_delete_admin" on public.alquiler_extensiones
+  for delete to authenticated using (private.is_admin());
+
+-- Extiende un alquiler activo por un plan (p_tarifa_id) o por horas sueltas (p_horas,
+-- con precio obligatorio). El precio sugerido del plan incluye los controles extra.
+create or replace function public.extender_alquiler(
+  p_alquiler_id bigint,
+  p_tarifa_id bigint default null,
+  p_horas int default null,
+  p_precio_final numeric default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_a public.alquileres;
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_fin_nuevo timestamptz;
+  v_descripcion text;
+  v_sugerido numeric;
+  v_precio numeric;
+begin
+  select * into v_a from public.alquileres where id = p_alquiler_id and estado = 'activo';
+  if v_a.id is null then
+    raise exception 'El alquiler % no esta activo', p_alquiler_id;
+  end if;
+  if (p_tarifa_id is null) = (p_horas is null) then
+    raise exception 'Elige un plan o un numero de horas para extender';
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select * into v_consola from public.alquiler_consolas where id = v_a.consola_id;
+
+  if p_tarifa_id is not null then
+    select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+    if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+      raise exception 'Elige un plan de %', v_consola.tipo;
+    end if;
+    select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+    v_fin_nuevo := private.fin_alquiler(v_a.fin_pactado, v_tarifa);
+    v_descripcion := v_tarifa.nombre;
+    v_sugerido := v_tarifa.precio + v_a.controles_extra * coalesce(v_precio_extra, 0);
+  else
+    if p_horas <= 0 then
+      raise exception 'Las horas deben ser mayores a 0';
+    end if;
+    v_fin_nuevo := v_a.fin_pactado + make_interval(hours => p_horas);
+    v_descripcion := p_horas || (case when p_horas = 1 then ' hora' else ' horas' end);
+    v_sugerido := null;
+  end if;
+
+  v_precio := coalesce(p_precio_final, v_sugerido);
+  if v_precio is null then
+    raise exception 'Escribe el precio de la extension';
+  end if;
+
+  insert into public.alquiler_extensiones (
+    alquiler_id, empleado_id, tarifa_id, descripcion, fin_anterior, fin_nuevo, precio_sugerido, precio
+  ) values (
+    v_a.id, auth.uid(), v_tarifa.id, v_descripcion, v_a.fin_pactado, v_fin_nuevo, v_sugerido, v_precio
+  );
+
+  update public.alquileres set fin_pactado = v_fin_nuevo where id = v_a.id and estado = 'activo'
+  returning * into v_a;
+  if v_a.id is null then
+    raise exception 'No se pudo extender el alquiler %', p_alquiler_id;
+  end if;
+
+  return v_a;
+end;
+$$;
+
+revoke all on function public.extender_alquiler(bigint, bigint, int, numeric) from public, anon;
+grant execute on function public.extender_alquiler(bigint, bigint, int, numeric) to authenticated;
+
+-- Vista en vivo: agrega lo pagado en extensiones (columnas al final, compatible).
+create or replace view public.vista_alquiler_consolas
+with (security_invoker = true) as
+select
+  c.id,
+  c.nombre,
+  c.tipo,
+  c.descripcion,
+  c.controles_incluidos,
+  c.activo,
+  a.id as alquiler_id,
+  a.cliente_nombre,
+  a.cliente_telefono,
+  a.cliente_direccion,
+  a.plan_nombre,
+  a.inicio,
+  a.fin_pactado,
+  a.controles,
+  a.controles_extra,
+  a.precio_total,
+  a.notas,
+  coalesce((select count(*) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0)::int as extensiones,
+  coalesce((select sum(e.precio) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0) as total_extensiones
+from public.alquiler_consolas c
+left join public.alquileres a on a.consola_id = c.id and a.estado = 'activo';
+
+-- ── Contratos (Supabase Storage) ──
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'contratos', 'contratos', false, 10485760,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']
+)
+on conflict (id) do nothing;
+
+create policy "contratos_select" on storage.objects
+  for select to authenticated using (bucket_id = 'contratos');
+create policy "contratos_insert" on storage.objects
+  for insert to authenticated with check (bucket_id = 'contratos');
+create policy "contratos_delete_admin" on storage.objects
+  for delete to authenticated using (bucket_id = 'contratos' and private.is_admin());
+
+alter publication supabase_realtime add table public.alquiler_extensiones;

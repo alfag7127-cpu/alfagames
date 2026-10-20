@@ -114,7 +114,7 @@ Ver [`supabase/schema.sql`](../supabase/schema.sql) — ya escrito, listo para c
 Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 
 - **Inventario inicial**: 1 PS5 Slim (2 controles originales), 2 PS4 Programadas y 1 PS4 Original (2 controles cada una), y 2 controles sueltos. El admin agrega o quita consolas y ajusta los controles sueltos en *Alquiler → Inventario y precios*.
-- **Controles**: cada consola sale por defecto con sus 2 controles incluidos. Se pueden sumar controles sueltos mientras haya libres. El precio por control extra es configurable (hoy $0).
+- **Controles**: cada consola sale por defecto con sus 2 controles incluidos. Se pueden sumar controles sueltos mientras haya libres. Cada control extra cuesta **$5.000** (precio sugerido, editable antes de registrar; configurable por el admin).
 - **Planes** (afiche Alfa Games & Frank Over):
 
   | Consola | Plan | Precio |
@@ -128,5 +128,7 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
   | PS5 | La noche (7 PM a 9 AM) | $50.000 |
 
 - **La noche** termina a las 9:00 AM (hora de Colombia) siguientes a la entrega.
-- **Cobro**: se cobra al entregar (precio sugerido editable). Al recibir se puede ajustar el precio final, por ejemplo con un recargo por entrega tarde. Anular un alquiler no cuenta como venta.
+- **Cobro**: se cobra al entregar (precio sugerido editable). No se pide depósito ni se cobra recargo por entrega tarde (el precio final se puede ajustar a mano al recibir si hace falta). Anular un alquiler no cuenta como venta.
+- **Más tiempo (extensión)**: si el cliente pide más tiempo y envía el dinero, se registra una extensión: un plan (precio sugerido = plan + controles extra) u horas sueltas con precio a mano. La nueva entrega se cuenta desde la entrega pactada actual. Cada pago queda con su fecha y suma en ventas el día que se recibe.
+- **Contrato**: el cliente firma un contrato físico; se adjuntan fotos o PDF (al alquilar, durante el alquiler o desde el historial). Se guardan en un bucket privado de Supabase Storage (`contratos/<id del alquiler>/`); las fotos se comprimen antes de subir. Solo el admin puede borrar archivos.
 - **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. El Dashboard suma las ventas de alquiler (por día de entrega) junto a las de la sala.

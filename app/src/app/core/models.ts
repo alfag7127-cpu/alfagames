@@ -136,6 +136,19 @@ export interface Alquiler {
   estado: EstadoAlquiler;
   notas: string | null;
   created_at: string;
+  /** Pagos por más tiempo (viene embebido en el historial). */
+  alquiler_extensiones?: AlquilerExtension[];
+}
+
+export interface AlquilerExtension {
+  id: number;
+  alquiler_id: number;
+  descripcion: string;
+  fin_anterior: string;
+  fin_nuevo: string;
+  precio_sugerido: number | null;
+  precio: number;
+  created_at: string;
 }
 
 /** Fila de `vista_alquiler_consolas`: consola + su alquiler activo, si tiene. */
@@ -157,4 +170,6 @@ export interface ConsolaConEstado {
   controles_extra: number | null;
   precio_total: number | null;
   notas: string | null;
+  extensiones: number | null;
+  total_extensiones: number | null;
 }

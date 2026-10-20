@@ -7,6 +7,8 @@ import { Alquiler, AlquilerConfig, AlquilerTarifa, ConsolaConEstado, TipoConsola
 import { ToastService } from '../../core/toast.service';
 import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
+import { Contratos } from '../../shared/contratos';
+import { prepararArchivo } from '../../shared/comprimir-imagen';
 
 type Pestana = 'consolas' | 'historial' | 'inventario';
 
@@ -22,6 +24,15 @@ interface ConsolaVM extends ConsolaConEstado {
   cambiarPrecio: boolean;
   precioFinal: number | null;
   notasEntrega: string;
+  /** Fotos o PDF del contrato, se suben al registrar el alquiler. */
+  contratoArchivos: File[];
+  // Extensión (más tiempo pagado)
+  extenderAbierto: boolean;
+  extTarifaId: number | null;
+  extHoras: number | null;
+  extCambiarPrecio: boolean;
+  extPrecio: number | null;
+  verContrato: boolean;
   // Formulario de devolución
   devolverAbierto: boolean;
   ajustarPrecioDevolucion: boolean;
@@ -40,6 +51,13 @@ const FORM_VACIO = {
   cambiarPrecio: false,
   precioFinal: null,
   notasEntrega: '',
+  contratoArchivos: [] as File[],
+  extenderAbierto: false,
+  extTarifaId: null,
+  extHoras: null,
+  extCambiarPrecio: false,
+  extPrecio: null,
+  verContrato: false,
   devolverAbierto: false,
   ajustarPrecioDevolucion: false,
   precioDevolucion: null,
@@ -48,7 +66,7 @@ const FORM_VACIO = {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -81,8 +99,10 @@ export class AlquilerPage implements OnInit, OnDestroy {
   readonly totalHistorial = computed(() =>
     this.historial()
       .filter((a) => a.estado !== 'cancelado')
-      .reduce((s, a) => s + a.precio_total, 0),
+      .reduce((s, a) => s + this.totalPagado(a), 0),
   );
+  /** Historial: qué fila tiene abierto su contrato. */
+  readonly contratoAbierto = signal<number | null>(null);
 
   constructor(
     private readonly alquiler: AlquilerService,
@@ -157,7 +177,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   cerrarFormularios(c: ConsolaVM): void {
-    this.actualizar(c.id, { formAbierto: false, devolverAbierto: false });
+    this.actualizar(c.id, { formAbierto: false, devolverAbierto: false, extenderAbierto: false });
   }
 
   ajustarControlesExtra(c: ConsolaVM, delta: number): void {
@@ -192,7 +212,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
         precioFinal: c.cambiarPrecio ? c.precioFinal : null,
         notas: c.notasEntrega || null,
       });
-      this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: $${a.precio_total.toLocaleString('es-CO')} COP.`);
+      this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP.`);
+      await this.subirContratosNuevos(a.id, c.contratoArchivos);
       await Promise.all([this.cargar(), this.cargarHistorial()]);
     } catch (e) {
       this.toast.error(this.mensajeError(e));
@@ -200,10 +221,99 @@ export class AlquilerPage implements OnInit, OnDestroy {
     }
   }
 
+  elegirContrato(c: ConsolaVM, evento: Event): void {
+    const input = evento.target as HTMLInputElement;
+    this.actualizar(c.id, { contratoArchivos: [...c.contratoArchivos, ...Array.from(input.files ?? [])] });
+    input.value = '';
+  }
+
+  quitarContratoElegido(c: ConsolaVM, indice: number): void {
+    this.actualizar(c.id, { contratoArchivos: c.contratoArchivos.filter((_, i) => i !== indice) });
+  }
+
+  /** El alquiler ya quedó registrado; si falla un archivo se avisa y se puede adjuntar después. */
+  private async subirContratosNuevos(alquilerId: number, archivos: File[]): Promise<void> {
+    if (!archivos.length) return;
+    try {
+      for (const archivo of archivos) {
+        await this.alquiler.subirContrato(alquilerId, await prepararArchivo(archivo));
+      }
+      this.toast.exito('Contrato adjuntado.');
+    } catch (e) {
+      this.toast.error(`El alquiler quedó registrado, pero el contrato no se subió: ${this.mensajeError(e)}. Adjúntalo desde la tarjeta.`);
+    }
+  }
+
+  // ── Extender (más tiempo pagado) ──
+
+  abrirExtension(c: ConsolaVM): void {
+    this.actualizar(c.id, {
+      extenderAbierto: true,
+      devolverAbierto: false,
+      extTarifaId: this.tarifasDe(c.tipo)[0]?.id ?? null,
+      extHoras: null,
+      extCambiarPrecio: false,
+      extPrecio: null,
+    });
+  }
+
+  elegirPlanExtension(c: ConsolaVM, tarifaId: number): void {
+    this.actualizar(c.id, { extTarifaId: tarifaId, extHoras: null });
+  }
+
+  elegirHorasExtension(c: ConsolaVM): void {
+    // Horas sueltas no tienen tarifa: el precio se escribe a mano.
+    this.actualizar(c.id, { extTarifaId: null, extHoras: c.extHoras ?? 1, extCambiarPrecio: true });
+  }
+
+  precioSugeridoExtension(c: ConsolaVM): number | null {
+    const tarifa = this.tarifas().find((t) => t.id === c.extTarifaId);
+    if (!tarifa) return null;
+    return tarifa.precio + (c.controles_extra ?? 0) * (this.config()?.precio_control_extra ?? 0);
+  }
+
+  toggleCambiarPrecioExtension(c: ConsolaVM): void {
+    this.actualizar(c.id, {
+      extCambiarPrecio: !c.extCambiarPrecio,
+      extPrecio: c.extCambiarPrecio ? null : this.precioSugeridoExtension(c),
+    });
+  }
+
+  async extender(c: ConsolaVM): Promise<void> {
+    if (!c.alquiler_id) return;
+    if (!c.extTarifaId && (!c.extHoras || c.extHoras <= 0)) return this.toast.error('Elige un plan o las horas.');
+    if ((c.extCambiarPrecio || !c.extTarifaId) && (c.extPrecio == null || c.extPrecio < 0)) {
+      return this.toast.error('Escribe el precio que pagó el cliente.');
+    }
+    this.actualizar(c.id, { procesando: true });
+    try {
+      const a = await this.alquiler.extender(c.alquiler_id, {
+        tarifaId: c.extTarifaId,
+        horas: c.extTarifaId ? null : c.extHoras,
+        precioFinal: c.extCambiarPrecio || !c.extTarifaId ? c.extPrecio : null,
+      });
+      this.toast.exito(`${c.nombre}: tiempo extendido hasta ${new Date(a.fin_pactado).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' })}.`);
+      this.actualizar(c.id, { extenderAbierto: false, procesando: false });
+      await Promise.all([this.cargar(), this.cargarHistorial()]);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+      this.actualizar(c.id, { procesando: false });
+    }
+  }
+
+  /** Lo que pagó el cliente: entrega + extensiones. */
+  totalPagado(a: Alquiler): number {
+    return a.precio_total + (a.alquiler_extensiones ?? []).reduce((s, e) => s + e.precio, 0);
+  }
+
+  toggleContratoHistorial(id: number): void {
+    this.contratoAbierto.update((actual) => (actual === id ? null : id));
+  }
+
   // ── Devolver / cancelar ──
 
   abrirDevolucion(c: ConsolaVM): void {
-    this.actualizar(c.id, { devolverAbierto: true, ajustarPrecioDevolucion: false, precioDevolucion: c.precio_total, notasDevolucion: '' });
+    this.actualizar(c.id, { devolverAbierto: true, extenderAbierto: false, ajustarPrecioDevolucion: false, precioDevolucion: c.precio_total, notasDevolucion: '' });
   }
 
   async devolver(c: ConsolaVM): Promise<void> {

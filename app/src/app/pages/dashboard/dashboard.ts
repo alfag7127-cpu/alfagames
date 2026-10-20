@@ -59,10 +59,11 @@ export class Dashboard implements OnInit {
     // Los 7 días se cuentan en hora de Colombia, no en la del dispositivo.
     const desde = sumarDias(fechaColombia(), -6);
 
-    const [sesiones, gastos, alquileres] = await Promise.all([
+    const [sesiones, gastos, alquileres, extensiones] = await Promise.all([
       this.sesionesService.listarHistorial({ desde: inicioDiaColombia(desde) }),
       this.gastosService.listar(desde),
       this.alquilerService.historial(inicioDiaColombia(desde)),
+      this.alquilerService.pagosExtensiones(inicioDiaColombia(desde)),
     ]);
 
     const porFecha = new Map<string, { ventasSala: number; ventasAlquiler: number; gastos: number }>();
@@ -81,6 +82,13 @@ export class Dashboard implements OnInit {
       if (a.estado === 'cancelado') continue;
       const acc = porFecha.get(fechaColombia(a.inicio));
       if (acc) acc.ventasAlquiler += a.precio_total;
+    }
+
+    // Las extensiones (más tiempo pagado) cuentan el día en que se recibió el pago.
+    for (const e of extensiones) {
+      if (e.alquileres.estado === 'cancelado') continue;
+      const acc = porFecha.get(fechaColombia(e.created_at));
+      if (acc) acc.ventasAlquiler += e.precio;
     }
 
     for (const g of gastos) {

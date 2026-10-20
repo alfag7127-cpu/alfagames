@@ -167,6 +167,22 @@
               <input [(ngModel)]="c.notasEntrega" name="notas-{{ c.id }}" placeholder="Notas (juegos, accesorios, depósito…)"
                 class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
 
+              <div class="rounded-lg border border-dashed border-slate-300 px-3 py-2">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs text-slate-600">📎 Contrato firmado (foto o PDF)</span>
+                  <label class="cursor-pointer rounded-lg bg-white border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                    + Adjuntar
+                    <input type="file" class="hidden" accept="image/*,application/pdf" multiple (change)="elegirContrato(c, $event)" />
+                  </label>
+                </div>
+                @for (f of c.contratoArchivos; track $index) {
+                  <div class="flex items-center justify-between text-xs mt-1">
+                    <span class="truncate text-slate-600">{{ f.name }}</span>
+                    <button type="button" (click)="quitarContratoElegido(c, $index)" class="text-red-500 hover:underline shrink-0 ml-2">Quitar</button>
+                  </div>
+                }
+              </div>
+
               <div class="rounded-lg bg-indigo-50 px-3 py-2 flex items-center justify-between">
                 <span class="text-xs text-indigo-700">Precio sugerido</span>
                 <span class="text-sm font-bold text-indigo-900" [class.line-through]="c.cambiarPrecio" [class.opacity-60]="c.cambiarPrecio">
@@ -207,7 +223,10 @@
             @if (c.cliente_direccion) {
               <p class="text-slate-600">📍 {{ c.cliente_direccion }}</p>
             }
-            <p class="text-slate-600">{{ c.plan_nombre }} · 🎮 {{ c.controles }} controles · <span class="font-semibold">{{ c.precio_total | number: '1.0-0' }} COP</span></p>
+            <p class="text-slate-600">{{ c.plan_nombre }} · 🎮 {{ c.controles }} controles · <span class="font-semibold">{{ (c.precio_total ?? 0) + (c.total_extensiones ?? 0) | number: '1.0-0' }} COP</span></p>
+            @if (c.extensiones) {
+              <p class="text-xs text-indigo-600">+ {{ c.extensiones }} extensión{{ c.extensiones > 1 ? 'es' : '' }} ({{ c.total_extensiones | number: '1.0-0' }} COP)</p>
+            }
             <p class="text-xs text-slate-500">Entregada {{ c.inicio | date }} · devolver {{ c.fin_pactado | date }}</p>
             @if (c.notas) {
               <p class="text-xs text-slate-500 italic">{{ c.notas }}</p>
@@ -225,8 +244,74 @@
             {{ textoRestante(c) }}
           </p>
 
-          @if (!c.devolverAbierto) {
+          @if (c.extenderAbierto) {
+            <div class="space-y-3 rounded-lg bg-indigo-50/60 ring-1 ring-indigo-100 p-3">
+              <p class="text-xs font-semibold text-indigo-800">Más tiempo (corre desde la entrega pactada actual)</p>
+              <div class="grid grid-cols-2 gap-1.5">
+                @for (t of tarifasDe(c.tipo); track t.id) {
+                  <button type="button" (click)="elegirPlanExtension(c, t.id)"
+                    class="rounded-lg border px-2 py-1.5 text-left"
+                    [class.border-indigo-600]="c.extTarifaId === t.id"
+                    [class.bg-indigo-600]="c.extTarifaId === t.id"
+                    [class.text-white]="c.extTarifaId === t.id"
+                    [class.border-slate-300]="c.extTarifaId !== t.id"
+                    [class.bg-white]="c.extTarifaId !== t.id"
+                    [class.text-slate-700]="c.extTarifaId !== t.id">
+                    <span class="block text-xs font-semibold">{{ t.nombre }}</span>
+                    <span class="block text-xs opacity-80">{{ t.precio | number: '1.0-0' }} COP</span>
+                  </button>
+                }
+                <button type="button" (click)="elegirHorasExtension(c)"
+                  class="rounded-lg border px-2 py-1.5 text-left"
+                  [class.border-indigo-600]="!c.extTarifaId"
+                  [class.bg-indigo-600]="!c.extTarifaId"
+                  [class.text-white]="!c.extTarifaId"
+                  [class.border-slate-300]="!!c.extTarifaId"
+                  [class.bg-white]="!!c.extTarifaId"
+                  [class.text-slate-700]="!!c.extTarifaId">
+                  <span class="block text-xs font-semibold">Otras horas</span>
+                  <span class="block text-xs opacity-80">precio a mano</span>
+                </button>
+              </div>
+
+              @if (!c.extTarifaId) {
+                <label class="flex items-center gap-2 text-xs text-slate-600">
+                  Horas
+                  <input type="number" min="1" [(ngModel)]="c.extHoras" name="ext-horas-{{ c.id }}"
+                    class="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                </label>
+              } @else {
+                <div class="rounded-lg bg-white px-3 py-2 flex items-center justify-between">
+                  <span class="text-xs text-indigo-700">Precio sugerido{{ c.controles_extra ? ' (incluye ' + c.controles_extra + ' control extra)' : '' }}</span>
+                  <span class="text-sm font-bold text-indigo-900" [class.line-through]="c.extCambiarPrecio" [class.opacity-60]="c.extCambiarPrecio">
+                    {{ precioSugeridoExtension(c) | number: '1.0-0' }} COP
+                  </span>
+                </div>
+                <label class="flex items-center gap-2 text-xs text-slate-600">
+                  <input type="checkbox" [checked]="c.extCambiarPrecio" (change)="toggleCambiarPrecioExtension(c)" class="rounded" />
+                  Cambiar precio
+                </label>
+              }
+              @if (c.extCambiarPrecio || !c.extTarifaId) {
+                <input type="number" min="0" step="1000" [(ngModel)]="c.extPrecio" name="ext-precio-{{ c.id }}"
+                  placeholder="Lo que pagó el cliente"
+                  class="w-full text-sm font-semibold rounded-lg border border-indigo-300 px-3 py-1.5" />
+              }
+
+              <div class="flex gap-2">
+                <button (click)="extender(c)" [disabled]="c.procesando"
+                  class="flex-1 rounded-lg bg-indigo-600 text-white text-sm font-medium py-2 hover:bg-indigo-700 disabled:opacity-50">
+                  {{ c.procesando ? 'Guardando...' : 'Registrar pago y extender' }}
+                </button>
+                <button (click)="cerrarFormularios(c)" class="rounded-lg bg-white text-slate-700 text-sm px-3 ring-1 ring-slate-200 hover:bg-slate-100">Cancelar</button>
+              </div>
+            </div>
+          } @else if (!c.devolverAbierto) {
             <div class="flex gap-2">
+              <button (click)="abrirExtension(c)"
+                class="flex-1 rounded-xl bg-indigo-600 text-white text-sm font-medium py-2.5 hover:bg-indigo-700">
+                + Tiempo
+              </button>
               <button (click)="abrirDevolucion(c)"
                 class="flex-1 rounded-xl bg-sky-600 text-white text-sm font-medium py-2.5 hover:bg-sky-700">
                 Recibir consola
@@ -234,6 +319,10 @@
               <button (click)="cancelar(c)" [disabled]="c.procesando" title="Anular (no cuenta como venta)"
                 class="rounded-xl bg-slate-100 text-slate-600 text-sm px-3 hover:bg-slate-200">Anular</button>
             </div>
+            <button type="button" (click)="c.verContrato = !c.verContrato"
+              class="w-full mt-2 rounded-lg border border-dashed border-slate-300 text-xs font-medium text-slate-600 py-1.5 hover:bg-slate-50">
+              📎 {{ c.verContrato ? 'Ocultar contrato' : 'Ver / adjuntar contrato' }}
+            </button>
           } @else {
             <div class="space-y-3">
               <label class="flex items-center gap-2 text-xs text-slate-600">
@@ -255,6 +344,12 @@
               </div>
             </div>
           }
+        }
+
+        @if (c.alquiler_id && c.verContrato) {
+          <div class="mt-3">
+            <app-contratos [alquilerId]="c.alquiler_id" [puedeEliminar]="auth.isAdmin()" />
+          </div>
         }
       </article>
     } @empty {
@@ -292,6 +387,7 @@
           <th class="px-3 py-2">Controles</th>
           <th class="px-3 py-2">Total</th>
           <th class="px-3 py-2">Estado</th>
+          <th class="px-3 py-2">Contrato</th>
         </tr>
       </thead>
       <tbody>
@@ -314,16 +410,31 @@
             </td>
             <td class="px-3 py-2">{{ a.controles }}</td>
             <td class="px-3 py-2 font-medium whitespace-nowrap">
-              {{ a.precio_total | number: '1.0-0' }}
+              {{ totalPagado(a) | number: '1.0-0' }}
+              @for (e of a.alquiler_extensiones ?? []; track e.id) {
+                <span class="block text-xs font-normal text-indigo-500">+ {{ e.descripcion }}: {{ e.precio | number: '1.0-0' }}</span>
+              }
               @if (a.precio_sugerido != null && a.precio_sugerido !== a.precio_total) {
                 <span class="block text-xs font-normal text-slate-400">sugerido {{ a.precio_sugerido | number: '1.0-0' }}</span>
               }
             </td>
             <td class="px-3 py-2 capitalize">{{ a.estado }}</td>
+            <td class="px-3 py-2">
+              <button type="button" (click)="toggleContratoHistorial(a.id)" class="text-indigo-600 hover:underline whitespace-nowrap">
+                📎 {{ contratoAbierto() === a.id ? 'Ocultar' : 'Ver' }}
+              </button>
+            </td>
           </tr>
+          @if (contratoAbierto() === a.id) {
+            <tr class="bg-slate-50/60">
+              <td colspan="9" class="px-3 py-2">
+                <app-contratos [alquilerId]="a.id" [puedeEliminar]="auth.isAdmin()" />
+              </td>
+            </tr>
+          }
         } @empty {
           <tr>
-            <td colspan="8" class="px-3 py-6 text-center text-slate-500">Sin alquileres en este período.</td>
+            <td colspan="9" class="px-3 py-6 text-center text-slate-500">Sin alquileres en este período.</td>
           </tr>
         }
       </tbody>
