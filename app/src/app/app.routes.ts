@@ -1,12 +1,12 @@
 import { Routes } from '@angular/router';
-import { adminGuard, authGuard } from './core/auth.guard';
+import { adminGuard, alquilerGuard, authGuard, salaGuard } from './core/auth.guard';
 import { SalaLayout } from './layout/sala-layout';
 import { Shell } from './layout/shell';
 import { Login } from './pages/login/login';
 import { Home } from './pages/home/home';
 import { Sala } from './pages/sala/sala';
 
-// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo y Ventas. La Sala en vivo carga de una vez
+// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo y Ventas; el rol alquiler solo a Alquiler. La Sala en vivo carga de una vez
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
@@ -19,6 +19,7 @@ export const routes: Routes = [
       {
         path: 'sala',
         component: SalaLayout,
+        canActivate: [salaGuard],
         children: [
           { path: '', component: Sala, pathMatch: 'full' },
           {
@@ -58,7 +59,7 @@ export const routes: Routes = [
       },
       {
         path: 'alquiler',
-        canActivate: [adminGuard],
+        canActivate: [alquilerGuard],
         loadComponent: () => import('./pages/alquiler/alquiler').then((m) => m.AlquilerPage),
       },
       // Direcciones viejas (enlaces guardados) a su nuevo lugar dentro de Sala.

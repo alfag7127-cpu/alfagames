@@ -8,7 +8,7 @@ interface EnlaceMenu {
   ruta: string;
   icono: string;
   texto: string;
-  soloAdmin: boolean;
+  modulo: 'sala' | 'alquiler';
 }
 
 @Component({
@@ -22,8 +22,8 @@ export class Shell {
 
   /** Solo dos secciones; cada una tiene sus pestañas adentro. */
   readonly enlaces: EnlaceMenu[] = [
-    { ruta: '/sala', icono: '🎮', texto: 'Sala', soloAdmin: false },
-    { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', soloAdmin: true },
+    { ruta: '/sala', icono: '🎮', texto: 'Sala', modulo: 'sala' },
+    { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', modulo: 'alquiler' },
   ];
 
   constructor(
@@ -36,6 +36,17 @@ export class Shell {
         takeUntilDestroyed(inject(DestroyRef)),
       )
       .subscribe(() => this.menuAbierto.set(false));
+  }
+
+  /** Cada rol ve solo sus módulos. */
+  puedeVer(e: EnlaceMenu): boolean {
+    return e.modulo === 'sala' ? this.auth.puedeSala() : this.auth.puedeAlquiler();
+  }
+
+  /** Nombre del rol para mostrar junto al usuario. */
+  nombreRol(): string {
+    const rol = this.auth.currentProfile()?.role;
+    return rol === 'admin' ? 'Admin' : rol === 'alquiler' ? 'Alquiler' : 'Trabajador';
   }
 
   async logout(): Promise<void> {

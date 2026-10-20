@@ -20,7 +20,7 @@
       <!-- Enlaces en pantallas grandes -->
       <div class="hidden lg:flex items-center gap-1 ml-4 text-sm">
         @for (e of enlaces; track e.ruta) {
-          @if (!e.soloAdmin || auth.isAdmin()) {
+          @if (puedeVer(e)) {
             <a [routerLink]="e.ruta" routerLinkActive="nav-activo" class="nav-link">{{ e.icono }} {{ e.texto }}</a>
           }
         }
@@ -30,7 +30,7 @@
         @if (auth.isAdmin()) {
           <a routerLink="/usuarios" routerLinkActive="nav-activo" class="nav-link" title="Usuarios">👥<span class="hidden sm:inline"> Usuarios</span></a>
         }
-        <span class="hidden sm:block text-slate-300">{{ auth.currentProfile()?.full_name || auth.currentProfile()?.role }}</span>
+        <span class="hidden sm:block text-slate-300">{{ auth.currentProfile()?.full_name || nombreRol() }}</span>
         <button (click)="logout()" class="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20">Salir</button>
       </div>
     </div>
@@ -63,7 +63,7 @@
         </div>
         <nav class="flex-1 overflow-y-auto p-3 space-y-1">
           @for (e of enlaces; track e.ruta) {
-            @if (!e.soloAdmin || auth.isAdmin()) {
+            @if (puedeVer(e)) {
               <a [routerLink]="e.ruta" routerLinkActive="menu-activo" class="menu-link">
                 <span class="text-lg">{{ e.icono }}</span> {{ e.texto }}
               </a>
@@ -74,7 +74,7 @@
           }
         </nav>
         <div class="border-t border-white/10 px-4 py-3 text-sm text-slate-400">
-          {{ auth.currentProfile()?.full_name || auth.currentProfile()?.role }}
+          {{ auth.currentProfile()?.full_name || nombreRol() }}
         </div>
       </aside>
     </div>

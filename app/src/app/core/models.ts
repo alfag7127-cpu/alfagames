@@ -1,4 +1,5 @@
-export type Rol = 'admin' | 'empleado';
+/** admin: todo · empleado (trabajador): solo Sala · alquiler: solo Alquiler. */
+export type Rol = 'admin' | 'empleado' | 'alquiler';
 
 export interface Profile {
   id: string;

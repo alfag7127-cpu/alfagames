@@ -15,7 +15,7 @@ import { UsuariosService } from '../../core/usuarios.service';
   template: `
     <h2 class="text-lg font-bold text-slate-900 mb-1">Usuarios</h2>
     <p class="text-sm text-slate-500 mb-4">
-      <b>Trabajador</b>: solo ve Sala → En vivo (abrir, cobrar y vender productos). <b>Admin</b>: ve todo.
+      <b>Trabajador</b>: solo Sala (en vivo y ventas). <b>Alquiler</b>: solo el módulo de Alquiler (sin inventario, precios ni movimientos de potes). <b>Admin</b>: todo.
     </p>
 
     <form (ngSubmit)="crear()" class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 mb-4 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
@@ -37,7 +37,8 @@ import { UsuariosService } from '../../core/usuarios.service';
       <label class="text-xs font-medium text-slate-500">
         Rol
         <select [(ngModel)]="rol" name="rol" class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900">
-          <option ngValue="empleado">Trabajador</option>
+          <option ngValue="empleado">Trabajador (Sala)</option>
+          <option ngValue="alquiler">Alquiler</option>
           <option ngValue="admin">Admin</option>
         </select>
       </label>
@@ -66,7 +67,8 @@ import { UsuariosService } from '../../core/usuarios.service';
               <td class="px-4 py-2.5">
                 <select [ngModel]="u.rol" (ngModelChange)="cambiarRol(u, $event)" [name]="'rol-' + u.id" [disabled]="u.yo"
                   class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900 disabled:opacity-60">
-                  <option ngValue="empleado">Trabajador</option>
+                  <option ngValue="empleado">Trabajador (Sala)</option>
+                  <option ngValue="alquiler">Alquiler</option>
                   <option ngValue="admin">Admin</option>
                 </select>
               </td>
@@ -136,7 +138,7 @@ export class Usuarios implements OnInit {
   async cambiarRol(u: UsuarioApp, rol: Rol): Promise<void> {
     try {
       await this.servicio.cambiarRol(u.id, rol);
-      this.toast.exito(`${u.email}: ahora es ${rol === 'admin' ? 'admin' : 'trabajador'}.`);
+      this.toast.exito(`${u.email}: ahora es ${rol === 'admin' ? 'admin' : rol === 'alquiler' ? 'de alquiler' : 'trabajador'}.`);
       await this.cargar();
     } catch (e) {
       this.toast.error(this.mensaje(e));

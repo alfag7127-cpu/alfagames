@@ -17,7 +17,7 @@ function respuesta(cuerpo: unknown, status = 200): Response {
   });
 }
 
-type Rol = "admin" | "empleado";
+type Rol = "admin" | "empleado" | "alquiler";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
       const email = String(cuerpo.email ?? "").trim().toLowerCase();
       const password = String(cuerpo.password ?? "");
       const nombre = String(cuerpo.nombre ?? "").trim();
-      const rol: Rol = cuerpo.rol === "admin" ? "admin" : "empleado";
+      const rol: Rol = cuerpo.rol === "admin" || cuerpo.rol === "alquiler" ? cuerpo.rol : "empleado";
       if (!email.includes("@")) return respuesta({ error: "Correo inválido" }, 400);
       if (password.length < 6) return respuesta({ error: "La contraseña debe tener al menos 6 caracteres" }, 400);
 
@@ -78,7 +78,11 @@ Deno.serve(async (req) => {
       });
       if (error) throw error;
       // El trigger crea el perfil como empleado; aquí se fija nombre y rol.
-      await servicio.from("profiles").update({ full_name: nombre || null, role: rol }).eq("id", data.user.id);
+      const { error: errPerfil } = await servicio
+        .from("profiles")
+        .update({ full_name: nombre || null, role: rol })
+        .eq("id", data.user.id);
+      if (errPerfil) throw new Error(`Usuario creado, pero no se pudo asignar el rol: ${errPerfil.message}`);
       return respuesta({ ok: true, id: data.user.id });
     }
 
@@ -89,7 +93,7 @@ Deno.serve(async (req) => {
     }
 
     if (accion === "rol") {
-      const rol: Rol = cuerpo.rol === "admin" ? "admin" : "empleado";
+      const rol: Rol = cuerpo.rol === "admin" || cuerpo.rol === "alquiler" ? cuerpo.rol : "empleado";
       const { error } = await servicio.from("profiles").update({ role: rol }).eq("id", id);
       if (error) throw error;
       return respuesta({ ok: true });

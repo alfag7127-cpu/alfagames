@@ -13,6 +13,17 @@ export class AuthService {
   readonly isReady = this.ready.asReadonly();
   readonly isLoggedIn = computed(() => this.session() !== null);
   readonly isAdmin = computed(() => this.profile()?.role === 'admin');
+  /** Sala: admin y trabajador. */
+  readonly puedeSala = computed(() => ['admin', 'empleado'].includes(this.profile()?.role ?? ''));
+  /** Alquiler: admin y rol alquiler. */
+  readonly puedeAlquiler = computed(() => ['admin', 'alquiler'].includes(this.profile()?.role ?? ''));
+  /** Página de inicio según el rol. */
+  readonly inicio = computed(() => {
+    const rol = this.profile()?.role;
+    if (rol === 'admin') return '/sala/dashboard';
+    if (rol === 'alquiler') return '/alquiler';
+    return '/sala';
+  });
 
   constructor(private readonly supabase: SupabaseService) {
     this.supabase.client.auth.getSession().then(({ data }) => {

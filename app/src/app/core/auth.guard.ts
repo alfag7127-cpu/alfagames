@@ -21,5 +21,19 @@ export const authGuard: CanActivateFn = () => {
 export const adminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  return whenReady(auth).pipe(map(() => auth.isAdmin() || router.createUrlTree(['/sala'])));
+  return whenReady(auth).pipe(map(() => auth.isAdmin() || router.createUrlTree([auth.inicio()])));
+};
+
+/** Sala: admin y trabajador. */
+export const salaGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  return whenReady(auth).pipe(map(() => auth.puedeSala() || router.createUrlTree([auth.inicio()])));
+};
+
+/** Alquiler: admin y rol alquiler. */
+export const alquilerGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  return whenReady(auth).pipe(map(() => auth.puedeAlquiler() || router.createUrlTree([auth.inicio()])));
 };

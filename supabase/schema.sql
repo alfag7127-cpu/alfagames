@@ -3181,3 +3181,106 @@ from public.puestos p
 left join public.sesiones s
   on s.puesto_id = p.id and s.estado = 'activa'
 where p.activo;
+
+-- ============================================================
+-- 26. ROL "ALQUILER": SOLO EL MODULO DE ALQUILER (2026-10-20)
+-- ============================================================
+-- Roles:
+--   admin    -> todo
+--   empleado -> solo Sala (en vivo y ventas)
+--   alquiler -> solo Alquiler (consolas, historial, graficas, potes). Inventario,
+--               precios y movimientos de potes siguen siendo solo del admin.
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('admin', 'empleado', 'alquiler'));
+
+-- SECURITY DEFINER (como is_admin) para leer el rol sin chocar con el RLS de profiles.
+create or replace function private.puede_sala()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'empleado'));
+$$;
+
+create or replace function private.puede_alquiler()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'alquiler'));
+$$;
+
+revoke all on function private.puede_sala() from public, anon;
+revoke all on function private.puede_alquiler() from public, anon;
+grant execute on function private.puede_sala() to authenticated;
+grant execute on function private.puede_alquiler() to authenticated;
+
+-- ── Alquiler: operar (admin + alquiler); configurar y borrar (admin) ──
+do $$
+declare
+  t text;
+begin
+  -- Operacion diaria del alquiler
+  foreach t in array array['alquileres', 'alquiler_extensiones', 'alquiler_pagos'] loop
+    execute format('drop policy if exists %I on public.%I', t || '_solo_admin', t);
+    execute format('create policy %I on public.%I for select to authenticated using (private.puede_alquiler())', t || '_select', t);
+    execute format('create policy %I on public.%I for insert to authenticated with check (private.puede_alquiler())', t || '_insert', t);
+    execute format('create policy %I on public.%I for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler())', t || '_update', t);
+    execute format('create policy %I on public.%I for delete to authenticated using (private.is_admin())', t || '_delete_admin', t);
+  end loop;
+  -- Inventario, precios, configuracion y movimientos de potes: ver (admin + alquiler), cambiar (admin)
+  foreach t in array array['alquiler_consolas', 'alquiler_tarifas', 'alquiler_config', 'pote_movimientos'] loop
+    execute format('drop policy if exists %I on public.%I', t || '_solo_admin', t);
+    execute format('create policy %I on public.%I for select to authenticated using (private.puede_alquiler())', t || '_select', t);
+    execute format('create policy %I on public.%I for all to authenticated using (private.is_admin()) with check (private.is_admin())', t || '_admin', t);
+  end loop;
+end $$;
+
+drop policy if exists "contratos_solo_admin" on storage.objects;
+create policy "contratos_ver" on storage.objects
+  for select to authenticated using (bucket_id = 'contratos' and private.puede_alquiler());
+create policy "contratos_subir" on storage.objects
+  for insert to authenticated with check (bucket_id = 'contratos' and private.puede_alquiler());
+create policy "contratos_borrar_admin" on storage.objects
+  for delete to authenticated using (bucket_id = 'contratos' and private.is_admin());
+
+-- ── Sala: solo admin + empleado (el rol alquiler no ve nada de la sala) ──
+drop policy if exists "sesiones_select_authenticated" on public.sesiones;
+drop policy if exists "sesiones_insert_propia" on public.sesiones;
+drop policy if exists "sesiones_update_authenticated" on public.sesiones;
+create policy "sesiones_select_sala" on public.sesiones
+  for select to authenticated using (private.puede_sala());
+create policy "sesiones_insert_sala" on public.sesiones
+  for insert to authenticated with check (private.puede_sala() and (empleado_id = auth.uid() or private.is_admin()));
+create policy "sesiones_update_sala" on public.sesiones
+  for update to authenticated using (private.puede_sala()) with check (private.puede_sala());
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['sesion_controles', 'sesion_pausas'] loop
+    execute format('drop policy if exists %I on public.%I', t || '_select_authenticated', t);
+    execute format('drop policy if exists %I on public.%I', t || '_insert_authenticated', t);
+    execute format('drop policy if exists %I on public.%I', t || '_update_authenticated', t);
+    execute format('create policy %I on public.%I for select to authenticated using (private.puede_sala())', t || '_select_sala', t);
+    execute format('create policy %I on public.%I for insert to authenticated with check (private.puede_sala())', t || '_insert_sala', t);
+    execute format('create policy %I on public.%I for update to authenticated using (private.puede_sala()) with check (private.puede_sala())', t || '_update_sala', t);
+  end loop;
+end $$;
+
+drop policy if exists "puestos_select_authenticated" on public.puestos;
+create policy "puestos_select_sala" on public.puestos
+  for select to authenticated using (private.puede_sala());
+drop policy if exists "productos_select" on public.productos;
+create policy "productos_select_sala" on public.productos
+  for select to authenticated using (private.puede_sala());
+drop policy if exists "ventas_productos_select" on public.ventas_productos;
+create policy "ventas_productos_select_sala" on public.ventas_productos
+  for select to authenticated using (private.puede_sala());
