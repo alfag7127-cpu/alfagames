@@ -9,17 +9,29 @@ interface PestanaSala {
   exacta: boolean;
 }
 
-/** Sección Sala: pestañas propias (igual que Alquiler) y la página elegida debajo. */
+/** Sección Sala: encabezado con el tema del logo Alfa Games, pestañas y la página elegida. */
 @Component({
   selector: 'app-sala-layout',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
+    <section class="banner-sala p-5 mb-4">
+      <div class="flex items-center gap-4">
+        <span class="shrink-0 rounded-2xl bg-white p-2 ring-2 ring-sky-400/60 shadow-[0_0_24px_rgba(56,189,248,0.45)]">
+          <img src="img/alfa-games.jpg" alt="Alfa Games" class="h-14 sm:h-16 w-auto" />
+        </span>
+        <div class="min-w-0">
+          <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Sala de videojuegos</h1>
+          <p class="text-sm text-sky-100/80">Consolas en vivo, historial y cuentas del día</p>
+        </div>
+      </div>
+    </section>
+
     <div class="flex gap-1 mb-4 rounded-xl bg-slate-200/70 p-1 text-sm font-medium w-full sm:w-fit overflow-x-auto">
       @for (p of pestanas; track p.ruta) {
         @if (!p.soloAdmin || auth.isAdmin()) {
           <a
             [routerLink]="p.ruta"
-            routerLinkActive="bg-white shadow-sm !text-indigo-700"
+            routerLinkActive="bg-white shadow-sm !text-blue-700"
             [routerLinkActiveOptions]="{ exact: p.exacta }"
             class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 text-center text-slate-600 transition-colors whitespace-nowrap hover:text-slate-900"
           >

@@ -1,31 +1,31 @@
 <!-- Encabezado -->
-<section class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950 to-emerald-950 text-white p-5 mb-5 shadow-lg">
+<section class="banner-alquiler p-5 mb-4">
   <div class="flex items-center gap-4">
     <img
       src="img/alfa-frank-over.jpg"
       alt="Alfa Games & Frank Over"
-      class="h-20 w-20 sm:h-24 sm:w-24 rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_24px_rgba(52,211,153,0.35)] shrink-0"
+      class="h-20 w-20 sm:h-24 sm:w-24 rounded-full ring-2 ring-lime-400/70 shadow-[0_0_24px_rgba(163,230,53,0.4)] shrink-0"
     />
     <div class="min-w-0">
       <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Alquiler de consolas</h1>
-      <p class="text-sm text-slate-300">Para jugar en la comodidad de la casa · Alfa Games &amp; Frank Over</p>
+      <p class="text-sm text-lime-100/80">Para jugar en la comodidad de la casa · Alfa Games &amp; Frank Over</p>
     </div>
   </div>
 
   <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-    <div class="rounded-xl bg-white/10 px-3 py-2">
-      <p class="text-2xl font-bold text-emerald-300">{{ disponibles() }}</p>
+    <div class="banner-ficha">
+      <p class="text-2xl font-bold text-lime-300">{{ disponibles() }}</p>
       <p class="text-[11px] uppercase tracking-wide text-slate-300">Disponibles</p>
     </div>
-    <div class="rounded-xl bg-white/10 px-3 py-2">
+    <div class="banner-ficha">
       <p class="text-2xl font-bold text-sky-300">{{ alquiladas() }}</p>
       <p class="text-[11px] uppercase tracking-wide text-slate-300">Alquiladas</p>
     </div>
-    <div class="rounded-xl bg-white/10 px-3 py-2">
+    <div class="banner-ficha">
       <p class="text-2xl font-bold" [class.text-red-300]="vencidas() > 0" [class.text-slate-200]="vencidas() === 0">{{ vencidas() }}</p>
       <p class="text-[11px] uppercase tracking-wide text-slate-300">Vencidas</p>
     </div>
-    <div class="rounded-xl bg-white/10 px-3 py-2">
+    <div class="banner-ficha">
       <p class="text-[11px] uppercase tracking-wide text-slate-300 mb-1">🎮 Controles sueltos libres</p>
       <div class="flex justify-center gap-3 text-sm">
         @for (t of tipos; track t) {
@@ -46,7 +46,7 @@
     class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
     [class.bg-white]="pestana() === 'consolas'"
     [class.shadow-sm]="pestana() === 'consolas'"
-    [class.text-indigo-700]="pestana() === 'consolas'"
+    [class.text-emerald-700]="pestana() === 'consolas'"
     [class.text-slate-600]="pestana() !== 'consolas'"
   >
     Consolas
@@ -56,7 +56,7 @@
     class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
     [class.bg-white]="pestana() === 'historial'"
     [class.shadow-sm]="pestana() === 'historial'"
-    [class.text-indigo-700]="pestana() === 'historial'"
+    [class.text-emerald-700]="pestana() === 'historial'"
     [class.text-slate-600]="pestana() !== 'historial'"
   >
     Historial
@@ -66,7 +66,7 @@
     class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
     [class.bg-white]="pestana() === 'graficas'"
     [class.shadow-sm]="pestana() === 'graficas'"
-    [class.text-indigo-700]="pestana() === 'graficas'"
+    [class.text-emerald-700]="pestana() === 'graficas'"
     [class.text-slate-600]="pestana() !== 'graficas'"
   >
     📊 Gráficas
@@ -76,7 +76,7 @@
     class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
     [class.bg-white]="pestana() === 'potes'"
     [class.shadow-sm]="pestana() === 'potes'"
-    [class.text-indigo-700]="pestana() === 'potes'"
+    [class.text-emerald-700]="pestana() === 'potes'"
     [class.text-slate-600]="pestana() !== 'potes'"
   >
     💰 Potes
@@ -87,7 +87,7 @@
       class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
       [class.bg-white]="pestana() === 'inventario'"
       [class.shadow-sm]="pestana() === 'inventario'"
-      [class.text-indigo-700]="pestana() === 'inventario'"
+      [class.text-emerald-700]="pestana() === 'inventario'"
       [class.text-slate-600]="pestana() !== 'inventario'"
     >
       Inventario y precios

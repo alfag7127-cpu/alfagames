@@ -1,22 +1,13 @@
-<section class="mb-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-sky-100">
-  <div class="flex flex-col sm:flex-row items-center gap-4 p-4 sm:p-5 bg-gradient-to-r from-white via-sky-50 to-indigo-100">
-    <img src="img/alfa-games.jpg" alt="Alfa Games" class="h-20 sm:h-24 w-auto rounded-xl mix-blend-multiply" />
-    <div class="flex-1 text-center sm:text-left">
-      <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Sala de videojuegos</h1>
-      <p class="text-sm text-slate-500">Estado en vivo · cronometrado o conteo regresivo</p>
-    </div>
-    <div class="flex gap-2 text-center">
-      <div class="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2">
-        <p class="text-2xl font-bold text-emerald-700">{{ libres() }}</p>
-        <p class="text-[11px] uppercase tracking-wide text-emerald-700/80">Libres</p>
-      </div>
-      <div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-2">
-        <p class="text-2xl font-bold text-amber-700">{{ ocupadas() }}</p>
-        <p class="text-[11px] uppercase tracking-wide text-amber-700/80">Ocupadas</p>
-      </div>
-    </div>
-  </div>
-</section>
+<div class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+  <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm ring-1 ring-sky-100">
+    <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+    <span class="font-bold text-slate-900 tabular-nums">{{ libres() }}</span> libres
+  </span>
+  <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm ring-1 ring-sky-100">
+    <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+    <span class="font-bold text-slate-900 tabular-nums">{{ ocupadas() }}</span> ocupadas
+  </span>
+</div>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
   @for (p of puestos(); track p.id) {

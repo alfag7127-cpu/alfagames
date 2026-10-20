@@ -49,3 +49,49 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ── Temas por sección, tomados de los logos ──────────────────────────────
+   Sala     = logo Alfa Games: azul marino, azul eléctrico, cian y blanco.
+   Alquiler = logo Alfa Games & Frank Over: marino, cian y verde lima neón. */
+.banner-sala,
+.banner-alquiler {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  color: white;
+  box-shadow: 0 10px 30px -12px rgb(2 6 23 / 0.6);
+}
+.banner-sala {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgb(56 189 248 / 0.35), transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgb(37 99 235 / 0.45), transparent 60%),
+    linear-gradient(135deg, #020617 0%, #0b1e4a 55%, #0c3a8a 100%);
+}
+.banner-alquiler {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgb(56 189 248 / 0.30), transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgb(163 230 53 / 0.35), transparent 60%),
+    linear-gradient(135deg, #020617 0%, #0b1e4a 55%, #064e3b 100%);
+}
+/* Línea de "energía" inferior, como el rayo de los logos */
+.banner-sala::after,
+.banner-alquiler::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+}
+.banner-sala::after {
+  background: linear-gradient(90deg, transparent, #38bdf8, #2563eb, #38bdf8, transparent);
+}
+.banner-alquiler::after {
+  background: linear-gradient(90deg, transparent, #38bdf8, #a3e635, #38bdf8, transparent);
+}
+/* Fichas de resumen dentro del encabezado */
+.banner-ficha {
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  padding: 0.5rem 0.75rem;
+  text-align: center;
+}
