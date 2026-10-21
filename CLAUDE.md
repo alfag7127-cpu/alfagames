@@ -19,7 +19,7 @@ Módulo aparte (página `/alquiler`): tablas `alquiler_consolas`, `alquiler_tari
 
 ## Roles, productos y usuarios
 
-Admin ve todo; empleado (trabajador) solo Sala → En vivo. Alquiler y potes son solo admin también en RLS (políticas `*_solo_admin`). Productos: `productos`, `producto_entradas`, `ventas_productos`; RPC `vender_producto` (SECURITY DEFINER, descuenta stock), `agregar_stock`, `anular_venta_producto`. Usuarios: Edge Function `supabase/functions/usuarios` (listar, crear, rol, password, desactivar/activar) con verificación de admin.
+Admin ve todo; empleado (trabajador) solo Sala → En vivo, Ventas e Historial (cuentas del día, arranca en "Hoy"); rol alquiler solo Alquiler (sin inventario, precios ni movimientos de potes). RLS con `private.puede_sala()` / `private.puede_alquiler()`. Super usuario `prueba@alfagames.com` protegido (trigger `profiles_proteger_super` y Edge Function). Productos: `productos`, `producto_entradas`, `ventas_productos`; RPC `vender_producto` (SECURITY DEFINER, descuenta stock), `agregar_stock`, `anular_venta_producto`. Usuarios: Edge Function `supabase/functions/usuarios` (listar, crear, rol, password, desactivar/activar) con verificación de admin.
 
 ## Fechas
 

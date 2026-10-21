@@ -6,7 +6,7 @@ import { Login } from './pages/login/login';
 import { Home } from './pages/home/home';
 import { Sala } from './pages/sala/sala';
 
-// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo y Ventas; el rol alquiler solo a Alquiler. La Sala en vivo carga de una vez
+// Dos secciones: Sala (con sus pestañas) y Alquiler. El trabajador solo entra a Sala → En vivo, Ventas e Historial; el rol alquiler solo a Alquiler. La Sala en vivo carga de una vez
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
@@ -22,9 +22,9 @@ export const routes: Routes = [
         canActivate: [salaGuard],
         children: [
           { path: '', component: Sala, pathMatch: 'full' },
+          // Historial: también para el trabajador, para presentar las cuentas del día.
           {
             path: 'historial',
-            canActivate: [adminGuard],
             loadComponent: () => import('./pages/historial/historial').then((m) => m.Historial),
           },
           {

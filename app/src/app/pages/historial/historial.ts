@@ -3,6 +3,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Sesion, VentaProducto } from '../../core/models';
+import { AuthService } from '../../core/auth.service';
 import { ProductosService } from '../../core/productos.service';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
@@ -93,9 +94,15 @@ export class Historial implements OnInit {
     private readonly sesionesService: SesionesService,
     private readonly productosService: ProductosService,
     private readonly toast: ToastService,
+    private readonly auth: AuthService,
   ) {}
 
   ngOnInit(): void {
+    // El trabajador entra a cuadrar caja: arranca en el día de hoy.
+    if (!this.auth.isAdmin()) {
+      this.rango.set('hoy');
+      this.desde = this.hasta;
+    }
     this.sesionesService.listarNombresPuestos().then((m) => this.nombresPuestos.set(m));
     this.sesionesService.listarNombresUsuarios().then((m) => this.nombresUsuarios.set(m)).catch(() => undefined);
     this.productosService

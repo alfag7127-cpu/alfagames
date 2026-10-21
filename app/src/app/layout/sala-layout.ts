@@ -47,7 +47,7 @@ export class SalaLayout {
   readonly pestanas: PestanaSala[] = [
     { ruta: '/sala', texto: '🎮 En vivo', soloAdmin: false, exacta: true },
     { ruta: '/sala/ventas', texto: '🛒 Ventas', soloAdmin: false, exacta: false },
-    { ruta: '/sala/historial', texto: '📋 Historial', soloAdmin: true, exacta: false },
+    { ruta: '/sala/historial', texto: '📋 Historial', soloAdmin: false, exacta: false },
     { ruta: '/sala/productos', texto: '📦 Productos', soloAdmin: true, exacta: false },
     { ruta: '/sala/dashboard', texto: '📊 Dashboard', soloAdmin: true, exacta: false },
     { ruta: '/sala/gastos', texto: '💸 Gastos', soloAdmin: true, exacta: false },
