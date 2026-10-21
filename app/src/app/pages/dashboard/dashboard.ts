@@ -2,17 +2,15 @@ import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { GastosService } from '../../core/gastos.service';
 import { SesionesService } from '../../core/sesiones.service';
-import { AlquilerService } from '../../core/alquiler.service';
 import { ProductosService } from '../../core/productos.service';
 import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 
 interface DiaResumen {
   fecha: string; // YYYY-MM-DD, hora de Colombia
   etiqueta: string; // "lun 15"
-  ventas: number; // sala + productos + alquiler
+  ventas: number; // sala + productos (el alquiler es otro negocio: va en su módulo)
   ventasSala: number;
   ventasProductos: number;
-  ventasAlquiler: number;
   gastos: number;
 }
 
@@ -41,14 +39,15 @@ export class Dashboard implements OnInit {
   readonly totalPeriodo = computed(() => {
     const dias = this.dias();
     const ventas = dias.reduce((s, d) => s + d.ventas, 0);
+    const sala = dias.reduce((s, d) => s + d.ventasSala, 0);
+    const productos = dias.reduce((s, d) => s + d.ventasProductos, 0);
     const gastos = dias.reduce((s, d) => s + d.gastos, 0);
-    return { ventas, gastos, ganancia: ventas - gastos };
+    return { sala, productos, ventas, gastos, ganancia: ventas - gastos };
   });
 
   constructor(
     private readonly sesionesService: SesionesService,
     private readonly gastosService: GastosService,
-    private readonly alquilerService: AlquilerService,
     private readonly productosService: ProductosService,
   ) {}
 
@@ -62,17 +61,15 @@ export class Dashboard implements OnInit {
     // Los 7 días se cuentan en hora de Colombia, no en la del dispositivo.
     const desde = sumarDias(fechaColombia(), -6);
 
-    const [sesiones, gastos, alquileres, extensiones, ventasProductos] = await Promise.all([
+    const [sesiones, gastos, ventasProductos] = await Promise.all([
       this.sesionesService.listarHistorial({ desde: inicioDiaColombia(desde) }),
       this.gastosService.listar(desde),
-      this.alquilerService.historial(inicioDiaColombia(desde)),
-      this.alquilerService.pagosExtensiones(inicioDiaColombia(desde)),
       this.productosService.ventas(inicioDiaColombia(desde)),
     ]);
 
-    const porFecha = new Map<string, { ventasSala: number; ventasProductos: number; ventasAlquiler: number; gastos: number }>();
+    const porFecha = new Map<string, { ventasSala: number; ventasProductos: number; gastos: number }>();
     for (let i = 0; i < 7; i++) {
-      porFecha.set(sumarDias(desde, i), { ventasSala: 0, ventasProductos: 0, ventasAlquiler: 0, gastos: 0 });
+      porFecha.set(sumarDias(desde, i), { ventasSala: 0, ventasProductos: 0, gastos: 0 });
     }
 
     for (const v of ventasProductos) {
@@ -87,20 +84,6 @@ export class Dashboard implements OnInit {
       if (acc) acc.ventasSala += s.precio_total;
     }
 
-    // El alquiler se cobra al entregar: cuenta el día de la entrega.
-    for (const a of alquileres) {
-      if (a.estado === 'cancelado') continue;
-      const acc = porFecha.get(fechaColombia(a.inicio));
-      if (acc) acc.ventasAlquiler += a.precio_total;
-    }
-
-    // Las extensiones (más tiempo pagado) cuentan el día en que se recibió el pago.
-    for (const e of extensiones) {
-      if (e.alquileres.estado === 'cancelado') continue;
-      const acc = porFecha.get(fechaColombia(e.created_at));
-      if (acc) acc.ventasAlquiler += e.precio;
-    }
-
     for (const g of gastos) {
       const acc = porFecha.get(g.fecha);
       if (acc) acc.gastos += g.monto;
@@ -110,10 +93,9 @@ export class Dashboard implements OnInit {
       Array.from(porFecha.entries()).map(([fecha, v]) => ({
         fecha,
         etiqueta: etiquetaCorta(fecha),
-        ventas: v.ventasSala + v.ventasProductos + v.ventasAlquiler,
+        ventas: v.ventasSala + v.ventasProductos,
         ventasSala: v.ventasSala,
         ventasProductos: v.ventasProductos,
-        ventasAlquiler: v.ventasAlquiler,
         gastos: v.gastos,
       })),
     );

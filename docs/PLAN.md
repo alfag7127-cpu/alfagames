@@ -132,7 +132,7 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 - **Cobro**: se cobra al entregar (precio sugerido editable). No se pide depósito ni se cobra recargo por entrega tarde (el precio final se puede ajustar a mano al recibir si hace falta). Anular un alquiler no cuenta como venta.
 - **Más tiempo (extensión)**: si el cliente pide más tiempo y envía el dinero, se registra una extensión: un plan (precio sugerido = plan + controles extra) u horas sueltas con precio a mano. La nueva entrega se cuenta desde la entrega pactada actual. Cada pago queda con su fecha y suma en ventas el día que se recibe.
 - **Contrato**: el cliente firma un contrato físico; se adjuntan fotos o PDF (al alquilar, durante el alquiler o desde el historial). Se guardan en un bucket privado de Supabase Storage (`contratos/<id del alquiler>/`); las fotos se comprimen antes de subir. Solo el admin puede borrar archivos.
-- **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. El Dashboard suma las ventas de alquiler (por día de entrega) junto a las de la sala.
+- **Cuentas**: el historial de alquileres muestra entregas, devoluciones (marca las tardías) y total del período. Sala y Alquiler son **negocios independientes**: el producido del alquiler se ve solo en su módulo (Historial y Gráficas de Alquiler) y nunca se suma al Dashboard, Historial ni totales de la sala.
 
 - **Potes** (dónde entra el dinero del alquiler): **Pote Llave** = cuenta Daviplata; **Pote Efectivo** = dinero físico. Cada cobro (entrega, extensión, ajuste al recibir) se registra por pote y se puede dividir (parte Llave, parte Efectivo); la suma debe dar el total. El historial de alquiler muestra cuánto entró a cada pote en el período (por fecha del pago).
 - **Gráficas**: pestaña *Alquiler → Gráficas* con el producido (dinero recibido) diario (30 días), semanal (12 semanas, lunes a domingo) y mensual (12 meses), apilado por pote, más el resumen de hoy, esta semana y este mes.
@@ -142,7 +142,7 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 
 ## Roles, productos y saldo inicial (2026-10-20)
 
-- **Roles**: *Admin* ve todo. *Trabajador* solo ve **Sala → En vivo**: abrir, cobrar, pausar, transferir y vender productos. No ve historial, dashboard, gastos, productos (inventario), usuarios ni nada de Alquiler; la base de datos se lo bloquea (RLS), no solo la pantalla.
+- **Roles**: *Admin* ve todo. *Trabajador* solo ve **Sala → En vivo, Ventas e Historial** (cuentas del día): abrir, cobrar, pausar, transferir y vender productos. No ve dashboard, gastos, productos (inventario), usuarios ni nada de Alquiler; la base de datos se lo bloquea (RLS), no solo la pantalla.
 - **Usuarios**: el admin crea trabajadores (o admins) en *Sala → Usuarios*, cambia rol y contraseña, y desactiva cuentas (no se borran: su historial se conserva). Usa la función de servidor `usuarios` (Edge Function), que verifica que quien llama sea admin.
 - **Productos de la sala** (*Sala → Productos*, admin): nombre, precio de compra, precio de venta al público y cantidad. "+ Cantidad" registra entrada de mercancía. Las ventas se hacen desde *En vivo* (cualquier usuario) y descuentan el inventario; el admin puede anularlas (las unidades vuelven). Las ventas de productos suman en el Historial de la sala y en el Dashboard.
 - **Saldo inicial de potes**: movimiento "Saldo inicial (antes de la app)" en *Alquiler → Potes*, para cargar el dinero que ya había antes de usar la app.

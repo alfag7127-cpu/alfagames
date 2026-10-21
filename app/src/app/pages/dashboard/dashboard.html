@@ -1,5 +1,8 @@
 <div class="viz-root space-y-6">
-  <h2 class="text-lg font-bold" style="color: var(--text-primary)">Dashboard</h2>
+  <div>
+    <h2 class="text-lg font-bold" style="color: var(--text-primary)">Dashboard de la sala</h2>
+    <p class="stat-label text-sm">Solo la sala y sus productos. El alquiler es otro negocio: su producido está en Alquiler.</p>
+  </div>
 
   @if (!cargando()) {
     <!-- Stat tiles: hoy -->
@@ -8,7 +11,7 @@
         <p class="stat-label text-xs uppercase tracking-wide">Ventas de hoy</p>
         <p class="text-2xl font-bold mt-1">{{ hoy()?.ventas ?? 0 | number: '1.0-0' }} COP</p>
         <p class="stat-label text-xs mt-1">
-          Sala {{ hoy()?.ventasSala ?? 0 | number: '1.0-0' }} · Productos {{ hoy()?.ventasProductos ?? 0 | number: '1.0-0' }} · Alquiler {{ hoy()?.ventasAlquiler ?? 0 | number: '1.0-0' }}
+          Sala {{ hoy()?.ventasSala ?? 0 | number: '1.0-0' }} · Productos {{ hoy()?.ventasProductos ?? 0 | number: '1.0-0' }}
         </p>
       </div>
       <div class="stat-tile rounded-xl shadow-sm p-4">
@@ -72,7 +75,6 @@
             <th class="px-3 py-2 stat-label">Día</th>
             <th class="px-3 py-2 stat-label">Sala</th>
             <th class="px-3 py-2 stat-label">Productos</th>
-            <th class="px-3 py-2 stat-label">Alquiler</th>
             <th class="px-3 py-2 stat-label">Ventas</th>
             <th class="px-3 py-2 stat-label">Gastos</th>
             <th class="px-3 py-2 stat-label">Ganancia</th>
@@ -84,7 +86,6 @@
               <td class="px-3 py-2">{{ d.etiqueta }}</td>
               <td class="px-3 py-2">{{ d.ventasSala | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.ventasProductos | number: '1.0-0' }}</td>
-              <td class="px-3 py-2">{{ d.ventasAlquiler | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.ventas | number: '1.0-0' }}</td>
               <td class="px-3 py-2">{{ d.gastos | number: '1.0-0' }}</td>
               <td
@@ -100,9 +101,8 @@
         <tfoot>
           <tr class="font-semibold" style="color: var(--text-primary)">
             <td class="px-3 py-2">Total 7 días</td>
-            <td class="px-3 py-2"></td>
-            <td class="px-3 py-2"></td>
-            <td class="px-3 py-2"></td>
+            <td class="px-3 py-2">{{ totalPeriodo().sala | number: '1.0-0' }}</td>
+            <td class="px-3 py-2">{{ totalPeriodo().productos | number: '1.0-0' }}</td>
             <td class="px-3 py-2">{{ totalPeriodo().ventas | number: '1.0-0' }}</td>
             <td class="px-3 py-2">{{ totalPeriodo().gastos | number: '1.0-0' }}</td>
             <td
