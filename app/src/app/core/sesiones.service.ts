@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
+import { suscribirCambios } from './tiempo-real';
 import { Modalidad, Sesion, PuestoConEstado } from './models';
 
 export interface AbrirSesionOpts {
@@ -180,12 +181,6 @@ export class SesionesService {
    * Devuelve una función para cancelar la suscripción.
    */
   onCambiosSesiones(callback: () => void): () => void {
-    const channel = this.supabase.client
-      .channel('sesiones-cambios')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sesiones' }, callback)
-      .subscribe();
-    return () => {
-      this.supabase.client.removeChannel(channel);
-    };
+    return suscribirCambios(this.supabase.client, 'sesiones', ['sesiones'], callback);
   }
 }

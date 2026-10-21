@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
+import { suscribirCambios } from './tiempo-real';
 import {
   Alquiler,
   AlquilerConfig,
@@ -256,14 +257,6 @@ export class AlquilerService {
 
   /** Refresca la pantalla cuando otro empleado entrega o recibe una consola. */
   onCambios(callback: () => void): () => void {
-    const channel = this.supabase.client
-      .channel('alquileres-cambios')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alquileres' }, callback)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alquiler_extensiones' }, callback)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alquiler_pagos' }, callback)
-      .subscribe();
-    return () => {
-      this.supabase.client.removeChannel(channel);
-    };
+    return suscribirCambios(this.supabase.client, 'alquileres', ['alquileres', 'alquiler_extensiones', 'alquiler_pagos'], callback);
   }
 }

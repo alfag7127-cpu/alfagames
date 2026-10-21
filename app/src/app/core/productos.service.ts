@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Producto, VentaProducto } from './models';
 import { SupabaseService } from './supabase.service';
+import { suscribirCambios } from './tiempo-real';
 
 export interface NuevoProducto {
   nombre: string;
@@ -85,13 +86,6 @@ export class ProductosService {
   }
 
   onCambios(callback: () => void): () => void {
-    const channel = this.supabase.client
-      .channel(`productos-cambios-${crypto.randomUUID()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, callback)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_productos' }, callback)
-      .subscribe();
-    return () => {
-      this.supabase.client.removeChannel(channel);
-    };
+    return suscribirCambios(this.supabase.client, 'productos', ['productos', 'ventas_productos'], callback);
   }
 }
