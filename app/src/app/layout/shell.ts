@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../core/auth.service';
+import { AvisosAlquiler } from '../shared/avisos-alquiler';
 
 interface EnlaceMenu {
   ruta: string;
@@ -13,7 +14,7 @@ interface EnlaceMenu {
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvisosAlquiler],
   templateUrl: './shell.html',
 })
 export class Shell {

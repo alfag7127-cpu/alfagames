@@ -80,6 +80,11 @@
     </div>
   }
 
+  <!-- Avisos emergentes del alquiler (alquilada / recoger), en cualquier pantalla -->
+  @if (auth.puedeAlquiler()) {
+    <app-avisos-alquiler />
+  }
+
   <main class="p-4 sm:p-6 max-w-[1600px] mx-auto">
     <router-outlet />
   </main>
