@@ -313,7 +313,7 @@ export class AlquilerService {
     if (error) throw error;
   }
 
-  async actualizarConsola(id: number, cambios: Partial<Pick<AlquilerConsola, 'nombre' | 'descripcion' | 'controles_incluidos' | 'activo' | 'capacidad' | 'juegos' | 'detalles'>>): Promise<void> {
+  async actualizarConsola(id: number, cambios: Partial<Pick<AlquilerConsola, 'nombre' | 'descripcion' | 'controles_incluidos' | 'activo' | 'capacidad' | 'juegos' | 'detalles' | 'serial'>>): Promise<void> {
     const { error } = await this.supabase.client.from('alquiler_consolas').update(cambios).eq('id', id);
     if (error) throw error;
   }

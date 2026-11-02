@@ -750,11 +750,11 @@
                 <span class="font-medium text-slate-800">{{ c.nombre }}</span>
                 <span class="text-slate-500"> · {{ c.descripcion || '—' }} · {{ c.controles_incluidos }} controles</span>
                 <span class="block text-xs text-slate-400">
-                  🎮 {{ c.juegos.length }} juego{{ c.juegos.length === 1 ? '' : 's' }}{{ c.capacidad ? ' · 💾 ' + c.capacidad : '' }}
+                  🎮 {{ c.juegos.length }} juego{{ c.juegos.length === 1 ? '' : 's' }}{{ c.capacidad ? ' · 💾 ' + c.capacidad : '' }}{{ c.serial ? ' · S/N ' + c.serial : '' }}
                 </span>
               </span>
               <span class="flex gap-3 shrink-0">
-                <button (click)="abrirFicha(c)" class="text-indigo-600 hover:underline">{{ fichaAbierta() === c.id ? 'Cerrar' : 'Ficha' }}</button>
+                <button (click)="abrirFicha(c)" class="text-indigo-600 hover:underline">{{ fichaAbierta() === c.id ? 'Cerrar' : 'Editar' }}</button>
                 <button (click)="cambiarActivo(c)" class="hover:underline" [class.text-red-600]="c.activo" [class.text-emerald-600]="!c.activo">
                   {{ c.activo ? 'Quitar' : 'Reactivar' }}
                 </button>
@@ -762,6 +762,28 @@
             </div>
             @if (fichaAbierta() === c.id) {
               <div class="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
+                <label class="block text-xs font-medium text-slate-500">
+                  Nombre
+                  <input [(ngModel)]="fichaNombre" name="ficha-nombre-{{ c.id }}" placeholder="Ej. PS4 Programada 3"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                </label>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="block text-xs font-medium text-slate-500">
+                    Serial
+                    <input [(ngModel)]="fichaSerial" name="ficha-serial-{{ c.id }}" placeholder="Número de serie"
+                      class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                  </label>
+                  <label class="block text-xs font-medium text-slate-500">
+                    Controles incluidos
+                    <input type="number" min="0" [(ngModel)]="fichaControles" name="ficha-ctrl-{{ c.id }}"
+                      class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                  </label>
+                </div>
+                <label class="block text-xs font-medium text-slate-500">
+                  Descripción
+                  <input [(ngModel)]="fichaDescripcion" name="ficha-desc-{{ c.id }}" placeholder="Original, Programada…"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                </label>
                 <label class="block text-xs font-medium text-slate-500">
                   Capacidad
                   <input [(ngModel)]="fichaCapacidad" name="ficha-cap-{{ c.id }}" placeholder="Ej. 500 GB, 1 TB"
@@ -778,7 +800,7 @@
                     class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"></textarea>
                 </label>
                 <button type="button" (click)="guardarFicha(c)" class="w-full rounded-lg bg-indigo-600 py-1.5 text-sm text-white hover:bg-indigo-700">
-                  Guardar ficha
+                  Guardar cambios
                 </button>
               </div>
             }

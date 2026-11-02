@@ -4173,3 +4173,41 @@ $$;
 
 revoke all on function public.alquilar_consola(bigint, bigint, text, text, text, integer, numeric, text, numeric, numeric, timestamptz) from public, anon;
 grant execute on function public.alquilar_consola(bigint, bigint, text, text, text, integer, numeric, text, numeric, numeric, timestamptz) to authenticated;
+
+-- ============================================================
+-- 36. SERIAL DE CADA CONSOLA DEL ALQUILER (2026-11-02)
+-- ============================================================
+-- La ficha de la consola ahora tambien edita nombre, descripcion, controles incluidos y
+-- el serial (para identificarla si se pierde o hay reclamo). La vista lo expone al final.
+
+alter table public.alquiler_consolas add column if not exists serial text;
+
+create or replace view public.vista_alquiler_consolas
+with (security_invoker = true) as
+select c.id,
+    c.nombre,
+    c.tipo,
+    c.descripcion,
+    c.controles_incluidos,
+    c.activo,
+    a.id as alquiler_id,
+    a.cliente_nombre,
+    a.cliente_telefono,
+    a.cliente_direccion,
+    a.plan_nombre,
+    a.inicio,
+    a.fin_pactado,
+    a.controles,
+    a.controles_extra,
+    a.precio_total,
+    a.notas,
+    coalesce((select count(*) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0)::integer as extensiones,
+    coalesce((select sum(e.precio) from public.alquiler_extensiones e where e.alquiler_id = a.id), 0::numeric) as total_extensiones,
+    c.capacidad,
+    c.juegos,
+    c.detalles,
+    a.juegos_entregados,
+    a.detalles_entregados,
+    c.serial
+from public.alquiler_consolas c
+left join public.alquileres a on a.consola_id = c.id and a.estado = 'activo';

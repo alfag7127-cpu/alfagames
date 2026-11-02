@@ -174,6 +174,10 @@ export class AlquilerPage implements OnInit, OnDestroy {
   );
   // Admin: ficha de inventario de una consola
   readonly fichaAbierta = signal<number | null>(null);
+  fichaNombre = '';
+  fichaDescripcion = '';
+  fichaControles = 2;
+  fichaSerial = '';
   fichaCapacidad = '';
   fichaJuegos = '';
   fichaDetalles = '';
@@ -666,6 +670,10 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.fichaAbierta.set(null);
       return;
     }
+    this.fichaNombre = c.nombre;
+    this.fichaDescripcion = c.descripcion ?? '';
+    this.fichaControles = c.controles_incluidos;
+    this.fichaSerial = c.serial ?? '';
     this.fichaCapacidad = c.capacidad ?? '';
     this.fichaJuegos = (c.juegos ?? []).join('\n');
     this.fichaDetalles = c.detalles ?? '';
@@ -674,17 +682,24 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   /** Juegos: uno por línea (también acepta comas). */
   async guardarFicha(c: ConsolaVM): Promise<void> {
+    const nombre = this.fichaNombre.trim();
+    if (!nombre) return this.toast.error('El nombre de la consola no puede quedar vacío.');
+    if (!(this.fichaControles >= 0)) return this.toast.error('Los controles incluidos no pueden ser negativos.');
     const juegos = this.fichaJuegos
       .split(/[\n,]/)
       .map((j) => j.trim())
       .filter(Boolean);
     try {
       await this.alquiler.actualizarConsola(c.id, {
+        nombre,
+        descripcion: this.fichaDescripcion.trim() || null,
+        controles_incluidos: Math.round(this.fichaControles),
+        serial: this.fichaSerial.trim() || null,
         capacidad: this.fichaCapacidad.trim() || null,
         juegos,
         detalles: this.fichaDetalles.trim() || null,
       });
-      this.toast.exito(`Ficha de ${c.nombre} guardada (${juegos.length} juego${juegos.length === 1 ? '' : 's'}).`);
+      this.toast.exito(`Ficha de ${nombre} guardada (${juegos.length} juego${juegos.length === 1 ? '' : 's'}).`);
       this.fichaAbierta.set(null);
       await this.cargar();
     } catch (e) {

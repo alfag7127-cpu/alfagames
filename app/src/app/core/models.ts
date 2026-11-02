@@ -114,6 +114,7 @@ export interface AlquilerConsola {
   capacidad: string | null;
   juegos: string[];
   detalles: string | null;
+  serial: string | null;
 }
 
 export interface AlquilerTarifa {
@@ -212,6 +213,7 @@ export interface ConsolaConEstado {
   detalles: string | null;
   juegos_entregados: string[] | null;
   detalles_entregados: string | null;
+  serial: string | null;
 }
 
 // ── Potes: movimientos de dinero (préstamos, inversiones, traslados) ──
