@@ -478,17 +478,26 @@
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
     <div class="rounded-xl bg-gradient-to-br from-fuchsia-600 to-fuchsia-800 text-white p-4 shadow-sm">
       <p class="text-[11px] uppercase tracking-wide text-fuchsia-200">🔑 Pote Llave · Daviplata</p>
-      <p class="text-2xl font-bold tabular-nums">{{ potes().llave | number: '1.0-0' }}</p>
-      <p class="text-xs text-fuchsia-200">COP recibidos en el período</p>
+      <p class="text-2xl font-bold tabular-nums">{{ potes().llave + inicioPotes().llave | number: '1.0-0' }}</p>
+      <p class="text-xs text-fuchsia-200 tabular-nums">
+        Cobros {{ potes().llave | number: '1.0-0' }}
+        @if (inicioPotes().llave) { · + inicio de potes {{ inicioPotes().llave | number: '1.0-0' }} }
+      </p>
     </div>
     <div class="rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-4 shadow-sm">
       <p class="text-[11px] uppercase tracking-wide text-emerald-200">💵 Pote Efectivo</p>
-      <p class="text-2xl font-bold tabular-nums">{{ potes().efectivo | number: '1.0-0' }}</p>
-      <p class="text-xs text-emerald-200">COP recibidos en el período</p>
+      <p class="text-2xl font-bold tabular-nums">{{ potes().efectivo + inicioPotes().efectivo | number: '1.0-0' }}</p>
+      <p class="text-xs text-emerald-200 tabular-nums">
+        Cobros {{ potes().efectivo | number: '1.0-0' }}
+        @if (inicioPotes().efectivo) { · + inicio de potes {{ inicioPotes().efectivo | number: '1.0-0' }} }
+      </p>
     </div>
     <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
       <p class="text-[11px] uppercase tracking-wide text-slate-500">Total alquiler</p>
-      <p class="text-2xl font-bold text-slate-900 tabular-nums">{{ potes().llave + potes().efectivo | number: '1.0-0' }}</p>
+      <p class="text-2xl font-bold text-slate-900 tabular-nums">{{ potes().llave + potes().efectivo + inicioPotes().llave + inicioPotes().efectivo | number: '1.0-0' }}</p>
+      @if (inicioPotes().llave + inicioPotes().efectivo) {
+        <p class="text-xs text-slate-500 tabular-nums">Incluye {{ inicioPotes().llave + inicioPotes().efectivo | number: '1.0-0' }} del inicio de potes (antes de la app)</p>
+      }
       <p class="text-xs text-slate-500">{{ historial().length }} alquiler{{ historial().length === 1 ? '' : 'es' }} entregado{{ historial().length === 1 ? '' : 's' }} en el período</p>
     </div>
   </div>

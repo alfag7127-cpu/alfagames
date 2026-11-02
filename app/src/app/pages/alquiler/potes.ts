@@ -2,7 +2,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
-import { PoteMovimiento, PrestamoPendiente, SaldoPote, TipoMovimiento } from '../../core/models';
+import { PoteMovimiento, PrestamoPendiente, RangoPote, TipoMovimiento } from '../../core/models';
 import { NOMBRE_TIPO, PotesService, TIPOS_MANUALES, TIPOS_SALIDA } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
 import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, sumarDias } from '../../core/zona-horaria';
@@ -23,9 +23,26 @@ interface DiaMovimientos {
   selector: 'app-potes',
   imports: [FormsModule, DecimalPipe],
   template: `
-    <!-- Saldos -->
+    <!-- Filtro de fechas: cambia los saldos y los movimientos -->
+    <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-100">
+      <label class="text-xs font-medium text-slate-500">
+        Desde
+        <input type="date" [(ngModel)]="desde" name="m-desde" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+      </label>
+      <label class="text-xs font-medium text-slate-500">
+        Hasta
+        <input type="date" [(ngModel)]="hasta" name="m-hasta" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+      </label>
+      <button type="button" (click)="filtrar()" class="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-900">Filtrar</button>
+      @if (inicio()) {
+        <button type="button" (click)="desdeElInicio()" class="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">Desde el inicio de los potes</button>
+      }
+      <span class="ml-auto text-xs text-slate-500">Saldo de cada pote al terminar el {{ etiquetaHasta() }} (hora de Colombia)</span>
+    </div>
+
+    <!-- Saldos del rango -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-      @for (s of saldos(); track s.pote) {
+      @for (s of rango(); track s.pote) {
         <div
           class="rounded-xl text-white p-4 shadow-sm"
           [class.bg-gradient-to-br]="true"
@@ -34,23 +51,40 @@ interface DiaMovimientos {
           [class.from-emerald-600]="s.pote === 'efectivo'"
           [class.to-emerald-800]="s.pote === 'efectivo'"
         >
-          <p class="text-[11px] uppercase tracking-wide opacity-80">{{ s.pote === 'llave' ? '🔑' : '💵' }} {{ nombrePote[s.pote] }} · saldo</p>
-          <p class="text-3xl font-bold tabular-nums">{{ s.saldo | number: '1.0-0' }}</p>
-          <p class="text-xs opacity-80 tabular-nums">
-            Alquiler {{ s.cobros_alquiler | number: '1.0-0' }} · +{{ s.entradas | number: '1.0-0' }} · −{{ s.salidas | number: '1.0-0' }}
-          </p>
+          <p class="text-[11px] uppercase tracking-wide opacity-80">{{ s.pote === 'llave' ? '🔑' : '💵' }} {{ nombrePote[s.pote] }} · saldo al {{ etiquetaHasta() }}</p>
+          <p class="text-3xl font-bold tabular-nums">{{ s.saldo_final | number: '1.0-0' }}</p>
+          <div class="mt-1 space-y-0.5 text-xs opacity-90 tabular-nums">
+            <p class="flex justify-between"><span>Venía (antes del {{ etiquetaDesde() }})</span><span>{{ s.saldo_anterior | number: '1.0-0' }}</span></p>
+            @if (s.inicio_potes) {
+              <p class="flex justify-between"><span>+ Inicio de potes</span><span>{{ s.inicio_potes | number: '1.0-0' }}</span></p>
+            }
+            <p class="flex justify-between"><span>+ Cobros de alquiler</span><span>{{ s.cobros | number: '1.0-0' }}</span></p>
+            @if (s.entradas) {
+              <p class="flex justify-between"><span>+ Otras entradas</span><span>{{ s.entradas | number: '1.0-0' }}</span></p>
+            }
+            @if (s.salidas) {
+              <p class="flex justify-between"><span>− Salidas</span><span>{{ s.salidas | number: '1.0-0' }}</span></p>
+            }
+            @if (s.traslados) {
+              <p class="flex justify-between"><span>⇄ Traslados</span><span>{{ s.traslados > 0 ? '+' : '' }}{{ s.traslados | number: '1.0-0' }}</span></p>
+            }
+            @if (s.liquidado) {
+              <p class="flex justify-between"><span>− Liquidado a socios</span><span>{{ s.liquidado | number: '1.0-0' }}</span></p>
+            }
+          </div>
         </div>
       }
       <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
-        <p class="text-[11px] uppercase tracking-wide text-slate-500">Total en potes</p>
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Total en potes al {{ etiquetaHasta() }}</p>
         <p class="text-3xl font-bold text-slate-900 tabular-nums">{{ totalSaldo() | number: '1.0-0' }}</p>
-        <p class="text-xs text-slate-500">Préstamos por cobrar: <span class="font-semibold text-amber-700 tabular-nums">{{ totalPrestado() | number: '1.0-0' }}</span></p>
+        <p class="text-xs text-slate-500 tabular-nums">Entró en el rango: {{ entroRango() | number: '1.0-0' }}</p>
+        <p class="text-xs text-slate-500">Préstamos por cobrar hoy: <span class="font-semibold text-amber-700 tabular-nums">{{ totalPrestado() | number: '1.0-0' }}</span></p>
       </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <!-- Registrar movimiento (admin) -->
-      @if (auth.isAdmin()) {
+      <!-- Registrar movimiento (admin y rol alquiler) -->
+      @if (auth.puedeAlquiler()) {
         <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 space-y-3 h-fit">
           <h2 class="font-semibold text-slate-900">Registrar movimiento</h2>
 
@@ -125,7 +159,7 @@ interface DiaMovimientos {
         </section>
       }
 
-      <div class="space-y-4" [class.lg:col-span-2]="auth.isAdmin()" [class.lg:col-span-3]="!auth.isAdmin()">
+      <div class="space-y-4" [class.lg:col-span-2]="auth.puedeAlquiler()" [class.lg:col-span-3]="!auth.puedeAlquiler()">
         <!-- Préstamos pendientes -->
         <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
           <h2 class="font-semibold text-slate-900 mb-2">Préstamos pendientes</h2>
@@ -146,17 +180,7 @@ interface DiaMovimientos {
         <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
           <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
             <h2 class="font-semibold text-slate-900">Movimientos</h2>
-            <div class="flex flex-wrap items-end gap-2">
-              <label class="text-xs font-medium text-slate-500">
-                Desde
-                <input type="date" [(ngModel)]="desde" name="m-desde" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-              </label>
-              <label class="text-xs font-medium text-slate-500">
-                Hasta
-                <input type="date" [(ngModel)]="hasta" name="m-hasta" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-              </label>
-              <button type="button" (click)="cargarMovimientos()" class="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-900">Filtrar</button>
-            </div>
+            <span class="text-xs text-slate-500">del {{ etiquetaDesde() }} al {{ etiquetaHasta() }}</span>
           </div>
 
           @for (d of dias(); track d.fecha) {
@@ -185,7 +209,7 @@ interface DiaMovimientos {
                       [class.text-red-600]="signo(m) < 0" [class.text-emerald-700]="signo(m) > 0" [class.text-slate-600]="signo(m) === 0">
                       {{ signo(m) < 0 ? '−' : signo(m) > 0 ? '+' : '⇄' }}{{ m.monto | number: '1.0-0' }}
                     </span>
-                    @if (auth.isAdmin() && m.tipo !== 'liquidacion') {
+                    @if (auth.puedeAlquiler() && m.tipo !== 'liquidacion') {
                       <button type="button" (click)="eliminar(m)" class="text-xs text-slate-400 hover:text-red-600" title="Eliminar">✕</button>
                     }
                   </div>
@@ -201,7 +225,10 @@ interface DiaMovimientos {
   `,
 })
 export class Potes implements OnInit {
-  readonly saldos = signal<SaldoPote[]>([]);
+  readonly rango = signal<RangoPote[]>([]);
+  readonly inicio = signal<string | null>(null);
+  /** Fechas del último filtro aplicado (las que se están mostrando). */
+  private readonly filtro = signal({ desde: '', hasta: fechaColombia() });
   readonly prestamos = signal<PrestamoPendiente[]>([]);
   readonly movimientos = signal<PoteMovimiento[]>([]);
   readonly guardando = signal(false);
@@ -221,7 +248,11 @@ export class Potes implements OnInit {
   desde = sumarDias(fechaColombia(), -30);
   hasta = fechaColombia();
 
-  readonly totalSaldo = computed(() => this.saldos().reduce((s, p) => s + p.saldo, 0));
+  readonly totalSaldo = computed(() => this.rango().reduce((s, p) => s + p.saldo_final, 0));
+  /** Lo que entró en el rango: inicio de potes + cobros + otras entradas. */
+  readonly entroRango = computed(() => this.rango().reduce((s, p) => s + p.inicio_potes + p.cobros + p.entradas, 0));
+  readonly etiquetaDesde = computed(() => fechaCorta(this.filtro().desde));
+  readonly etiquetaHasta = computed(() => fechaCorta(this.filtro().hasta));
   readonly pendientes = computed(() => this.prestamos().filter((p) => p.pendiente > 0));
   readonly totalPrestado = computed(() => this.pendientes().reduce((s, p) => s + p.pendiente, 0));
 
@@ -252,18 +283,36 @@ export class Potes implements OnInit {
 
   async cargar(): Promise<void> {
     try {
-      const [saldos, prestamos] = await Promise.all([this.potes.saldos(), this.potes.prestamosPendientes()]);
-      this.saldos.set([...saldos].sort((a, b) => (a.pote === b.pote ? 0 : a.pote === 'llave' ? -1 : 1)));
-      this.prestamos.set(prestamos);
-      await this.cargarMovimientos();
+      // La primera vez se arranca desde el día en que empezaron los potes.
+      if (!this.inicio()) {
+        this.inicio.set(await this.potes.inicio());
+        if (this.inicio()) this.desde = this.inicio()!;
+      }
+      this.prestamos.set(await this.potes.prestamosPendientes());
+      await this.filtrar();
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
   }
 
-  async cargarMovimientos(): Promise<void> {
+  desdeElInicio(): void {
+    this.desde = this.inicio()!;
+    this.hasta = fechaColombia();
+    this.filtrar();
+  }
+
+  /** Saldos y movimientos del rango elegido (días completos de Colombia). */
+  async filtrar(): Promise<void> {
+    if (!this.desde || !this.hasta) return this.toast.error('Elige las dos fechas.');
+    if (this.desde > this.hasta) [this.desde, this.hasta] = [this.hasta, this.desde];
     try {
-      this.movimientos.set(await this.potes.movimientos(this.desde, this.hasta));
+      const [rango, movimientos] = await Promise.all([
+        this.potes.rango(this.desde, this.hasta),
+        this.potes.movimientos(this.desde, this.hasta),
+      ]);
+      this.rango.set(rango);
+      this.movimientos.set(movimientos);
+      this.filtro.set({ desde: this.desde, hasta: this.hasta });
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
@@ -320,4 +369,15 @@ export class Potes implements OnInit {
     if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message);
     return 'Ocurrió un error inesperado.';
   }
+}
+
+/** "2026-10-20" → "20 oct 2026". */
+function fechaCorta(fecha: string): string {
+  if (!fecha) return '…';
+  return new Date(`${fecha}T12:00:00${OFFSET_COLOMBIA}`).toLocaleDateString('es-CO', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: ZONA_HORARIA,
+  });
 }

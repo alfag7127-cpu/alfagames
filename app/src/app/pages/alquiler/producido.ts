@@ -82,10 +82,19 @@ export function inicioPeriodo(hoy: string, periodo: Periodo): string {
 /**
  * Producido del alquiler por día, semana (lunes a domingo) o mes, en hora de Colombia,
  * separado por pote. Cuenta el día en que entró el dinero; ignora alquileres anulados.
+ * Con `desde` (inicio de los potes) no muestra barras anteriores a esa fecha.
  */
-export function agruparProducido(pagos: PagoProducido[], periodo: Periodo, hoy = fechaColombia()): BarraProducido[] {
+export function agruparProducido(
+  pagos: PagoProducido[],
+  periodo: Periodo,
+  hoy = fechaColombia(),
+  desde: string | null = null,
+): BarraProducido[] {
+  const primera = desde ? claveDe(desde, periodo) : '';
   const barras = new Map<string, BarraProducido>(
-    clavesPeriodo(hoy, periodo).map((clave) => [clave, { clave, ...etiquetas(clave, periodo), llave: 0, efectivo: 0, total: 0 }]),
+    clavesPeriodo(hoy, periodo)
+      .filter((clave) => clave >= primera)
+      .map((clave) => [clave, { clave, ...etiquetas(clave, periodo), llave: 0, efectivo: 0, total: 0 }]),
   );
   for (const p of pagos) {
     if (p.alquileres.estado === 'cancelado') continue;

@@ -1,6 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { AlquilerService } from '../../core/alquiler.service';
+import { PotesService } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
 import { fechaColombia, inicioDiaColombia } from '../../core/zona-horaria';
 import { BarraProducido, PagoProducido, Periodo, agruparProducido, inicioPeriodo, lunesDe } from './producido';
@@ -32,8 +33,8 @@ import { BarraProducido, PagoProducido, Periodo, agruparProducido, inicioPeriodo
         <div>
           <h2 class="font-semibold text-slate-900">Producido del alquiler</h2>
           <p class="text-xs text-slate-500">
-            {{ periodo() === 'diario' ? 'Últimos 30 días' : periodo() === 'semanal' ? 'Últimas 12 semanas (lunes a domingo)' : 'Últimos 12 meses' }}
-            · total {{ totalPeriodo() | number: '1.0-0' }} COP
+            {{ inicio() ? 'Desde el inicio de los potes (' + etiquetaInicio() + ')' : (periodo() === 'diario' ? 'Últimos 30 días' : periodo() === 'semanal' ? 'Últimas 12 semanas' : 'Últimos 12 meses') }}
+            · {{ periodo() === 'diario' ? 'por día' : periodo() === 'semanal' ? 'por semana (lunes a domingo)' : 'por mes' }}
           </p>
         </div>
         <div class="flex rounded-xl bg-slate-100 p-1 text-sm font-medium">
@@ -50,6 +51,27 @@ import { BarraProducido, PagoProducido, Periodo, agruparProducido, inicioPeriodo
               {{ p.texto }}
             </button>
           }
+        </div>
+      </div>
+
+      <!-- Total de lo que muestra la gráfica -->
+      <div class="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm tabular-nums">
+        <div class="rounded-xl bg-fuchsia-50 p-3">
+          <p class="text-[11px] uppercase tracking-wide text-fuchsia-700">🔑 Llave</p>
+          <p class="text-lg font-bold text-fuchsia-900">{{ totalLlave() | number: '1.0-0' }}</p>
+        </div>
+        <div class="rounded-xl bg-emerald-50 p-3">
+          <p class="text-[11px] uppercase tracking-wide text-emerald-700">💵 Efectivo</p>
+          <p class="text-lg font-bold text-emerald-900">{{ totalEfectivo() | number: '1.0-0' }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3">
+          <p class="text-[11px] uppercase tracking-wide text-slate-500">Producido</p>
+          <p class="text-lg font-bold text-slate-900">{{ totalPeriodo() | number: '1.0-0' }}</p>
+        </div>
+        <div class="rounded-xl bg-slate-900 p-3 text-white">
+          <p class="text-[11px] uppercase tracking-wide text-slate-300">Con inicio de potes</p>
+          <p class="text-lg font-black">{{ totalPeriodo() + montoInicio() | number: '1.0-0' }}</p>
+          <p class="text-[11px] text-slate-300">inicio {{ montoInicio() | number: '1.0-0' }}</p>
         </div>
       </div>
 
@@ -177,8 +199,17 @@ export class GraficaProducido implements OnInit {
   readonly cargando = signal(true);
   private readonly pagos = signal<PagoProducido[]>([]);
   private readonly hoy = fechaColombia();
+  /** Día en que empezaron los potes y el dinero que ya había (antes de la app). */
+  readonly inicio = signal<string | null>(null);
+  readonly montoInicio = signal(0);
 
-  readonly barras = computed<BarraProducido[]>(() => agruparProducido(this.pagos(), this.periodo(), this.hoy));
+  readonly barras = computed<BarraProducido[]>(() => agruparProducido(this.pagos(), this.periodo(), this.hoy, this.inicio()));
+  readonly totalLlave = computed(() => this.barras().reduce((s, b) => s + b.llave, 0));
+  readonly totalEfectivo = computed(() => this.barras().reduce((s, b) => s + b.efectivo, 0));
+  readonly etiquetaInicio = computed(() => {
+    const i = this.inicio();
+    return i ? new Date(`${i}T12:00:00-05:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }) : '';
+  });
   readonly barrasInvertidas = computed(() => [...this.barras()].reverse());
   readonly totalPeriodo = computed(() => this.barras().reduce((s, b) => s + b.total, 0));
   private readonly maximo = computed(() => Math.max(1, ...this.barras().map((b) => b.total)));
@@ -207,6 +238,7 @@ export class GraficaProducido implements OnInit {
 
   constructor(
     private readonly alquiler: AlquilerService,
+    private readonly potes: PotesService,
     private readonly toast: ToastService,
   ) {}
 
@@ -218,7 +250,14 @@ export class GraficaProducido implements OnInit {
   async cargar(): Promise<void> {
     this.cargando.set(true);
     try {
-      this.pagos.set(await this.alquiler.pagosPotes(inicioDiaColombia(inicioPeriodo(this.hoy, 'mensual'))));
+      const [pagos, inicio, rango] = await Promise.all([
+        this.alquiler.pagosPotes(inicioDiaColombia(inicioPeriodo(this.hoy, 'mensual'))),
+        this.potes.inicio(),
+        this.potes.rango(null, null),
+      ]);
+      this.pagos.set(pagos);
+      this.inicio.set(inicio);
+      this.montoInicio.set(rango.reduce((s, r) => s + r.inicio_potes, 0));
     } catch (e) {
       this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo cargar la gráfica.');
     } finally {

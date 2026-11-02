@@ -3,10 +3,10 @@ import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
 import { AuthService } from '../../core/auth.service';
-import { Liquidacion, SaldoPote, Socio } from '../../core/models';
+import { Liquidacion, RangoPote, Socio } from '../../core/models';
 import { PotesService } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
-import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia } from '../../core/zona-horaria';
+import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, sumarDias } from '../../core/zona-horaria';
 
 export interface ParteSocio {
   socio: string;
@@ -44,9 +44,10 @@ export function nombrePeriodo(periodo: string): string {
 }
 
 /**
- * Liquidación mensual del alquiler: vacía los potes (Llave y Efectivo) y reparte el total
- * entre los socios según su porcentaje. Todos los del alquiler la ven; solo el admin liquida
- * o anula.
+ * Liquidación mensual del alquiler por corte de mes (hora de Colombia): reparte entre los
+ * socios lo que había en los potes al terminar el último día del mes elegido. Lo que entró
+ * después queda para el mes siguiente. Todos los del alquiler la ven; solo el admin liquida
+ * o anula (solo la última).
  */
 @Component({
   selector: 'app-liquidacion',
@@ -58,20 +59,50 @@ export function nombrePeriodo(periodo: string): string {
         <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
           <div>
             <h2 class="font-semibold text-slate-900">Liquidación del mes</h2>
-            <p class="text-xs text-slate-500">Se vacían los potes y el total se divide entre los socios.</p>
+            <p class="text-xs text-slate-500">Corte al terminar el {{ etiquetaCorte() }} (hora de Colombia). Lo de después queda para el mes siguiente.</p>
           </div>
           <label class="text-xs font-medium text-slate-500">
             Mes que se liquida
-            <input type="month" [(ngModel)]="periodo" name="periodo" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+            <input type="month" [(ngModel)]="periodo" (ngModelChange)="cargarMes()" name="periodo" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
           </label>
         </div>
 
-        <!-- La cuenta -->
-        <div class="rounded-xl bg-slate-50 p-3 text-sm tabular-nums space-y-1">
-          <p class="flex justify-between"><span>🔑 Pote Llave (Daviplata)</span><b>{{ llave() | number: '1.0-0' }}</b></p>
-          <p class="flex justify-between"><span>💵 Pote Efectivo</span><b>{{ efectivo() | number: '1.0-0' }}</b></p>
-          <p class="flex justify-between border-t border-slate-200 pt-1 text-base"><span class="font-semibold">Total a repartir</span><b class="text-slate-900">{{ total() | number: '1.0-0' }} COP</b></p>
+        @if (bloqueo(); as b) {
+          <p class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{{ b }}</p>
+        }
+
+        <!-- La cuenta, pote por pote -->
+        <div class="overflow-x-auto rounded-xl bg-slate-50 p-3">
+          <table class="w-full text-sm tabular-nums">
+            <thead class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="py-1 pr-2 font-medium"></th>
+                <th class="py-1 pr-2 text-right font-medium">🔑 Llave</th>
+                <th class="py-1 pr-2 text-right font-medium">💵 Efectivo</th>
+                <th class="py-1 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (f of filasCuenta(); track f.texto) {
+                <tr [class.text-slate-400]="!f.llave && !f.efectivo">
+                  <td class="py-0.5 pr-2">{{ f.texto }}</td>
+                  <td class="py-0.5 pr-2 text-right">{{ f.llave | number: '1.0-0' }}</td>
+                  <td class="py-0.5 pr-2 text-right">{{ f.efectivo | number: '1.0-0' }}</td>
+                  <td class="py-0.5 text-right">{{ f.llave + f.efectivo | number: '1.0-0' }}</td>
+                </tr>
+              }
+              <tr class="border-t border-slate-300 text-base font-bold text-slate-900">
+                <td class="pt-1 pr-2">Total a repartir</td>
+                <td class="pt-1 pr-2 text-right">{{ llave() | number: '1.0-0' }}</td>
+                <td class="pt-1 pr-2 text-right">{{ efectivo() | number: '1.0-0' }}</td>
+                <td class="pt-1 text-right">{{ total() | number: '1.0-0' }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+        @if (saldoHoy() !== total()) {
+          <p class="mt-2 text-xs text-slate-500 tabular-nums">Hoy hay {{ saldoHoy() | number: '1.0-0' }} en los potes: lo que entró después del {{ etiquetaCorte() }} queda para la siguiente liquidación.</p>
+        }
 
         <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
           @for (p of reparto(); track p.socio) {
@@ -97,7 +128,7 @@ export function nombrePeriodo(periodo: string): string {
             <input [(ngModel)]="notas" name="notas" placeholder="Ej. pagado por Nequi el 1 de noviembre"
               class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-800" />
           </label>
-          <button type="button" (click)="liquidar()" [disabled]="guardando() || total() <= 0"
+          <button type="button" (click)="liquidar()" [disabled]="guardando() || total() <= 0 || !!bloqueo()"
             class="mt-3 w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
             {{ guardando() ? 'Liquidando…' : 'Liquidar ' + nombrePeriodo(periodo) + ' y vaciar potes' }}
           </button>
@@ -115,7 +146,7 @@ export function nombrePeriodo(periodo: string): string {
               <div class="flex items-start justify-between gap-2">
                 <div>
                   <p class="font-bold text-slate-900 capitalize">{{ nombrePeriodo(l.periodo) }}</p>
-                  <p class="text-xs text-slate-500">Liquidada el {{ l.created_at | date: 'd MMM y, h:mm a' }}</p>
+                  <p class="text-xs text-slate-500">Corte {{ l.corte ? (l.corte + 'T12:00:00-05:00' | date: 'd MMM y') : '—' }} · liquidada el {{ l.created_at | date: 'd MMM y, h:mm a' }}</p>
                 </div>
                 <p class="text-right font-bold tabular-nums">{{ l.total | number: '1.0-0' }}</p>
               </div>
@@ -131,7 +162,7 @@ export function nombrePeriodo(periodo: string): string {
               @if (l.notas) {
                 <p class="mt-1 text-xs text-slate-500">{{ l.notas }}</p>
               }
-              @if (auth.isAdmin()) {
+              @if (auth.isAdmin() && $first) {
                 <button type="button" (click)="anular(l)" class="mt-2 text-xs text-red-600 hover:underline">Anular (el dinero vuelve a los potes)</button>
               }
             </li>
@@ -144,7 +175,9 @@ export function nombrePeriodo(periodo: string): string {
   `,
 })
 export class LiquidacionPage implements OnInit, OnDestroy {
-  readonly saldos = signal<SaldoPote[]>([]);
+  /** Los potes en el mes elegido: lo que venía, lo que pasó en el mes y el saldo al corte. */
+  readonly mes = signal<RangoPote[]>([]);
+  readonly saldoHoy = signal(0);
   readonly socios = signal<Socio[]>([]);
   readonly liquidaciones = signal<Liquidacion[]>([]);
   readonly prestado = signal(0);
@@ -155,8 +188,36 @@ export class LiquidacionPage implements OnInit, OnDestroy {
   notas = '';
   private unsubscribe?: () => void;
 
-  readonly llave = computed(() => Math.max(0, this.saldos().find((s) => s.pote === 'llave')?.saldo ?? 0));
-  readonly efectivo = computed(() => Math.max(0, this.saldos().find((s) => s.pote === 'efectivo')?.saldo ?? 0));
+  readonly llave = computed(() => Math.max(0, this.mes().find((s) => s.pote === 'llave')?.saldo_final ?? 0));
+  readonly efectivo = computed(() => Math.max(0, this.mes().find((s) => s.pote === 'efectivo')?.saldo_final ?? 0));
+  readonly etiquetaCorte = computed(() => {
+    const corte = finDeMes(this.periodoCargado());
+    return new Date(`${corte}T12:00:00${OFFSET_COLOMBIA}`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: ZONA_HORARIA });
+  });
+  private readonly periodoCargado = signal(mesAnterior(fechaColombia()));
+  /** Por qué no se puede liquidar el mes elegido (null si se puede). */
+  readonly bloqueo = computed(() => {
+    const p = this.periodoCargado();
+    if (p > fechaColombia().slice(0, 7)) return 'Ese mes todavía no ha empezado.';
+    const ultimo = this.liquidaciones()[0]?.periodo;
+    if (ultimo && p <= ultimo) return `Ya está liquidado hasta ${nombrePeriodo(ultimo)}. Elige un mes posterior.`;
+    return null;
+  });
+  /** Renglones de la cuenta del mes (por pote). */
+  readonly filasCuenta = computed(() => {
+    const v = (pote: 'llave' | 'efectivo') => this.mes().find((r) => r.pote === pote);
+    const fila = (texto: string, f: (r: RangoPote) => number) => ({ texto, llave: f(v('llave')!) || 0, efectivo: f(v('efectivo')!) || 0 });
+    if (!v('llave') || !v('efectivo')) return [];
+    return [
+      fila('Venía sin liquidar', (r) => r.saldo_anterior),
+      fila('+ Inicio de potes', (r) => r.inicio_potes),
+      fila('+ Cobros de alquiler', (r) => r.cobros),
+      fila('+ Otras entradas', (r) => r.entradas),
+      fila('− Salidas (préstamos, inversiones…)', (r) => -r.salidas),
+      fila('⇄ Traslados', (r) => r.traslados),
+      fila('− Ya liquidado', (r) => -r.liquidado),
+    ].filter((f) => f.llave || f.efectivo || f.texto.startsWith('+ Cobros'));
+  });
   readonly total = computed(() => this.llave() + this.efectivo());
   readonly reparto = computed(() => repartir(this.llave(), this.efectivo(), this.socios()));
   /** True si el reparto no es exacto (al último socio le queda algún peso de más). */
@@ -190,10 +251,27 @@ export class LiquidacionPage implements OnInit, OnDestroy {
         this.potes.liquidaciones(),
         this.potes.prestamosPendientes(),
       ]);
-      this.saldos.set(saldos);
+      this.saldoHoy.set(saldos.reduce((t, s) => t + s.saldo, 0));
+      // Se ordena por mes: la primera es la última liquidada.
+      liquidaciones.sort((a, b) => b.periodo.localeCompare(a.periodo));
+      await this.cargarMes();
       this.socios.set(socios);
       this.liquidaciones.set(liquidaciones);
       this.prestado.set(prestamos.reduce((t, p) => t + Math.max(0, p.pendiente), 0));
+    } catch (e) {
+      this.toast.error(this.mensaje(e));
+    }
+  }
+
+  /** Cuenta del mes elegido: del día 1 al último día (hora de Colombia). */
+  async cargarMes(): Promise<void> {
+    if (!/^\d{4}-\d{2}$/.test(this.periodo)) return;
+    const periodo = this.periodo;
+    try {
+      const mes = await this.potes.rango(`${periodo}-01`, finDeMes(periodo));
+      if (periodo !== this.periodo) return; // cambió de mes mientras cargaba
+      this.mes.set(mes);
+      this.periodoCargado.set(periodo);
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
@@ -205,13 +283,13 @@ export class LiquidacionPage implements OnInit, OnDestroy {
       .map((p) => `${p.socio}: ${p.total.toLocaleString('es-CO')} (${p.porcentaje} %)`)
       .join('\n');
     const ok = confirm(
-      `¿Liquidar ${nombrePeriodo(this.periodo)}?\n\nTotal: ${this.total().toLocaleString('es-CO')}\n${detalle}\n\nLos dos potes quedan en 0.`,
+      `¿Liquidar ${nombrePeriodo(this.periodo)} (corte ${this.etiquetaCorte()})?\n\nTotal: ${this.total().toLocaleString('es-CO')}\n${detalle}\n\nSale de los potes; lo que entró después del corte se queda.`,
     );
     if (!ok) return;
     this.guardando.set(true);
     try {
       await this.potes.liquidar(this.periodo, this.notas.trim() || null);
-      this.toast.exito(`Liquidación de ${nombrePeriodo(this.periodo)} guardada. Potes en 0.`);
+      this.toast.exito(`Liquidación de ${nombrePeriodo(this.periodo)} guardada.`);
       this.notas = '';
       await this.cargar();
     } catch (e) {
@@ -242,4 +320,11 @@ export class LiquidacionPage implements OnInit, OnDestroy {
 function mesAnterior(fechaISO: string): string {
   const [a, m] = fechaISO.split('-').map(Number);
   return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/** "2026-10" → "2026-10-31" (último día del mes). */
+function finDeMes(periodo: string): string {
+  const [a, m] = periodo.split('-').map(Number);
+  const siguiente = m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, '0')}-01`;
+  return sumarDias(siguiente, -1);
 }

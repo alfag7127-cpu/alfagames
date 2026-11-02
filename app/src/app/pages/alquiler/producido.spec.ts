@@ -56,3 +56,16 @@ describe('producido del alquiler', () => {
     expect(inicioPeriodo(hoy, 'semanal')).toBe('2026-08-03');
   });
 });
+
+describe('agruparProducido desde el inicio de los potes', () => {
+  it('no muestra barras anteriores al inicio', () => {
+    const barras = agruparProducido([], 'diario', '2026-11-01', '2026-10-20');
+    expect(barras[0].clave).toBe('2026-10-20');
+    expect(barras.at(-1)?.clave).toBe('2026-11-01');
+    expect(barras).toHaveLength(13);
+  });
+
+  it('en mensual arranca en el mes del inicio', () => {
+    expect(agruparProducido([], 'mensual', '2026-11-01', '2026-10-20').map((b) => b.clave)).toEqual(['2026-10', '2026-11']);
+  });
+});

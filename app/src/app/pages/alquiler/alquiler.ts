@@ -2,6 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
+import { PotesService } from '../../core/potes.service';
 import { AuthService } from '../../core/auth.service';
 import { Alquiler, AlquilerConfig, AlquilerTarifa, ConsolaConEstado, TipoConsola } from '../../core/models';
 import { ToastService } from '../../core/toast.service';
@@ -140,17 +141,27 @@ export class AlquilerPage implements OnInit, OnDestroy {
     const suma = (pote: Pote) => vigentes.filter((p) => p.pote === pote).reduce((s, p) => s + p.monto, 0);
     return { llave: suma('llave'), efectivo: suma('efectivo') };
   });
+  /** Saldo inicial de los potes (dinero de antes de la app) si cae en el rango del historial. */
+  readonly inicioPotes = signal<{ llave: number; efectivo: number }>({ llave: 0, efectivo: 0 });
   readonly nombrePote = NOMBRE_POTE;
 
   constructor(
     private readonly alquiler: AlquilerService,
+    private readonly potesService: PotesService,
     readonly auth: AuthService,
     private readonly toast: ToastService,
   ) {}
 
   ngOnInit(): void {
     this.cargar();
-    this.cargarHistorial();
+    // El historial arranca desde el día en que empezaron los potes (incluye el dinero de antes de la app).
+    this.potesService
+      .inicio()
+      .then((i) => {
+        if (i) this.desde = i;
+      })
+      .catch(() => undefined)
+      .finally(() => this.cargarHistorial());
     this.unsubscribe = this.alquiler.onCambios(() => {
       this.cargar();
       this.cargarHistorial();
@@ -192,12 +203,15 @@ export class AlquilerPage implements OnInit, OnDestroy {
     try {
       const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
       const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
-      const [historial, pagos] = await Promise.all([
+      const [historial, pagos, rango] = await Promise.all([
         this.alquiler.historial(desde, hasta),
         this.alquiler.pagosPotes(desde, hasta),
+        this.potesService.rango(this.desde || null, this.hasta || null),
       ]);
       this.historial.set(historial);
       this.pagosPeriodo.set(pagos);
+      const inicio = (pote: Pote) => rango.find((r) => r.pote === pote)?.inicio_potes ?? 0;
+      this.inicioPotes.set({ llave: inicio('llave'), efectivo: inicio('efectivo') });
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     }

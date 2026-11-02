@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Liquidacion, PoteMovimiento, PrestamoPendiente, SaldoPote, Socio, TipoMovimiento } from './models';
+import { Liquidacion, PoteMovimiento, PrestamoPendiente, RangoPote, SaldoPote, Socio, TipoMovimiento } from './models';
 import { SupabaseService } from './supabase.service';
 
 export interface NuevoMovimiento {
@@ -31,7 +31,7 @@ export const TIPOS_MANUALES = (Object.keys(NOMBRE_TIPO) as TipoMovimiento[]).fil
 
 /**
  * Dinero de los potes del alquiler: saldos, préstamos e inversiones.
- * Saldo = cobros de alquiler + entradas - salidas. Solo el admin registra movimientos.
+ * Saldo = cobros de alquiler + entradas - salidas. Admin y rol alquiler registran movimientos (la liquidación es solo del admin).
  */
 @Injectable({ providedIn: 'root' })
 export class PotesService {
@@ -41,6 +41,30 @@ export class PotesService {
     const { data, error } = await this.supabase.client.from('vista_potes').select('*');
     if (error) throw error;
     return data as SaldoPote[];
+  }
+
+  /** Cada pote entre dos fechas (YYYY-MM-DD, Colombia). Sin desde: desde el principio; sin hasta: hoy. */
+  async rango(desde: string | null, hasta: string | null): Promise<RangoPote[]> {
+    const { data, error } = await this.supabase.client.rpc('potes_rango', { p_desde: desde, p_hasta: hasta });
+    if (error) throw error;
+    return (data as RangoPote[]).map((r) => ({
+      ...r,
+      saldo_anterior: Number(r.saldo_anterior),
+      inicio_potes: Number(r.inicio_potes),
+      cobros: Number(r.cobros),
+      entradas: Number(r.entradas),
+      salidas: Number(r.salidas),
+      traslados: Number(r.traslados),
+      liquidado: Number(r.liquidado),
+      saldo_final: Number(r.saldo_final),
+    }));
+  }
+
+  /** Día en que empezaron los potes (saldo inicial o primer cobro). */
+  async inicio(): Promise<string | null> {
+    const { data, error } = await this.supabase.client.rpc('inicio_potes');
+    if (error) throw error;
+    return (data as string | null) ?? null;
   }
 
   async prestamosPendientes(): Promise<PrestamoPendiente[]> {

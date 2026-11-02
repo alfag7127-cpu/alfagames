@@ -3570,3 +3570,211 @@ create policy "alquiler_tarifas_update_alquiler" on public.alquiler_tarifas
   for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());
 create policy "alquiler_config_update_alquiler" on public.alquiler_config
   for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());
+
+-- ============================================================
+-- 31. POTES POR FECHAS Y LIQUIDACION POR CORTE DE MES (2026-11-01)
+-- ============================================================
+-- Todo por dia de Colombia. Los cobros de alquiler cuentan el dia en que entro el
+-- dinero (created_at en hora de Colombia); los movimientos, su fecha.
+--
+-- potes_rango(desde, hasta): por pote, lo que venia antes de 'desde', lo que paso en
+-- el rango (inicio de potes, cobros, otras entradas, salidas, traslados netos, liquidado) y el saldo al
+-- final de 'hasta'. desde null = desde el principio; hasta null = hoy.
+--
+-- liquidar_potes(periodo): liquida el saldo al cierre del mes (ultimo dia, hora de
+-- Colombia), no el de hoy: lo que entro despues queda para el mes siguiente. Los
+-- movimientos de liquidacion quedan con fecha del ultimo dia del mes. Un mes solo se
+-- liquida una vez, en orden, y nunca un mes futuro. Solo se anula la ultima.
+
+create or replace function public.potes_rango(p_desde date default null, p_hasta date default null)
+returns table (
+  pote text,
+  saldo_anterior numeric,
+  inicio_potes numeric,
+  cobros numeric,
+  entradas numeric,
+  salidas numeric,
+  traslados numeric,
+  liquidado numeric,
+  saldo_final numeric
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with lim as (
+    select coalesce(p_desde, '-infinity'::date) as d,
+           coalesce(p_hasta, (now() at time zone 'America/Bogota')::date) as h
+  ),
+  efectos as (
+    select ap.pote, (ap.created_at at time zone 'America/Bogota')::date as dia, ap.monto, 'cobro' as clase
+    from public.alquiler_pagos ap
+    join public.alquileres a on a.id = ap.alquiler_id
+    where a.estado <> 'cancelado'
+    union all
+    select e.pote, e.fecha, e.monto,
+      case when e.tipo = 'saldo_inicial' then 'inicio'
+           when e.tipo = 'liquidacion' then 'liquidado'
+           when e.tipo = 'traslado' then 'traslado'
+           when e.monto > 0 then 'entrada'
+           else 'salida' end
+    from public.vista_pote_efectos e
+  )
+  select p.pote,
+    coalesce(sum(e.monto) filter (where e.dia < lim.d), 0),
+    coalesce(sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'inicio'), 0),
+    coalesce(sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'cobro'), 0),
+    coalesce(sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'entrada'), 0),
+    coalesce(-sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'salida'), 0),
+    coalesce(sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'traslado'), 0),
+    coalesce(-sum(e.monto) filter (where e.dia between lim.d and lim.h and e.clase = 'liquidado'), 0),
+    coalesce(sum(e.monto) filter (where e.dia <= lim.h), 0)
+  from (values ('llave'), ('efectivo')) as p(pote)
+  cross join lim
+  left join efectos e on e.pote = p.pote
+  group by p.pote, lim.d, lim.h
+  order by p.pote = 'efectivo';
+$$;
+
+grant execute on function public.potes_rango(date, date) to authenticated;
+
+-- Dia en que empezaron los potes: el saldo inicial o el primer cobro, lo que sea primero.
+create or replace function public.inicio_potes()
+returns date
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select least(
+    (select min(fecha) from public.pote_movimientos),
+    (select min((created_at at time zone 'America/Bogota')::date) from public.alquiler_pagos)
+  );
+$$;
+
+grant execute on function public.inicio_potes() to authenticated;
+
+alter table public.liquidaciones add column if not exists corte date;
+create unique index if not exists liquidaciones_periodo_unico on public.liquidaciones (periodo);
+
+create or replace function public.liquidar_potes(p_periodo text, p_notas text default null)
+returns public.liquidaciones
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_corte date;
+  v_llave numeric;
+  v_efectivo numeric;
+  v_liq public.liquidaciones;
+  v_pct_total numeric;
+  v_n int;
+  v_i int := 0;
+  v_resto_llave numeric;
+  v_resto_efectivo numeric;
+  v_parte_llave numeric;
+  v_parte_efectivo numeric;
+  v_ultimo text;
+  s record;
+begin
+  if not private.is_admin() then
+    raise exception 'Solo el admin puede liquidar los potes';
+  end if;
+  if p_periodo !~ '^\d{4}-(0[1-9]|1[0-2])$' then
+    raise exception 'Mes inválido: %', p_periodo;
+  end if;
+  if p_periodo > to_char(now() at time zone 'America/Bogota', 'YYYY-MM') then
+    raise exception 'No se puede liquidar un mes que no ha empezado';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('liquidar_potes'));
+
+  select max(periodo) into v_ultimo from public.liquidaciones;
+  if v_ultimo is not null and p_periodo <= v_ultimo then
+    raise exception 'Ya está liquidado hasta %: liquida un mes posterior', v_ultimo;
+  end if;
+
+  -- Corte: último día del mes (hora de Colombia).
+  v_corte := (to_date(p_periodo || '-01', 'YYYY-MM-DD') + interval '1 month' - interval '1 day')::date;
+
+  select greatest(coalesce(max(r.saldo_final) filter (where r.pote = 'llave'), 0), 0),
+         greatest(coalesce(max(r.saldo_final) filter (where r.pote = 'efectivo'), 0), 0)
+    into v_llave, v_efectivo
+  from public.potes_rango(null, v_corte) r;
+
+  if v_llave + v_efectivo <= 0 then
+    raise exception 'Al cierre de % los potes están vacíos: no hay nada que liquidar', p_periodo;
+  end if;
+
+  select coalesce(sum(porcentaje), 0), count(*) into v_pct_total, v_n
+  from public.socios where activo;
+  if v_n = 0 or v_pct_total <> 100 then
+    raise exception 'Los porcentajes de los socios deben sumar 100 %% (suman %)', v_pct_total;
+  end if;
+
+  insert into public.liquidaciones (periodo, corte, saldo_llave, saldo_efectivo, total, notas)
+  values (p_periodo, v_corte, v_llave, v_efectivo, v_llave + v_efectivo, nullif(trim(coalesce(p_notas, '')), ''))
+  returning * into v_liq;
+
+  v_resto_llave := v_llave;
+  v_resto_efectivo := v_efectivo;
+  for s in select nombre, porcentaje from public.socios where activo order by orden, id loop
+    v_i := v_i + 1;
+    if v_i = v_n then
+      v_parte_llave := v_resto_llave;
+      v_parte_efectivo := v_resto_efectivo;
+    else
+      v_parte_llave := floor(v_llave * s.porcentaje / 100);
+      v_parte_efectivo := floor(v_efectivo * s.porcentaje / 100);
+    end if;
+    v_resto_llave := v_resto_llave - v_parte_llave;
+    v_resto_efectivo := v_resto_efectivo - v_parte_efectivo;
+    insert into public.liquidacion_socios (liquidacion_id, socio, porcentaje, monto_llave, monto_efectivo, monto, orden)
+    values (v_liq.id, s.nombre, s.porcentaje, v_parte_llave, v_parte_efectivo, v_parte_llave + v_parte_efectivo, v_i);
+  end loop;
+
+  if v_llave > 0 then
+    insert into public.pote_movimientos (fecha, tipo, pote, monto, descripcion, liquidacion_id)
+    values (v_corte, 'liquidacion', 'llave', v_llave, 'Liquidación ' || p_periodo, v_liq.id);
+  end if;
+  if v_efectivo > 0 then
+    insert into public.pote_movimientos (fecha, tipo, pote, monto, descripcion, liquidacion_id)
+    values (v_corte, 'liquidacion', 'efectivo', v_efectivo, 'Liquidación ' || p_periodo, v_liq.id);
+  end if;
+
+  return v_liq;
+end;
+$$;
+
+-- Solo se anula la última liquidación (las siguientes se calcularon sobre ella).
+create or replace function private.liquidacion_solo_ultima()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.liquidaciones where periodo > old.periodo) then
+    raise exception 'Solo se puede anular la última liquidación (hay una posterior a %)', old.periodo;
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists liquidaciones_solo_ultima on public.liquidaciones;
+create trigger liquidaciones_solo_ultima
+  before delete on public.liquidaciones
+  for each row execute function private.liquidacion_solo_ultima();
+
+-- ============================================================
+-- 32. MOVIMIENTOS DE POTES PARA EL ROL ALQUILER (2026-11-01)
+-- ============================================================
+-- El socio del alquiler registra y borra movimientos de potes (prestamos, abonos,
+-- inversiones, traslados...). Los de tipo 'liquidacion' solo los maneja liquidar_potes
+-- y la anulacion de la liquidacion (admin).
+
+create policy "pote_movimientos_insert_alquiler" on public.pote_movimientos
+  for insert to authenticated with check (private.puede_alquiler() and tipo <> 'liquidacion');
+create policy "pote_movimientos_delete_alquiler" on public.pote_movimientos
+  for delete to authenticated using (private.puede_alquiler() and tipo <> 'liquidacion');

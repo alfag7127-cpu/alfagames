@@ -262,8 +262,27 @@ export interface Liquidacion {
   saldo_efectivo: number;
   total: number;
   notas: string | null;
+  /** Último día del mes liquidado: lo que entró después queda para el mes siguiente. */
+  corte: string | null;
   created_at: string;
   liquidacion_socios: LiquidacionSocio[];
+}
+
+/** Fila de `potes_rango`: un pote entre dos fechas (días de Colombia). */
+export interface RangoPote {
+  pote: 'llave' | 'efectivo';
+  /** Lo que había antes del primer día del rango. */
+  saldo_anterior: number;
+  /** Saldo inicial de los potes (dinero de antes de la app) registrado en el rango. */
+  inicio_potes: number;
+  cobros: number;
+  entradas: number;
+  salidas: number;
+  /** Neto de traslados entre potes (positivo: entró del otro pote). */
+  traslados: number;
+  liquidado: number;
+  /** Saldo al final del último día del rango. */
+  saldo_final: number;
 }
 
 /** Fila de `vista_potes`: saldo actual de un pote. */
