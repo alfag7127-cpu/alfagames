@@ -9,12 +9,13 @@ import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { Contratos } from '../../shared/contratos';
 import { GraficaProducido } from './grafica-producido';
+import { LiquidacionPage } from './liquidacion';
 import { Potes } from './potes';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
-type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'inventario';
+type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'inventario';
 
 interface ConsolaVM extends ConsolaConEstado {
   procesando: boolean;
@@ -87,7 +88,7 @@ const FORM_VACIO = {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido, Potes],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido, Potes, LiquidacionPage],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {

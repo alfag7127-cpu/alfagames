@@ -3326,3 +3326,175 @@ $$;
 create trigger profiles_proteger_super
   before update or delete on public.profiles
   for each row execute function private.proteger_super();
+
+-- ============================================================
+-- 28. LIQUIDACION MENSUAL DEL ALQUILER ENTRE SOCIOS (2026-11-01)
+-- ============================================================
+-- Cada mes se vacian los potes (Llave y Efectivo) y el total se reparte entre los
+-- socios segun su porcentaje (hoy 50 % Frank Munoz y 50 % Steven Oliveros).
+-- Cada liquidacion guarda la foto exacta: saldo de cada pote, total y lo que le
+-- toca a cada socio (de cada pote y en total). Los potes se vacian con movimientos
+-- tipo 'liquidacion' ligados a la liquidacion; anularla los borra y el dinero vuelve.
+-- Pesos sin decimales: si el reparto no es exacto, el ultimo socio recibe el peso que sobra.
+
+create table if not exists public.socios (
+  id bigint generated always as identity primary key,
+  nombre text not null unique,
+  porcentaje numeric(5, 2) not null check (porcentaje > 0 and porcentaje <= 100),
+  orden int not null default 0,
+  activo boolean not null default true
+);
+
+insert into public.socios (nombre, porcentaje, orden)
+values ('Frank Muñoz', 50, 1), ('Steven Oliveros', 50, 2)
+on conflict (nombre) do nothing;
+
+create table if not exists public.liquidaciones (
+  id bigint generated always as identity primary key,
+  periodo text not null check (periodo ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  fecha date not null default (now() at time zone 'America/Bogota')::date,
+  saldo_llave numeric(12, 0) not null,
+  saldo_efectivo numeric(12, 0) not null,
+  total numeric(12, 0) not null check (total > 0),
+  notas text,
+  admin_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.liquidacion_socios (
+  id bigint generated always as identity primary key,
+  liquidacion_id bigint not null references public.liquidaciones (id) on delete cascade,
+  socio text not null,
+  porcentaje numeric(5, 2) not null,
+  monto_llave numeric(12, 0) not null,
+  monto_efectivo numeric(12, 0) not null,
+  monto numeric(12, 0) not null,
+  orden int not null default 0
+);
+
+create index if not exists liquidacion_socios_por_liquidacion on public.liquidacion_socios (liquidacion_id);
+
+-- Movimiento de pote que vacia el pote en una liquidacion.
+alter table public.pote_movimientos
+  add column if not exists liquidacion_id bigint references public.liquidaciones (id) on delete cascade;
+create index if not exists pote_movimientos_por_liquidacion on public.pote_movimientos (liquidacion_id);
+
+alter table public.pote_movimientos drop constraint if exists pote_movimientos_tipo_check;
+alter table public.pote_movimientos add constraint pote_movimientos_tipo_check
+  check (tipo in ('saldo_inicial', 'prestamo', 'abono_prestamo', 'inversion', 'otro_egreso', 'otro_ingreso', 'traslado', 'liquidacion'));
+alter table public.pote_movimientos drop constraint if exists pote_movimientos_liquidacion;
+alter table public.pote_movimientos add constraint pote_movimientos_liquidacion
+  check ((tipo = 'liquidacion') = (liquidacion_id is not null));
+
+create or replace view public.vista_pote_efectos
+with (security_invoker = true) as
+select m.id, m.fecha, m.tipo, m.pote, -m.monto as monto
+from public.pote_movimientos m
+where m.tipo in ('prestamo', 'inversion', 'otro_egreso', 'traslado', 'liquidacion')
+union all
+select m.id, m.fecha, m.tipo, m.pote, m.monto
+from public.pote_movimientos m
+where m.tipo in ('saldo_inicial', 'abono_prestamo', 'otro_ingreso')
+union all
+select m.id, m.fecha, m.tipo, m.pote_destino, m.monto
+from public.pote_movimientos m
+where m.tipo = 'traslado';
+
+-- Ver: admin y rol alquiler. Crear y anular: solo admin.
+alter table public.socios enable row level security;
+alter table public.liquidaciones enable row level security;
+alter table public.liquidacion_socios enable row level security;
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['socios', 'liquidaciones', 'liquidacion_socios'] loop
+    execute format('drop policy if exists %I on public.%I', t || '_select', t);
+    execute format('drop policy if exists %I on public.%I', t || '_admin', t);
+    execute format('create policy %I on public.%I for select to authenticated using (private.puede_alquiler())', t || '_select', t);
+    execute format('create policy %I on public.%I for all to authenticated using (private.is_admin()) with check (private.is_admin())', t || '_admin', t);
+  end loop;
+end $$;
+
+-- Liquida: toma el saldo actual de cada pote, lo reparte entre los socios activos y
+-- vacia los potes. SECURITY INVOKER: el RLS exige que sea el admin.
+create or replace function public.liquidar_potes(p_periodo text, p_notas text default null)
+returns public.liquidaciones
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_llave numeric;
+  v_efectivo numeric;
+  v_liq public.liquidaciones;
+  v_pct_total numeric;
+  v_n int;
+  v_i int := 0;
+  v_resto_llave numeric;
+  v_resto_efectivo numeric;
+  v_parte_llave numeric;
+  v_parte_efectivo numeric;
+  s record;
+begin
+  if not private.is_admin() then
+    raise exception 'Solo el admin puede liquidar los potes';
+  end if;
+
+  -- Una liquidacion a la vez (evita repartir dos veces el mismo dinero).
+  perform pg_advisory_xact_lock(hashtext('liquidar_potes'));
+
+  select greatest(coalesce(max(saldo) filter (where pote = 'llave'), 0), 0),
+         greatest(coalesce(max(saldo) filter (where pote = 'efectivo'), 0), 0)
+    into v_llave, v_efectivo
+  from public.vista_potes;
+
+  if v_llave + v_efectivo <= 0 then
+    raise exception 'Los potes estan vacios: no hay nada que liquidar';
+  end if;
+
+  select coalesce(sum(porcentaje), 0), count(*) into v_pct_total, v_n
+  from public.socios where activo;
+  if v_n = 0 or v_pct_total <> 100 then
+    raise exception 'Los porcentajes de los socios deben sumar 100 %% (suman %)', v_pct_total;
+  end if;
+
+  insert into public.liquidaciones (periodo, saldo_llave, saldo_efectivo, total, notas)
+  values (p_periodo, v_llave, v_efectivo, v_llave + v_efectivo, nullif(trim(coalesce(p_notas, '')), ''))
+  returning * into v_liq;
+
+  v_resto_llave := v_llave;
+  v_resto_efectivo := v_efectivo;
+  for s in select nombre, porcentaje, orden from public.socios where activo order by orden, id loop
+    v_i := v_i + 1;
+    if v_i = v_n then
+      v_parte_llave := v_resto_llave;
+      v_parte_efectivo := v_resto_efectivo;
+    else
+      v_parte_llave := floor(v_llave * s.porcentaje / 100);
+      v_parte_efectivo := floor(v_efectivo * s.porcentaje / 100);
+    end if;
+    v_resto_llave := v_resto_llave - v_parte_llave;
+    v_resto_efectivo := v_resto_efectivo - v_parte_efectivo;
+    insert into public.liquidacion_socios (liquidacion_id, socio, porcentaje, monto_llave, monto_efectivo, monto, orden)
+    values (v_liq.id, s.nombre, s.porcentaje, v_parte_llave, v_parte_efectivo, v_parte_llave + v_parte_efectivo, v_i);
+  end loop;
+
+  if v_llave > 0 then
+    insert into public.pote_movimientos (tipo, pote, monto, descripcion, liquidacion_id)
+    values ('liquidacion', 'llave', v_llave, 'Liquidación ' || p_periodo, v_liq.id);
+  end if;
+  if v_efectivo > 0 then
+    insert into public.pote_movimientos (tipo, pote, monto, descripcion, liquidacion_id)
+    values ('liquidacion', 'efectivo', v_efectivo, 'Liquidación ' || p_periodo, v_liq.id);
+  end if;
+
+  return v_liq;
+end;
+$$;
+
+revoke all on function public.liquidar_potes(text, text) from public, anon;
+grant execute on function public.liquidar_potes(text, text) to authenticated;
+grant select, insert, update, delete on public.socios, public.liquidaciones, public.liquidacion_socios to authenticated;
+
+alter publication supabase_realtime add table public.liquidaciones;

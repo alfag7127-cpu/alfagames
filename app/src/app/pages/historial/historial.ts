@@ -2,7 +2,8 @@ import { DuracionPipe } from '../../shared/duracion.pipe';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Sesion, VentaProducto } from '../../core/models';
+import { Gasto, Sesion, VentaProducto } from '../../core/models';
+import { GastosService } from '../../core/gastos.service';
 import { AuthService } from '../../core/auth.service';
 import { ProductosService } from '../../core/productos.service';
 import { SesionesService } from '../../core/sesiones.service';
@@ -24,6 +25,9 @@ interface GrupoDia {
   totalSesiones: number;
   totalProductos: number;
   total: number;
+  /** Gastos de la sala ese día (solo los ve el admin). */
+  gastos: number;
+  neto: number;
 }
 
 type Rango = 'hoy' | '7' | '30';
@@ -37,6 +41,7 @@ export class Historial implements OnInit {
   readonly sesiones = signal<Sesion[]>([]);
   readonly nombresPuestos = signal<Record<number, string>>({});
   readonly ventas = signal<VentaProducto[]>([]);
+  readonly gastos = signal<Gasto[]>([]);
   readonly nombresProductos = signal<Record<number, string>>({});
   readonly nombresUsuarios = signal<Record<string, string>>({});
   readonly cargando = signal(false);
@@ -50,6 +55,9 @@ export class Historial implements OnInit {
     this.ventas().filter((v) => v.estado === 'vendida').reduce((sum, v) => sum + v.total, 0),
   );
   readonly totalPeriodo = computed(() => this.totalSala() + this.totalProductos());
+  readonly totalGastos = computed(() => this.gastos().reduce((t, g) => t + g.monto, 0));
+  /** Lo que queda del día: cobrado (sala + productos) menos gastos de la sala. */
+  readonly netoPeriodo = computed(() => this.totalPeriodo() - this.totalGastos());
   readonly horasPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.horas_cobradas ?? 0), 0));
   /** Minutos jugados de más (no cobrados) en el período, por cierres con desfase. */
   readonly minutosSinCobrar = computed(() =>
@@ -61,16 +69,17 @@ export class Historial implements OnInit {
 
   /** Sesiones agrupadas por día (hora de Colombia), del más reciente al más antiguo. */
   readonly grupos = computed<GrupoDia[]>(() => {
-    const porDia = new Map<string, { sesiones: Sesion[]; ventas: VentaProducto[] }>();
+    const porDia = new Map<string, { sesiones: Sesion[]; ventas: VentaProducto[]; gastos: number }>();
     const dia = (fecha: string) => {
-      if (!porDia.has(fecha)) porDia.set(fecha, { sesiones: [], ventas: [] });
+      if (!porDia.has(fecha)) porDia.set(fecha, { sesiones: [], ventas: [], gastos: 0 });
       return porDia.get(fecha)!;
     };
     for (const s of this.sesiones()) dia(fechaColombia(s.hora_inicio)).sesiones.push(s);
     for (const v of this.ventas()) dia(fechaColombia(v.created_at)).ventas.push(v);
+    for (const g of this.gastos()) dia(g.fecha).gastos += g.monto;
     return Array.from(porDia.entries())
       .sort(([a], [b]) => b.localeCompare(a))
-      .map(([fecha, { sesiones, ventas }]) => {
+      .map(([fecha, { sesiones, ventas, gastos }]) => {
         const totalSesiones = sesiones.filter((s) => s.estado === 'finalizada').reduce((t, s) => t + (s.precio_total ?? 0), 0);
         const totalProductos = ventas.filter((v) => v.estado === 'vendida').reduce((t, v) => t + v.total, 0);
         return {
@@ -86,6 +95,8 @@ export class Historial implements OnInit {
           totalSesiones,
           totalProductos,
           total: totalSesiones + totalProductos,
+          gastos,
+          neto: totalSesiones + totalProductos - gastos,
         };
       });
   });
@@ -94,7 +105,8 @@ export class Historial implements OnInit {
     private readonly sesionesService: SesionesService,
     private readonly productosService: ProductosService,
     private readonly toast: ToastService,
-    private readonly auth: AuthService,
+    private readonly gastosService: GastosService,
+    readonly auth: AuthService,
   ) {}
 
   ngOnInit(): void {
@@ -129,12 +141,15 @@ export class Historial implements OnInit {
       // Días completos en hora de Colombia (no en UTC del servidor ni del dispositivo).
       const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
       const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
-      const [sesiones, ventas] = await Promise.all([
+      const [sesiones, ventas, gastos] = await Promise.all([
         this.sesionesService.listarHistorial({ desde, hasta }),
         this.productosService.ventas(desde, hasta),
+        // Los gastos tienen fecha (día de Colombia), no hora. Solo el admin los ve.
+        this.auth.isAdmin() ? this.gastosService.listar(this.desde || undefined, this.hasta || undefined) : Promise.resolve([]),
       ]);
       this.sesiones.set(sesiones);
       this.ventas.set(ventas);
+      this.gastos.set(gastos);
     } catch (e) {
       this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo cargar el historial.');
     } finally {

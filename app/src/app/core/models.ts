@@ -216,7 +216,7 @@ export interface ConsolaConEstado {
 
 // ── Potes: movimientos de dinero (préstamos, inversiones, traslados) ──
 
-export type TipoMovimiento = 'saldo_inicial' | 'prestamo' | 'abono_prestamo' | 'inversion' | 'otro_egreso' | 'otro_ingreso' | 'traslado';
+export type TipoMovimiento = 'saldo_inicial' | 'prestamo' | 'abono_prestamo' | 'inversion' | 'otro_egreso' | 'otro_ingreso' | 'traslado' | 'liquidacion';
 
 export interface PoteMovimiento {
   id: number;
@@ -227,7 +227,43 @@ export interface PoteMovimiento {
   monto: number;
   persona: string | null;
   descripcion: string | null;
+  /** Solo en movimientos tipo 'liquidacion': la liquidación que vació el pote. */
+  liquidacion_id?: number | null;
   created_at: string;
+}
+
+/** Socio del alquiler y su parte del producido (los porcentajes suman 100). */
+export interface Socio {
+  id: number;
+  nombre: string;
+  porcentaje: number;
+  orden: number;
+  activo: boolean;
+}
+
+/** Lo que le tocó a un socio en una liquidación. */
+export interface LiquidacionSocio {
+  id: number;
+  liquidacion_id: number;
+  socio: string;
+  porcentaje: number;
+  monto_llave: number;
+  monto_efectivo: number;
+  monto: number;
+  orden: number;
+}
+
+/** Liquidación mensual: foto de los potes al vaciarlos y el reparto entre socios. */
+export interface Liquidacion {
+  id: number;
+  periodo: string; // YYYY-MM
+  fecha: string;
+  saldo_llave: number;
+  saldo_efectivo: number;
+  total: number;
+  notas: string | null;
+  created_at: string;
+  liquidacion_socios: LiquidacionSocio[];
 }
 
 /** Fila de `vista_potes`: saldo actual de un pote. */

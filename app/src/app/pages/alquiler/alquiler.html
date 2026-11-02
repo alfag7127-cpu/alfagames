@@ -81,6 +81,16 @@
   >
     💰 Potes
   </button>
+  <button
+    (click)="pestana.set('liquidacion')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'liquidacion'"
+    [class.shadow-sm]="pestana() === 'liquidacion'"
+    [class.text-emerald-700]="pestana() === 'liquidacion'"
+    [class.text-slate-600]="pestana() !== 'liquidacion'"
+  >
+    🤝 Liquidación
+  </button>
   @if (auth.isAdmin()) {
     <button
       (click)="pestana.set('inventario')"
@@ -614,6 +624,11 @@
 <!-- ═══ POTES ═══ -->
 @if (pestana() === 'potes') {
   <app-potes />
+}
+
+<!-- ═══ LIQUIDACIÓN MENSUAL ═══ -->
+@if (pestana() === 'liquidacion') {
+  <app-liquidacion />
 }
 
 <!-- ═══ GRÁFICAS ═══ -->

@@ -3,7 +3,7 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { PoteMovimiento, PrestamoPendiente, SaldoPote, TipoMovimiento } from '../../core/models';
-import { NOMBRE_TIPO, PotesService, TIPOS_SALIDA } from '../../core/potes.service';
+import { NOMBRE_TIPO, PotesService, TIPOS_MANUALES, TIPOS_SALIDA } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
 import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, sumarDias } from '../../core/zona-horaria';
 import { NOMBRE_POTE, Pote } from '../../shared/pago-potes';
@@ -185,7 +185,7 @@ interface DiaMovimientos {
                       [class.text-red-600]="signo(m) < 0" [class.text-emerald-700]="signo(m) > 0" [class.text-slate-600]="signo(m) === 0">
                       {{ signo(m) < 0 ? '−' : signo(m) > 0 ? '+' : '⇄' }}{{ m.monto | number: '1.0-0' }}
                     </span>
-                    @if (auth.isAdmin()) {
+                    @if (auth.isAdmin() && m.tipo !== 'liquidacion') {
                       <button type="button" (click)="eliminar(m)" class="text-xs text-slate-400 hover:text-red-600" title="Eliminar">✕</button>
                     }
                   </div>
@@ -207,7 +207,7 @@ export class Potes implements OnInit {
   readonly guardando = signal(false);
   readonly nombrePote = NOMBRE_POTE;
   readonly nombreTipo = NOMBRE_TIPO;
-  readonly tipos = Object.keys(NOMBRE_TIPO) as TipoMovimiento[];
+  readonly tipos: TipoMovimiento[] = TIPOS_MANUALES;
 
   // Formulario
   tipo: TipoMovimiento = 'inversion';
