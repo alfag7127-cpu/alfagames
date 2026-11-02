@@ -3778,3 +3778,105 @@ create policy "pote_movimientos_insert_alquiler" on public.pote_movimientos
   for insert to authenticated with check (private.puede_alquiler() and tipo <> 'liquidacion');
 create policy "pote_movimientos_delete_alquiler" on public.pote_movimientos
   for delete to authenticated using (private.puede_alquiler() and tipo <> 'liquidacion');
+
+-- ============================================================
+-- 33. EDITAR UN ALQUILER (CORREGIR ERRORES DEL REGISTRO) (2026-11-01)
+-- ============================================================
+-- Admin y rol alquiler corrigen un alquiler activo o devuelto: datos del cliente,
+-- notas, hora de entrega y de devolucion pactada, precio de la entrega y en que pote
+-- entro. Las extensiones no se tocan aqui. El pago de la entrega se rehace con fecha de
+-- la entrega. No se cambia dinero que cae en un mes ya liquidado.
+-- SECURITY DEFINER porque reemplaza filas de alquiler_pagos (borrar pagos es del admin);
+-- el permiso se valida adentro con private.puede_alquiler().
+
+create or replace function public.editar_alquiler(
+  p_alquiler_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_cliente_direccion text,
+  p_notas text,
+  p_inicio timestamptz,
+  p_fin_pactado timestamptz,
+  p_precio_total numeric,
+  p_pago_llave numeric,
+  p_pago_efectivo numeric
+)
+returns public.alquileres
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_a public.alquileres;
+  v_corte date;
+  v_llave_antes numeric;
+  v_efectivo_antes numeric;
+  v_cambia_dinero boolean;
+begin
+  if not private.puede_alquiler() then
+    raise exception 'No tienes permiso para editar alquileres';
+  end if;
+  select * into v_a from public.alquileres where id = p_alquiler_id for update;
+  if v_a.id is null then
+    raise exception 'El alquiler % no existe', p_alquiler_id;
+  end if;
+  if v_a.estado = 'cancelado' then
+    raise exception 'Ese alquiler está anulado';
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_inicio is null or p_fin_pactado is null or p_fin_pactado <= p_inicio then
+    raise exception 'La devolución debe ser después de la entrega';
+  end if;
+  if p_inicio > now() + interval '1 day' then
+    raise exception 'La entrega no puede quedar en el futuro';
+  end if;
+  if p_precio_total is null or p_precio_total < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  select coalesce(sum(monto) filter (where pote = 'llave'), 0), coalesce(sum(monto) filter (where pote = 'efectivo'), 0)
+    into v_llave_antes, v_efectivo_antes
+  from public.alquiler_pagos
+  where alquiler_id = v_a.id and concepto = 'entrega';
+
+  v_cambia_dinero := p_precio_total <> v_a.precio_total
+    or coalesce(p_pago_llave, 0) <> v_llave_antes
+    or coalesce(p_pago_efectivo, 0) <> v_efectivo_antes
+    or (p_inicio at time zone 'America/Bogota')::date <> (v_a.inicio at time zone 'America/Bogota')::date;
+
+  -- No mover dinero de un mes ya liquidado (ni hacia él).
+  select max(corte) into v_corte from public.liquidaciones;
+  if v_cambia_dinero and v_corte is not null and (
+    (v_a.inicio at time zone 'America/Bogota')::date <= v_corte
+    or (p_inicio at time zone 'America/Bogota')::date <= v_corte
+  ) then
+    raise exception 'El dinero de este alquiler cae en un mes ya liquidado (hasta %): solo se pueden corregir datos del cliente, notas y la hora de devolución', v_corte;
+  end if;
+
+  update public.alquileres
+  set cliente_nombre = trim(p_cliente_nombre),
+      cliente_telefono = nullif(trim(coalesce(p_cliente_telefono, '')), ''),
+      cliente_direccion = nullif(trim(coalesce(p_cliente_direccion, '')), ''),
+      notas = nullif(trim(coalesce(p_notas, '')), ''),
+      inicio = p_inicio,
+      fin_pactado = p_fin_pactado,
+      precio_total = p_precio_total
+  where id = v_a.id
+  returning * into v_a;
+
+  if v_cambia_dinero then
+    delete from public.alquiler_pagos where alquiler_id = v_a.id and concepto = 'entrega';
+    perform private.registrar_pagos(v_a.id, null, 'entrega', p_precio_total, p_pago_llave, p_pago_efectivo);
+    -- El dinero de la entrega cuenta el día de la entrega.
+    update public.alquiler_pagos set created_at = p_inicio
+    where alquiler_id = v_a.id and concepto = 'entrega';
+  end if;
+
+  return v_a;
+end;
+$$;
+
+revoke all on function public.editar_alquiler(bigint, text, text, text, text, timestamptz, timestamptz, numeric, numeric, numeric) from public, anon;
+grant execute on function public.editar_alquiler(bigint, text, text, text, text, timestamptz, timestamptz, numeric, numeric, numeric) to authenticated;

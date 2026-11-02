@@ -54,6 +54,18 @@ interface ConsolaVM extends ConsolaConEstado {
   notasDevolucion: string;
   /** Pote donde entra (o sale) la diferencia si se cambia el precio al recibir. */
   devPote: Pote | null;
+  // Corregir el registro del alquiler
+  editarAbierto: boolean;
+  edNombre: string;
+  edTelefono: string;
+  edDireccion: string;
+  edNotas: string;
+  /** "YYYY-MM-DDTHH:mm" en hora de Colombia (input datetime-local). */
+  edInicio: string;
+  edFin: string;
+  edPrecio: number | null;
+  edPagoModo: ModoPago | null;
+  edPagoLlave: number | null;
 }
 
 const FORM_VACIO = {
@@ -85,7 +97,28 @@ const FORM_VACIO = {
   precioDevolucion: null,
   notasDevolucion: '',
   devPote: null,
+  editarAbierto: false,
+  edNombre: '',
+  edTelefono: '',
+  edDireccion: '',
+  edNotas: '',
+  edInicio: '',
+  edFin: '',
+  edPrecio: null,
+  edPagoModo: null,
+  edPagoLlave: null,
 };
+
+/** ISO → "YYYY-MM-DDTHH:mm" en hora de Colombia, para un input datetime-local. */
+function aHoraLocal(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('sv-SE', { timeZone: 'America/Bogota' }).slice(0, 16).replace(' ', 'T');
+}
+
+/** "YYYY-MM-DDTHH:mm" (hora de Colombia) → ISO con zona. */
+function deHoraLocal(valor: string): string {
+  return new Date(`${valor}:00-05:00`).toISOString();
+}
 
 @Component({
   selector: 'app-alquiler',
@@ -232,7 +265,62 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   cerrarFormularios(c: ConsolaVM): void {
-    this.actualizar(c.id, { formAbierto: false, devolverAbierto: false, extenderAbierto: false });
+    this.actualizar(c.id, { formAbierto: false, devolverAbierto: false, extenderAbierto: false, editarAbierto: false });
+  }
+
+  // ── Corregir un alquiler ──
+
+  async abrirEdicion(c: ConsolaVM): Promise<void> {
+    if (!c.alquiler_id) return;
+    try {
+      const pago = await this.alquiler.pagoEntrega(c.alquiler_id);
+      const modo: ModoPago = pago.llave && pago.efectivo ? 'mixto' : pago.efectivo ? 'efectivo' : 'llave';
+      this.actualizar(c.id, {
+        editarAbierto: true,
+        extenderAbierto: false,
+        devolverAbierto: false,
+        edNombre: c.cliente_nombre ?? '',
+        edTelefono: c.cliente_telefono ?? '',
+        edDireccion: c.cliente_direccion ?? '',
+        edNotas: c.notas ?? '',
+        edInicio: aHoraLocal(c.inicio),
+        edFin: aHoraLocal(c.fin_pactado),
+        edPrecio: c.precio_total ?? 0,
+        edPagoModo: modo,
+        edPagoLlave: pago.llave,
+      });
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    }
+  }
+
+  async guardarEdicion(c: ConsolaVM): Promise<void> {
+    if (!c.alquiler_id) return;
+    if (!c.edNombre.trim()) return this.toast.error('Escribe el nombre del cliente.');
+    if (!c.edInicio || !c.edFin) return this.toast.error('Completa la hora de entrega y la de devolución.');
+    if (c.edPrecio == null || c.edPrecio < 0) return this.toast.error('Escribe el precio de la entrega.');
+    const reparto = c.edPrecio === 0 ? { llave: 0, efectivo: 0 } : repartirPago(c.edPrecio, c.edPagoModo, c.edPagoLlave);
+    if (!reparto) return this.toast.error('Indica cómo pagó: Llave, Efectivo o Mixto (que cuadre con el precio).');
+    this.actualizar(c.id, { procesando: true });
+    try {
+      await this.alquiler.editar(c.alquiler_id, {
+        clienteNombre: c.edNombre.trim(),
+        clienteTelefono: c.edTelefono.trim() || null,
+        clienteDireccion: c.edDireccion.trim() || null,
+        notas: c.edNotas.trim() || null,
+        inicio: deHoraLocal(c.edInicio),
+        finPactado: deHoraLocal(c.edFin),
+        precioTotal: c.edPrecio,
+        pagoLlave: reparto.llave,
+        pagoEfectivo: reparto.efectivo,
+      });
+      this.toast.exito(`${c.nombre}: alquiler corregido.`);
+      this.actualizar(c.id, { editarAbierto: false, procesando: false });
+      await Promise.all([this.cargar(), this.cargarHistorial()]);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+      this.actualizar(c.id, { procesando: false });
+    }
   }
 
   ajustarControlesExtra(c: ConsolaVM, delta: number): void {
@@ -314,6 +402,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
     this.actualizar(c.id, {
       extenderAbierto: true,
       devolverAbierto: false,
+      editarAbierto: false,
       extTarifaId: this.tarifasDe(c.tipo)[0]?.id ?? null,
       extHoras: null,
       extCambiarPrecio: false,
@@ -394,6 +483,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
     this.actualizar(c.id, {
       devolverAbierto: true,
       extenderAbierto: false,
+      editarAbierto: false,
       ajustarPrecioDevolucion: false,
       precioDevolucion: c.precio_total,
       notasDevolucion: '',

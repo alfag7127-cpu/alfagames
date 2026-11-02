@@ -37,7 +37,7 @@ interface DiaMovimientos {
       @if (inicio()) {
         <button type="button" (click)="desdeElInicio()" class="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">Desde el inicio de los potes</button>
       }
-      <span class="ml-auto text-xs text-slate-500">Saldo de cada pote al terminar el {{ etiquetaHasta() }} (hora de Colombia)</span>
+      <span class="ml-auto text-xs text-slate-500">Lo que entró y salió del {{ etiquetaDesde() }} al {{ etiquetaHasta() }} (hora de Colombia)</span>
     </div>
 
     <!-- Saldos del rango -->
@@ -51,10 +51,9 @@ interface DiaMovimientos {
           [class.from-emerald-600]="s.pote === 'efectivo'"
           [class.to-emerald-800]="s.pote === 'efectivo'"
         >
-          <p class="text-[11px] uppercase tracking-wide opacity-80">{{ s.pote === 'llave' ? '🔑' : '💵' }} {{ nombrePote[s.pote] }} · saldo al {{ etiquetaHasta() }}</p>
-          <p class="text-3xl font-bold tabular-nums">{{ s.saldo_final | number: '1.0-0' }}</p>
+          <p class="text-[11px] uppercase tracking-wide opacity-80">{{ s.pote === 'llave' ? '🔑' : '💵' }} {{ nombrePote[s.pote] }} · {{ unDia() ? 'el ' + etiquetaHasta() : 'en el rango' }}</p>
+          <p class="text-3xl font-bold tabular-nums">{{ movimientoRango(s) >= 0 ? '+' : '' }}{{ movimientoRango(s) | number: '1.0-0' }}</p>
           <div class="mt-1 space-y-0.5 text-xs opacity-90 tabular-nums">
-            <p class="flex justify-between"><span>Venía (antes del {{ etiquetaDesde() }})</span><span>{{ s.saldo_anterior | number: '1.0-0' }}</span></p>
             @if (s.inicio_potes) {
               <p class="flex justify-between"><span>+ Inicio de potes</span><span>{{ s.inicio_potes | number: '1.0-0' }}</span></p>
             }
@@ -71,13 +70,15 @@ interface DiaMovimientos {
             @if (s.liquidado) {
               <p class="flex justify-between"><span>− Liquidado a socios</span><span>{{ s.liquidado | number: '1.0-0' }}</span></p>
             }
+            <p class="mt-1 flex justify-between border-t border-white/25 pt-1"><span>Venía antes del {{ etiquetaDesde() }}</span><span>{{ s.saldo_anterior | number: '1.0-0' }}</span></p>
+            <p class="flex justify-between font-semibold"><span>Saldo al terminar el {{ etiquetaHasta() }}</span><span>{{ s.saldo_final | number: '1.0-0' }}</span></p>
           </div>
         </div>
       }
       <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
-        <p class="text-[11px] uppercase tracking-wide text-slate-500">Total en potes al {{ etiquetaHasta() }}</p>
-        <p class="text-3xl font-bold text-slate-900 tabular-nums">{{ totalSaldo() | number: '1.0-0' }}</p>
-        <p class="text-xs text-slate-500 tabular-nums">Entró en el rango: {{ entroRango() | number: '1.0-0' }}</p>
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Entró {{ unDia() ? 'el ' + etiquetaHasta() : 'en el rango' }} (los dos potes)</p>
+        <p class="text-3xl font-bold text-slate-900 tabular-nums">{{ entroRango() | number: '1.0-0' }}</p>
+        <p class="text-xs text-slate-500 tabular-nums">Saldo total al terminar el {{ etiquetaHasta() }}: <b>{{ totalSaldo() | number: '1.0-0' }}</b></p>
         <p class="text-xs text-slate-500">Préstamos por cobrar hoy: <span class="font-semibold text-amber-700 tabular-nums">{{ totalPrestado() | number: '1.0-0' }}</span></p>
       </div>
     </div>
@@ -252,6 +253,7 @@ export class Potes implements OnInit {
   /** Lo que entró en el rango: inicio de potes + cobros + otras entradas. */
   readonly entroRango = computed(() => this.rango().reduce((s, p) => s + p.inicio_potes + p.cobros + p.entradas, 0));
   readonly etiquetaDesde = computed(() => fechaCorta(this.filtro().desde));
+  readonly unDia = computed(() => this.filtro().desde === this.filtro().hasta);
   readonly etiquetaHasta = computed(() => fechaCorta(this.filtro().hasta));
   readonly pendientes = computed(() => this.prestamos().filter((p) => p.pendiente > 0));
   readonly totalPrestado = computed(() => this.pendientes().reduce((s, p) => s + p.pendiente, 0));
@@ -316,6 +318,11 @@ export class Potes implements OnInit {
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
+  }
+
+  /** Cuánto cambió el pote en el rango (lo que entró menos lo que salió). */
+  movimientoRango(s: RangoPote): number {
+    return s.saldo_final - s.saldo_anterior;
   }
 
   esSalida(): boolean {

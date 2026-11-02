@@ -375,6 +375,47 @@
                 <button (click)="cerrarFormularios(c)" class="rounded-lg bg-white text-slate-700 text-sm px-3 ring-1 ring-slate-200 hover:bg-slate-100">Cancelar</button>
               </div>
             </div>
+          } @else if (c.editarAbierto) {
+            <div class="space-y-2 rounded-lg bg-amber-50/70 ring-1 ring-amber-200 p-3">
+              <p class="text-xs font-semibold text-amber-800">✏️ Corregir el registro (las extensiones no cambian)</p>
+              <input [(ngModel)]="c.edNombre" [name]="'ed-nombre-' + c.id" placeholder="Nombre del cliente"
+                class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <div class="grid grid-cols-2 gap-2">
+                <input [(ngModel)]="c.edTelefono" [name]="'ed-tel-' + c.id" placeholder="Teléfono"
+                  class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                <input [(ngModel)]="c.edDireccion" [name]="'ed-dir-' + c.id" placeholder="Dirección"
+                  class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="text-xs font-medium text-slate-500">
+                  Entregada
+                  <input type="datetime-local" [(ngModel)]="c.edInicio" [name]="'ed-ini-' + c.id"
+                    class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+                </label>
+                <label class="text-xs font-medium text-slate-500">
+                  Devolver
+                  <input type="datetime-local" [(ngModel)]="c.edFin" [name]="'ed-fin-' + c.id"
+                    class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+                </label>
+              </div>
+              <label class="block text-xs font-medium text-slate-500">
+                Precio de la entrega (COP)
+                <input type="number" min="0" step="1000" [(ngModel)]="c.edPrecio" [name]="'ed-precio-' + c.id"
+                  class="block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold text-slate-800" />
+              </label>
+              @if (c.edPrecio) {
+                <app-pago-potes [total]="c.edPrecio" [nombre]="'ed-' + c.id" [(modo)]="c.edPagoModo" [(montoLlave)]="c.edPagoLlave" />
+              }
+              <input [(ngModel)]="c.edNotas" [name]="'ed-notas-' + c.id" placeholder="Notas"
+                class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <div class="flex gap-2">
+                <button (click)="guardarEdicion(c)" [disabled]="c.procesando"
+                  class="flex-1 rounded-lg bg-amber-600 text-white text-sm font-medium py-2 hover:bg-amber-700 disabled:opacity-50">
+                  {{ c.procesando ? 'Guardando...' : 'Guardar corrección' }}
+                </button>
+                <button (click)="cerrarFormularios(c)" class="rounded-lg bg-white text-slate-700 text-sm px-3 ring-1 ring-slate-200 hover:bg-slate-100">Cancelar</button>
+              </div>
+            </div>
           } @else if (!c.devolverAbierto) {
             <div class="flex gap-2">
               <button (click)="abrirExtension(c)"
@@ -388,6 +429,10 @@
               <button (click)="cancelar(c)" [disabled]="c.procesando" title="Anular (no cuenta como venta)"
                 class="rounded-xl bg-slate-100 text-slate-600 text-sm px-3 hover:bg-slate-200">Anular</button>
             </div>
+            <button type="button" (click)="abrirEdicion(c)"
+              class="w-full mt-2 rounded-lg border border-amber-300 bg-amber-50 text-xs font-medium text-amber-800 py-1.5 hover:bg-amber-100">
+              ✏️ Editar registro (corregir un error)
+            </button>
             <button type="button" (click)="c.verContrato = !c.verContrato"
               class="w-full mt-2 rounded-lg border border-dashed border-slate-300 text-xs font-medium text-slate-600 py-1.5 hover:bg-slate-50">
               📎 {{ c.verContrato ? 'Ocultar contrato' : 'Ver / adjuntar contrato' }}

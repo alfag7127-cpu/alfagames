@@ -10,6 +10,19 @@ import {
   TipoConsola,
 } from './models';
 
+export interface EdicionAlquiler {
+  clienteNombre: string;
+  clienteTelefono: string | null;
+  clienteDireccion: string | null;
+  notas: string | null;
+  /** ISO con zona. */
+  inicio: string;
+  finPactado: string;
+  precioTotal: number;
+  pagoLlave: number;
+  pagoEfectivo: number;
+}
+
 export interface NuevoAlquiler {
   consolaId: number;
   tarifaId: number;
@@ -209,6 +222,36 @@ export class AlquilerService {
   async eliminarContrato(path: string): Promise<void> {
     const { error } = await this.supabase.client.storage.from(BUCKET_CONTRATOS).remove([path]);
     if (error) throw error;
+  }
+
+  /** Pago de la entrega por pote (para precargar la edición). */
+  async pagoEntrega(alquilerId: number): Promise<{ llave: number; efectivo: number }> {
+    const { data, error } = await this.supabase.client
+      .from('alquiler_pagos')
+      .select('pote, monto')
+      .eq('alquiler_id', alquilerId)
+      .eq('concepto', 'entrega');
+    if (error) throw error;
+    const suma = (pote: string) => (data ?? []).filter((p) => p.pote === pote).reduce((t, p) => t + Number(p.monto), 0);
+    return { llave: suma('llave'), efectivo: suma('efectivo') };
+  }
+
+  /** Corrige un alquiler: cliente, notas, horas, precio de la entrega y en qué pote entró. */
+  async editar(alquilerId: number, e: EdicionAlquiler): Promise<Alquiler> {
+    const { data, error } = await this.supabase.client.rpc('editar_alquiler', {
+      p_alquiler_id: alquilerId,
+      p_cliente_nombre: e.clienteNombre,
+      p_cliente_telefono: e.clienteTelefono,
+      p_cliente_direccion: e.clienteDireccion,
+      p_notas: e.notas,
+      p_inicio: e.inicio,
+      p_fin_pactado: e.finPactado,
+      p_precio_total: e.precioTotal,
+      p_pago_llave: e.pagoLlave,
+      p_pago_efectivo: e.pagoEfectivo,
+    });
+    if (error) throw error;
+    return data as Alquiler;
   }
 
   async cancelar(alquilerId: number): Promise<void> {
