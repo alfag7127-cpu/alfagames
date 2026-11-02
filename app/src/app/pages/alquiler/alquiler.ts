@@ -476,7 +476,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
     return `https://wa.me/${digitos.length === 10 ? '57' + digitos : digitos}`;
   }
 
-  // ── Admin ──
+  // ── Configuración (admin y rol alquiler) ──
 
   async agregarConsola(): Promise<void> {
     const nombre = this.nuevaNombre.trim();

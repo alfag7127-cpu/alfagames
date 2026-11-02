@@ -3554,3 +3554,19 @@ begin
   return v_producto;
 end;
 $$;
+
+-- ============================================================
+-- 30. CONFIGURACION DEL ALQUILER PARA EL ROL ALQUILER (2026-11-01)
+-- ============================================================
+-- El socio del alquiler (rol alquiler) configura su negocio: agrega y edita consolas
+-- (ficha, quitar/reactivar), controles sueltos, precio del control extra y precios por
+-- plan. Borrar consolas, movimientos de potes y liquidaciones siguen siendo del admin.
+
+create policy "alquiler_consolas_insert_alquiler" on public.alquiler_consolas
+  for insert to authenticated with check (private.puede_alquiler());
+create policy "alquiler_consolas_update_alquiler" on public.alquiler_consolas
+  for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());
+create policy "alquiler_tarifas_update_alquiler" on public.alquiler_tarifas
+  for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());
+create policy "alquiler_config_update_alquiler" on public.alquiler_config
+  for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());

@@ -113,7 +113,7 @@ Ver [`supabase/schema.sql`](../supabase/schema.sql) — ya escrito, listo para c
 
 Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 
-- **Inventario inicial**: 1 PS5 Slim (2 controles originales), 2 PS4 Programadas y 1 PS4 Original (2 controles cada una), y 2 controles sueltos. El admin agrega o quita consolas y ajusta los controles sueltos en *Alquiler → Inventario y precios*.
+- **Inventario inicial**: 1 PS5 Slim (2 controles originales), 2 PS4 Programadas y 1 PS4 Original (2 controles cada una), y 2 controles sueltos. El admin y el socio del alquiler (rol alquiler) agregan o quitan consolas y ajusta los controles sueltos en *Alquiler → Inventario y precios*.
 - **Controles**: cada consola sale por defecto con sus 2 controles incluidos. Los controles sueltos se llevan **por tipo** (PS4 y PS5 no son intercambiables): una consola solo puede llevar extras de su mismo tipo, mientras haya libres. Cada control extra cuesta **$5.000** (precio sugerido, editable antes de registrar; configurable por el admin).
 - **Planes** (afiche Alfa Games & Frank Over):
 
@@ -138,8 +138,8 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
 
 - **Potes** (dónde entra el dinero del alquiler): **Pote Llave** = cuenta Daviplata; **Pote Efectivo** = dinero físico. Cada cobro (entrega, extensión, ajuste al recibir) se registra por pote y se puede dividir (parte Llave, parte Efectivo); la suma debe dar el total. El historial de alquiler muestra cuánto entró a cada pote en el período (por fecha del pago).
 - **Gráficas**: pestaña *Alquiler → Gráficas* con el producido (dinero recibido) diario (30 días), semanal (12 semanas, lunes a domingo) y mensual (12 meses), apilado por pote, más el resumen de hoy, esta semana y este mes.
-- **Menú**: dos secciones, *Sala* (pestañas: En vivo, Historial, Dashboard, Gastos, Puestos) y *Alquiler* (Consolas, Historial, Gráficas, Inventario y precios).
-- **Ficha de cada consola**: capacidad, juegos instalados y detalles (accesorios, cables, estado), en *Inventario y precios → Ficha*. Al alquilar se guarda una copia de con qué salió; al recibir aparece una lista para revisar y lo que no se marque queda anotado como "Faltó: …".
+- **Menú**: dos secciones, *Sala* (pestañas: En vivo, Historial, Dashboard, Gastos, Puestos) y *Alquiler* (Consolas, Historial, Gráficas, Potes, Liquidación, Configuración).
+- **Ficha de cada consola**: capacidad, juegos instalados y detalles (accesorios, cables, estado), en *Configuración → Ficha*. Al alquilar se guarda una copia de con qué salió; al recibir aparece una lista para revisar y lo que no se marque queda anotado como "Faltó: …".
 - **Movimientos de potes** (pestaña *Potes*, solo admin registra): préstamo (sale, a una persona), abono de préstamo (entra), inversión (sale; compra de consolas, controles…), otro egreso, otro ingreso y traslado entre potes. Cada movimiento cuenta en su fecha. Saldo del pote = cobros de alquiler + entradas − salidas. Los préstamos quedan pendientes por persona hasta que se abonen.
 
 ## Roles, productos y saldo inicial (2026-10-20)

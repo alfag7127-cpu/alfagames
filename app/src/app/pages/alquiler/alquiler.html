@@ -91,7 +91,7 @@
   >
     🤝 Liquidación
   </button>
-  @if (auth.isAdmin()) {
+  @if (auth.puedeAlquiler()) {
     <button
       (click)="pestana.set('inventario')"
       class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
@@ -100,7 +100,7 @@
       [class.text-emerald-700]="pestana() === 'inventario'"
       [class.text-slate-600]="pestana() !== 'inventario'"
     >
-      Inventario y precios
+      ⚙️ Configuración
     </button>
   }
 </div>
@@ -636,8 +636,8 @@
   <app-grafica-producido />
 }
 
-<!-- ═══ INVENTARIO Y PRECIOS (admin) ═══ -->
-@if (pestana() === 'inventario' && auth.isAdmin()) {
+<!-- ═══ CONFIGURACIÓN: consolas, controles y precios (admin y rol alquiler) ═══ -->
+@if (pestana() === 'inventario' && auth.puedeAlquiler()) {
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <section class="bg-white rounded-xl shadow-sm p-4">
       <h2 class="font-semibold text-slate-800 mb-3">Consolas del inventario</h2>

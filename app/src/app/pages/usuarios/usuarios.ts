@@ -15,7 +15,7 @@ import { UsuariosService } from '../../core/usuarios.service';
   template: `
     <h2 class="text-lg font-bold text-slate-900 mb-1">Usuarios</h2>
     <p class="text-sm text-slate-500 mb-4">
-      <b>Trabajador</b>: solo Sala (en vivo, ventas e historial para las cuentas del día). <b>Alquiler</b>: solo el módulo de Alquiler (sin inventario, precios ni movimientos de potes). <b>Admin</b>: todo.
+      <b>Trabajador</b>: solo Sala (en vivo, ventas e historial para las cuentas del día). <b>Alquiler</b>: solo el módulo de Alquiler (incluida su configuración: consolas, controles y precios; sin movimientos de potes ni liquidación). <b>Admin</b>: todo.
     </p>
 
     <form (ngSubmit)="crear()" class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 mb-4 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
