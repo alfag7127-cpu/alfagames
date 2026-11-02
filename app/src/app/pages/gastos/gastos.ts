@@ -1,3 +1,4 @@
+import { PesosDirective } from '../../shared/pesos.directive';
 import { fechaColombia } from '../../core/zona-horaria';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
@@ -13,7 +14,7 @@ function hoyISO(): string {
 
 @Component({
   selector: 'app-gastos',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, PesosDirective],
   templateUrl: './gastos.html',
 })
 export class Gastos implements OnInit {

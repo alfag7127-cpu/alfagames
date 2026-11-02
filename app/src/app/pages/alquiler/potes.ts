@@ -7,6 +7,7 @@ import { NOMBRE_TIPO, PotesService, TIPOS_MANUALES, TIPOS_SALIDA } from '../../c
 import { ToastService } from '../../core/toast.service';
 import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, sumarDias } from '../../core/zona-horaria';
 import { NOMBRE_POTE, Pote } from '../../shared/pago-potes';
+import { PesosDirective } from '../../shared/pesos.directive';
 
 interface DiaMovimientos {
   fecha: string;
@@ -21,7 +22,7 @@ interface DiaMovimientos {
  */
 @Component({
   selector: 'app-potes',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, PesosDirective],
   template: `
     <!-- Filtro de fechas: cambia los saldos y los movimientos -->
     <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-100">
@@ -129,7 +130,7 @@ interface DiaMovimientos {
 
           <label class="block text-xs font-medium text-slate-500">
             Monto (COP)
-            <input type="number" min="0" step="1000" [(ngModel)]="monto" name="monto"
+            <input appPesos [(ngModel)]="monto" name="monto"
               class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold text-slate-800" />
           </label>
 

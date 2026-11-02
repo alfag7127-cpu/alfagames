@@ -1,6 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, input, model } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { PesosDirective } from './pesos.directive';
 
 /** Llave = cuenta Daviplata ("Pote Llave"); Efectivo = dinero físico ("Pote Efectivo"). */
 export type Pote = 'llave' | 'efectivo';
@@ -25,7 +26,7 @@ export const NOMBRE_POTE: Record<Pote, string> = { llave: 'Pote Llave', efectivo
 /** Selector "¿cómo pagó?": todo Llave, todo Efectivo, o una parte por cada pote. */
 @Component({
   selector: 'app-pago-potes',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, PesosDirective],
   template: `
     <div class="space-y-2">
       <span class="block text-xs font-medium text-slate-500">¿Cómo pagó? ({{ total() | number: '1.0-0' }} COP)</span>
@@ -53,7 +54,7 @@ export const NOMBRE_POTE: Record<Pote, string> = { llave: 'Pote Llave', efectivo
         <div class="grid grid-cols-2 gap-2 items-end">
           <label class="text-xs text-fuchsia-700 font-medium">
             🔑 Llave
-            <input type="number" min="0" step="1000" [ngModel]="montoLlave()" (ngModelChange)="montoLlave.set($event)"
+            <input appPesos [ngModel]="montoLlave()" (ngModelChange)="montoLlave.set($event)"
               [name]="'llave-' + nombre()"
               class="block w-full rounded-lg border border-fuchsia-300 px-2 py-1 text-sm font-semibold text-slate-800" />
           </label>

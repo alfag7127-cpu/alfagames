@@ -166,8 +166,7 @@
 
               @if (p.usarPrecioManual) {
                 <input
-                  type="number"
-                  min="0"
+                  appPesos
                   placeholder="Precio pactado"
                   [(ngModel)]="p.precioManualInput"
                   name="precio-manual-abrir-{{ p.id }}"
@@ -468,9 +467,7 @@
               <label class="block">
                 <span class="block text-xs font-medium text-slate-500 mb-1">Precio del tiempo (COP)</span>
                 <input
-                  type="number"
-                  min="0"
-                  step="500"
+                  appPesos
                   [(ngModel)]="p.precioFinalInput"
                   name="precio-final-{{ p.id }}"
                   class="w-full text-sm font-semibold rounded-lg border border-amber-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500"

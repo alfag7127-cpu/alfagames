@@ -1,3 +1,4 @@
+import { PesosDirective } from '../../shared/pesos.directive';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -10,7 +11,7 @@ import { VentaProductos } from '../../shared/venta-productos';
 /** Inventario de productos de la sala, sus precios y las ventas del período (solo admin). */
 @Component({
   selector: 'app-productos',
-  imports: [FormsModule, DecimalPipe, DatePipe, VentaProductos],
+  imports: [FormsModule, DecimalPipe, DatePipe, VentaProductos, PesosDirective],
   template: `
     <h2 class="text-lg font-bold text-slate-900 mb-3">Productos</h2>
 
@@ -51,12 +52,12 @@ import { VentaProductos } from '../../shared/venta-productos';
           </label>
           <label class="text-xs font-medium text-slate-500">
             Precio compra
-            <input type="number" min="0" step="100" [(ngModel)]="nuevoCompra" name="nuevoCompra"
+            <input appPesos [(ngModel)]="nuevoCompra" name="nuevoCompra"
               class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
           </label>
           <label class="text-xs font-medium text-slate-500">
             Precio venta
-            <input type="number" min="0" step="100" [(ngModel)]="nuevoVenta" name="nuevoVenta"
+            <input appPesos [(ngModel)]="nuevoVenta" name="nuevoVenta"
               class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
           </label>
           <label class="text-xs font-medium text-slate-500">
@@ -92,13 +93,13 @@ import { VentaProductos } from '../../shared/venta-productos';
                     }
                   </td>
                   <td class="py-2 pr-3 text-right">
-                    <input #compra type="number" min="0" step="100" [value]="p.precio_compra"
-                      (change)="guardarPrecio(p, 'precio_compra', +compra.value)"
+                    <input appPesos [pesosValor]="p.precio_compra"
+                      (pesosCambio)="guardarPrecio(p, 'precio_compra', $event ?? 0)"
                       class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-slate-900 tabular-nums" />
                   </td>
                   <td class="py-2 pr-3 text-right">
-                    <input #venta type="number" min="0" step="100" [value]="p.precio_venta"
-                      (change)="guardarPrecio(p, 'precio_venta', +venta.value)"
+                    <input appPesos [pesosValor]="p.precio_venta"
+                      (pesosCambio)="guardarPrecio(p, 'precio_venta', $event ?? 0)"
                       class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-slate-900 tabular-nums" />
                   </td>
                   <td class="py-2 pr-3 text-right tabular-nums"

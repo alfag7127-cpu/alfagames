@@ -9,6 +9,7 @@ import { ToastService } from '../../core/toast.service';
 import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ControlIcono } from '../../shared/control-icono';
+import { PesosDirective } from '../../shared/pesos.directive';
 import { Contratos } from '../../shared/contratos';
 import { GraficaProducido } from './grafica-producido';
 import { Clientes } from './clientes';
@@ -135,7 +136,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, ControlIcono, GraficaProducido, Potes, LiquidacionPage, Clientes],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {

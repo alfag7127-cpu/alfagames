@@ -1,3 +1,4 @@
+import { PesosDirective } from '../../shared/pesos.directive';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ProductosService } from '../../core/productos.service';
 import { Producto } from '../../core/models';
@@ -79,7 +80,7 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 
 @Component({
   selector: 'app-sala',
-  imports: [DuracionPipe, FormsModule, DecimalPipe],
+  imports: [DuracionPipe, FormsModule, DecimalPipe, PesosDirective],
   templateUrl: './sala.html',
 })
 export class Sala implements OnInit, OnDestroy {
