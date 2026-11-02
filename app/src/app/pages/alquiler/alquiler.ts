@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AlquilerService } from '../../core/alquiler.service';
+import { AlquilerService, normalizarTelefono } from '../../core/alquiler.service';
 import { PotesService } from '../../core/potes.service';
 import { AuthService } from '../../core/auth.service';
 import { Alquiler, AlquilerConfig, AlquilerTarifa, ConsolaConEstado, TipoConsola } from '../../core/models';
@@ -10,13 +10,14 @@ import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { Contratos } from '../../shared/contratos';
 import { GraficaProducido } from './grafica-producido';
+import { Clientes } from './clientes';
 import { LiquidacionPage } from './liquidacion';
 import { Potes } from './potes';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
-type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'inventario';
+type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'clientes' | 'inventario';
 
 interface ConsolaVM extends ConsolaConEstado {
   procesando: boolean;
@@ -34,6 +35,12 @@ interface ConsolaVM extends ConsolaConEstado {
   pagoLlave: number | null;
   /** Fotos o PDF del contrato, se suben al registrar el alquiler. */
   contratoArchivos: File[];
+  /** Cliente buscado por teléfono: registrado (ya alquiló), nuevo o sin buscar. */
+  clienteEstado: 'registrado' | 'nuevo' | null;
+  clienteResumen: string;
+  /** Se registra después de entregarla: hora real de entrega. */
+  horaManual: boolean;
+  horaInicio: string;
   // Extensión (más tiempo pagado)
   extenderAbierto: boolean;
   extTarifaId: number | null;
@@ -82,6 +89,10 @@ const FORM_VACIO = {
   pagoModo: null,
   pagoLlave: null,
   contratoArchivos: [] as File[],
+  clienteEstado: null,
+  clienteResumen: '',
+  horaManual: false,
+  horaInicio: '',
   extenderAbierto: false,
   extTarifaId: null,
   extHoras: null,
@@ -122,7 +133,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido, Potes, LiquidacionPage],
+  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, GraficaProducido, Potes, LiquidacionPage, Clientes],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -342,8 +353,40 @@ export class AlquilerPage implements OnInit, OnDestroy {
     this.actualizar(c.id, { cambiarPrecio: !c.cambiarPrecio, precioFinal: c.cambiarPrecio ? null : this.precioSugerido(c) });
   }
 
+  /** Al escribir el teléfono: si ya alquiló, se cargan sus datos. */
+  async buscarCliente(c: ConsolaVM, telefono: string): Promise<void> {
+    this.actualizar(c.id, { clienteTelefono: telefono });
+    const tel = normalizarTelefono(telefono);
+    if (tel.length < 7) return this.actualizar(c.id, { clienteEstado: null, clienteResumen: '' });
+    try {
+      const cliente = await this.alquiler.buscarCliente(tel);
+      const actual = this.consolas().find((x) => x.id === c.id);
+      if (!actual || normalizarTelefono(actual.clienteTelefono) !== tel) return; // ya cambió el número
+      if (!cliente) return this.actualizar(c.id, { clienteEstado: 'nuevo', clienteResumen: '' });
+      const ultimo = cliente.ultimo_alquiler
+        ? new Date(cliente.ultimo_alquiler).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })
+        : null;
+      this.actualizar(c.id, {
+        clienteEstado: 'registrado',
+        clienteResumen: `${cliente.alquileres} alquiler${cliente.alquileres === 1 ? '' : 'es'}${ultimo ? ' · último ' + ultimo : ''}`,
+        clienteNombre: cliente.nombre,
+        clienteDireccion: cliente.direccion ?? actual.clienteDireccion,
+      });
+    } catch {
+      /* sin búsqueda: se registra igual al alquilar */
+    }
+  }
+
+  toggleHoraManual(c: ConsolaVM): void {
+    this.actualizar(c.id, { horaManual: !c.horaManual, horaInicio: c.horaManual ? '' : aHoraLocal(new Date().toISOString()) });
+  }
+
   async alquilar(c: ConsolaVM): Promise<void> {
     if (!c.tarifaId) return this.toast.error('Elige un plan.');
+    if (c.horaManual && !c.horaInicio) return this.toast.error('Escribe a qué hora se entregó.');
+    if (c.horaManual && new Date(deHoraLocal(c.horaInicio)).getTime() > Date.now() + 5 * 60_000) {
+      return this.toast.error('La hora de entrega no puede estar en el futuro.');
+    }
     if (!c.clienteNombre.trim()) return this.toast.error('Escribe el nombre del cliente.');
     if (c.cambiarPrecio && (c.precioFinal == null || c.precioFinal < 0)) {
       return this.toast.error('Escribe el precio a cobrar (o desmarca "Cambiar precio").');
@@ -363,8 +406,10 @@ export class AlquilerPage implements OnInit, OnDestroy {
         notas: c.notasEntrega || null,
         pagoLlave: reparto.llave,
         pagoEfectivo: reparto.efectivo,
+        inicio: c.horaManual ? deHoraLocal(c.horaInicio) : null,
       });
-      this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP.`);
+      const devolver = new Date(a.fin_pactado).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' });
+      this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP. Devolver: ${devolver}.`);
       await this.subirContratosNuevos(a.id, c.contratoArchivos);
       await Promise.all([this.cargar(), this.cargarHistorial()]);
     } catch (e) {

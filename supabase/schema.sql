@@ -3949,3 +3949,227 @@ grant execute on function public.liquidar_potes(text, text) to authenticated;
 
 create policy "liquidaciones_delete_alquiler" on public.liquidaciones
   for delete to authenticated using (private.puede_alquiler());
+
+-- ============================================================
+-- 35. CLIENTES DEL ALQUILER Y ALQUILER CON HORA DE INICIO (2026-11-01)
+-- ============================================================
+-- Clientes: una fila por telefono (solo digitos; 57 + 10 digitos se guarda como 10).
+-- Al alquilar (o corregir un alquiler) con telefono, un trigger crea o actualiza el
+-- cliente (nombre y direccion) y liga el alquiler (alquileres.cliente_id). Se llenan con los alquileres que ya hay.
+--
+-- alquilar_consola recibe p_inicio opcional: la hora real de entrega cuando se registra
+-- despues (se olvido registrarla al llevar la consola). El fin pactado se calcula desde
+-- esa hora y el pago cuenta ese dia. No puede quedar en el futuro ni en un mes liquidado.
+
+create or replace function private.normalizar_telefono(p_telefono text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when d = '' then null
+    when length(d) = 12 and left(d, 2) = '57' then right(d, 10)
+    else d
+  end
+  from (select regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g') as d) x;
+$$;
+
+grant execute on function private.normalizar_telefono(text) to authenticated;
+
+create table if not exists public.clientes (
+  id bigint generated always as identity primary key,
+  telefono text not null unique check (telefono ~ '^\d{7,15}$'),
+  nombre text not null,
+  direccion text,
+  notas text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.alquileres
+  add column if not exists cliente_id bigint references public.clientes (id) on delete set null;
+create index if not exists alquileres_por_cliente on public.alquileres (cliente_id);
+
+alter table public.clientes enable row level security;
+drop policy if exists "clientes_select" on public.clientes;
+drop policy if exists "clientes_insert" on public.clientes;
+drop policy if exists "clientes_update" on public.clientes;
+drop policy if exists "clientes_delete_admin" on public.clientes;
+create policy "clientes_select" on public.clientes
+  for select to authenticated using (private.puede_alquiler());
+create policy "clientes_insert" on public.clientes
+  for insert to authenticated with check (private.puede_alquiler());
+create policy "clientes_update" on public.clientes
+  for update to authenticated using (private.puede_alquiler()) with check (private.puede_alquiler());
+create policy "clientes_delete_admin" on public.clientes
+  for delete to authenticated using (private.is_admin());
+grant select, insert, update, delete on public.clientes to authenticated;
+
+-- Clientes de los alquileres que ya existen (los datos del alquiler mas reciente).
+insert into public.clientes (telefono, nombre, direccion, created_at)
+select distinct on (tel) tel, trim(cliente_nombre), nullif(trim(coalesce(cliente_direccion, '')), ''), primero
+from (
+  select private.normalizar_telefono(cliente_telefono) as tel, cliente_nombre, cliente_direccion, inicio,
+         min(inicio) over (partition by private.normalizar_telefono(cliente_telefono)) as primero
+  from public.alquileres
+  where estado <> 'cancelado'
+) a
+where tel ~ '^\d{7,15}$'
+order by tel, inicio desc
+on conflict (telefono) do nothing;
+
+update public.alquileres a
+set cliente_id = c.id
+from public.clientes c
+where a.cliente_id is null and private.normalizar_telefono(a.cliente_telefono) = c.telefono;
+
+-- Crea o actualiza el cliente de un telefono y devuelve su id (null sin telefono valido).
+create or replace function private.guardar_cliente(p_telefono text, p_nombre text, p_direccion text)
+returns bigint
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_tel text := private.normalizar_telefono(p_telefono);
+  v_id bigint;
+begin
+  if v_tel is null or v_tel !~ '^\d{7,15}$' then
+    return null;
+  end if;
+  insert into public.clientes (telefono, nombre, direccion)
+  values (v_tel, trim(p_nombre), nullif(trim(coalesce(p_direccion, '')), ''))
+  on conflict (telefono) do update
+    set nombre = excluded.nombre,
+        direccion = coalesce(excluded.direccion, public.clientes.direccion),
+        updated_at = now()
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+grant execute on function private.guardar_cliente(text, text, text) to authenticated;
+
+-- Todo alquiler con telefono (nuevo o corregido) queda ligado a su cliente.
+create or replace function private.alquiler_cliente()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.cliente_id := private.guardar_cliente(new.cliente_telefono, new.cliente_nombre, new.cliente_direccion);
+  return new;
+end;
+$$;
+
+drop trigger if exists alquileres_cliente on public.alquileres;
+create trigger alquileres_cliente
+  before insert or update of cliente_telefono, cliente_nombre, cliente_direccion on public.alquileres
+  for each row execute function private.alquiler_cliente();
+
+-- Resumen para buscar por telefono al alquilar.
+create or replace view public.vista_clientes
+with (security_invoker = true) as
+select c.id, c.telefono, c.nombre, c.direccion, c.notas, c.created_at,
+  count(a.id) filter (where a.estado <> 'cancelado') as alquileres,
+  max(a.inicio) filter (where a.estado <> 'cancelado') as ultimo_alquiler,
+  coalesce(sum(a.precio_total) filter (where a.estado <> 'cancelado'), 0) as total_pagado
+from public.clientes c
+left join public.alquileres a on a.cliente_id = c.id
+group by c.id;
+
+grant select on public.vista_clientes to authenticated;
+
+-- alquilar_consola con hora de inicio opcional (la firma cambia: se reemplaza la anterior).
+drop function if exists public.alquilar_consola(bigint, bigint, text, text, text, integer, numeric, text, numeric, numeric);
+
+create or replace function public.alquilar_consola(
+  p_consola_id bigint,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text default null,
+  p_cliente_direccion text default null,
+  p_controles_extra integer default 0,
+  p_precio_final numeric default null,
+  p_notas text default null,
+  p_pago_llave numeric default null,
+  p_pago_efectivo numeric default null,
+  p_inicio timestamptz default null
+)
+returns public.alquileres
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_consola public.alquiler_consolas;
+  v_tarifa public.alquiler_tarifas;
+  v_precio_extra numeric;
+  v_sugerido numeric;
+  v_libres int;
+  v_inicio timestamptz := coalesce(p_inicio, now());
+  v_corte date;
+  v_fila public.alquileres;
+begin
+  select * into v_consola from public.alquiler_consolas where id = p_consola_id;
+  if v_consola.id is null or not v_consola.activo then
+    raise exception 'La consola no existe o no esta en el inventario';
+  end if;
+  if exists (select 1 from public.alquileres where consola_id = p_consola_id and estado = 'activo') then
+    raise exception '% ya esta alquilada', v_consola.nombre;
+  end if;
+
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo;
+  if v_tarifa.id is null or v_tarifa.tipo <> v_consola.tipo then
+    raise exception 'Elige un plan de %', v_consola.tipo;
+  end if;
+  if coalesce(trim(p_cliente_nombre), '') = '' then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if p_controles_extra < 0 then
+    raise exception 'Los controles extra no pueden ser negativos';
+  end if;
+  v_libres := public.alquiler_controles_libres(v_consola.tipo);
+  if p_controles_extra > v_libres then
+    raise exception 'Solo hay % control(es) suelto(s) de % disponible(s)', v_libres, v_consola.tipo;
+  end if;
+  if p_precio_final is not null and p_precio_final < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+
+  -- Hora de entrega registrada despues: nunca en el futuro ni en un mes ya liquidado.
+  if v_inicio > now() + interval '5 minutes' then
+    raise exception 'La hora de entrega no puede estar en el futuro';
+  end if;
+  select max(corte) into v_corte from public.liquidaciones;
+  if v_corte is not null and (v_inicio at time zone 'America/Bogota')::date <= v_corte then
+    raise exception 'Esa fecha cae en un mes ya liquidado (hasta %)', v_corte;
+  end if;
+
+  select precio_control_extra into v_precio_extra from public.alquiler_config where id = 1;
+  v_sugerido := v_tarifa.precio + p_controles_extra * coalesce(v_precio_extra, 0);
+
+  insert into public.alquileres (
+    consola_id, empleado_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    tarifa_id, plan_nombre, inicio, fin_pactado, controles, controles_extra,
+    precio_sugerido, precio_total, notas, juegos_entregados, detalles_entregados
+  ) values (
+    p_consola_id, auth.uid(), trim(p_cliente_nombre), nullif(trim(p_cliente_telefono), ''),
+    nullif(trim(p_cliente_direccion), ''), v_tarifa.id, v_tarifa.nombre, v_inicio,
+    private.fin_alquiler(v_inicio, v_tarifa), v_consola.controles_incluidos + p_controles_extra,
+    p_controles_extra, v_sugerido, coalesce(p_precio_final, v_sugerido), nullif(trim(p_notas), ''),
+    v_consola.juegos, v_consola.detalles
+  )
+  returning * into v_fila;
+
+  perform private.registrar_pagos(v_fila.id, null, 'entrega', v_fila.precio_total, p_pago_llave, p_pago_efectivo);
+  -- El dinero de la entrega cuenta el dia de la entrega.
+  if p_inicio is not null then
+    update public.alquiler_pagos set created_at = v_inicio
+    where alquiler_id = v_fila.id and concepto = 'entrega';
+  end if;
+
+  return v_fila;
+end;
+$$;
+
+revoke all on function public.alquilar_consola(bigint, bigint, text, text, text, integer, numeric, text, numeric, numeric, timestamptz) from public, anon;
+grant execute on function public.alquilar_consola(bigint, bigint, text, text, text, integer, numeric, text, numeric, numeric, timestamptz) to authenticated;

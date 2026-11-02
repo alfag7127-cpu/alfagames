@@ -3,12 +3,19 @@ import { SupabaseService } from './supabase.service';
 import { suscribirCambios } from './tiempo-real';
 import {
   Alquiler,
+  Cliente,
   AlquilerConfig,
   AlquilerConsola,
   AlquilerTarifa,
   ConsolaConEstado,
   TipoConsola,
 } from './models';
+
+/** Igual que private.normalizar_telefono: solo dígitos; 57 + 10 dígitos queda en 10. */
+export function normalizarTelefono(telefono: string | null | undefined): string {
+  const d = (telefono ?? '').replace(/\D/g, '');
+  return d.length === 12 && d.startsWith('57') ? d.slice(2) : d;
+}
 
 export interface EdicionAlquiler {
   clienteNombre: string;
@@ -35,6 +42,8 @@ export interface NuevoAlquiler {
   /** Reparto del cobro entre potes (Llave = Daviplata, Efectivo = físico). */
   pagoLlave: number;
   pagoEfectivo: number;
+  /** Hora real de entrega si se registra después (ISO con zona); null = ahora. */
+  inicio?: string | null;
 }
 
 export interface Extension {
@@ -132,9 +141,30 @@ export class AlquilerService {
       p_notas: a.notas,
       p_pago_llave: a.pagoLlave,
       p_pago_efectivo: a.pagoEfectivo,
+      p_inicio: a.inicio ?? null,
     });
     if (error) throw error;
     return data as Alquiler;
+  }
+
+  /** Cliente registrado con ese teléfono (null si es nuevo). */
+  async buscarCliente(telefono: string): Promise<Cliente | null> {
+    const tel = normalizarTelefono(telefono);
+    if (tel.length < 7) return null;
+    const { data, error } = await this.supabase.client.from('vista_clientes').select('*').eq('telefono', tel).maybeSingle();
+    if (error) throw error;
+    return (data as Cliente | null) ?? null;
+  }
+
+  async listarClientes(): Promise<Cliente[]> {
+    const { data, error } = await this.supabase.client.from('vista_clientes').select('*').order('ultimo_alquiler', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    return data as Cliente[];
+  }
+
+  async actualizarCliente(id: number, cambios: Partial<Pick<Cliente, 'nombre' | 'direccion' | 'notas'>>): Promise<void> {
+    const { error } = await this.supabase.client.from('clientes').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
   }
 
   /** Recibe la consola. `precioFinal` ajusta lo cobrado (ej. recargo por entrega tarde). */

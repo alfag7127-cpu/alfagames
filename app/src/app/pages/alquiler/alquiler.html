@@ -91,6 +91,16 @@
   >
     🤝 Liquidación
   </button>
+  <button
+    (click)="pestana.set('clientes')"
+    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
+    [class.bg-white]="pestana() === 'clientes'"
+    [class.shadow-sm]="pestana() === 'clientes'"
+    [class.text-emerald-700]="pestana() === 'clientes'"
+    [class.text-slate-600]="pestana() !== 'clientes'"
+  >
+    👤 Clientes
+  </button>
   @if (auth.puedeAlquiler()) {
     <button
       (click)="pestana.set('inventario')"
@@ -205,13 +215,33 @@
                 </div>
               </div>
 
+              <!-- Teléfono primero: si ya alquiló, se cargan sus datos -->
+              <div>
+                <input [ngModel]="c.clienteTelefono" (ngModelChange)="buscarCliente(c, $event)" name="tel-{{ c.id }}" type="tel"
+                  inputmode="tel" placeholder="Teléfono del cliente"
+                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+                @if (c.clienteEstado === 'registrado') {
+                  <p class="mt-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">✅ Cliente registrado · {{ c.clienteResumen }}</p>
+                } @else if (c.clienteEstado === 'nuevo') {
+                  <p class="mt-1 rounded-md bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">🆕 Cliente nuevo: queda registrado al alquilar</p>
+                }
+              </div>
               <input [(ngModel)]="c.clienteNombre" name="cliente-{{ c.id }}" placeholder="Nombre del cliente *"
                 class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
-              <div class="grid grid-cols-2 gap-2">
-                <input [(ngModel)]="c.clienteTelefono" name="tel-{{ c.id }}" type="tel" placeholder="Teléfono"
-                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
-                <input [(ngModel)]="c.clienteDireccion" name="dir-{{ c.id }}" placeholder="Dirección"
-                  class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+              <input [(ngModel)]="c.clienteDireccion" name="dir-{{ c.id }}" placeholder="Dirección"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+
+              <!-- Registrar después de entregarla -->
+              <div class="rounded-lg bg-slate-50 px-3 py-2">
+                <label class="flex items-center gap-2 text-xs text-slate-700">
+                  <input type="checkbox" [checked]="c.horaManual" (change)="toggleHoraManual(c)" />
+                  Ya se entregó antes: registrar con la hora real de entrega
+                </label>
+                @if (c.horaManual) {
+                  <input type="datetime-local" [(ngModel)]="c.horaInicio" name="hora-{{ c.id }}"
+                    class="mt-1.5 w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+                  <p class="mt-1 text-[11px] text-slate-500">El tiempo y la hora de devolución se cuentan desde esa hora.</p>
+                }
               </div>
 
               <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
@@ -678,6 +708,11 @@
 <!-- ═══ POTES ═══ -->
 @if (pestana() === 'potes') {
   <app-potes />
+}
+
+<!-- ═══ CLIENTES ═══ -->
+@if (pestana() === 'clientes') {
+  <app-clientes />
 }
 
 <!-- ═══ LIQUIDACIÓN MENSUAL ═══ -->

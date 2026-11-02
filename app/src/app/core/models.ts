@@ -268,6 +268,19 @@ export interface Liquidacion {
   liquidacion_socios: LiquidacionSocio[];
 }
 
+/** Cliente del alquiler (uno por teléfono), con su resumen de `vista_clientes`. */
+export interface Cliente {
+  id: number;
+  telefono: string;
+  nombre: string;
+  direccion: string | null;
+  notas: string | null;
+  created_at: string;
+  alquileres: number;
+  ultimo_alquiler: string | null;
+  total_pagado: number;
+}
+
 /** Fila de `potes_rango`: un pote entre dos fechas (días de Colombia). */
 export interface RangoPote {
   pote: 'llave' | 'efectivo';
