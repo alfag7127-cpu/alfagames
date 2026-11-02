@@ -6,6 +6,7 @@ import { AlquilerService } from '../core/alquiler.service';
 import { AuthService } from '../core/auth.service';
 import { Alquiler, ConsolaConEstado } from '../core/models';
 import { SupabaseService } from '../core/supabase.service';
+import { sonarCaja } from './sonido-caja';
 
 type TipoAviso = 'alquilada' | 'pronto' | 'vencida';
 
@@ -29,7 +30,7 @@ const PREFIJO = 'aviso-alquiler:';
  * - cuando otra persona alquila una consola;
  * - 30 minutos antes de la hora de devolución y cuando ya hay que recogerla.
  * Cada aviso sale una sola vez por dispositivo (si se extiende el alquiler, vuelve a avisar
- * con la nueva hora). Suena, vibra en el celular y, si el navegador lo permite, también
+ * con la nueva hora). Suena la caja registradora, vibra en el celular y, si el navegador lo permite, también
  * sale como notificación del sistema cuando la app está en segundo plano.
  */
 @Component({
@@ -173,7 +174,8 @@ export class AvisosAlquiler implements OnInit, OnDestroy {
     } catch {
       /* sin vibración */
     }
-    this.sonar(tipo === 'vencida' ? 3 : 2);
+    // Caja registradora: al alquilar y cuando hay que recoger (dos veces si ya se venció).
+    sonarCaja(tipo === 'vencida' ? 2 : 1);
     if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
       const titulo = tipo === 'alquilada' ? 'Consola alquilada' : tipo === 'pronto' ? 'Recoger consola pronto' : 'Recoger consola YA';
       try {
@@ -181,24 +183,6 @@ export class AvisosAlquiler implements OnInit, OnDestroy {
       } catch {
         /* algunos celulares no permiten notificaciones sin service worker: queda el aviso en pantalla */
       }
-    }
-  }
-
-  private sonar(pitidos: number): void {
-    try {
-      const ctx = new AudioContext();
-      for (let i = 0; i < pitidos; i++) {
-        const osc = ctx.createOscillator();
-        const vol = ctx.createGain();
-        osc.frequency.value = 880;
-        vol.gain.value = 0.15;
-        osc.connect(vol).connect(ctx.destination);
-        osc.start(ctx.currentTime + i * 0.35);
-        osc.stop(ctx.currentTime + i * 0.35 + 0.2);
-      }
-      setTimeout(() => ctx.close(), pitidos * 400 + 200);
-    } catch {
-      /* el navegador puede bloquear el sonido hasta el primer toque */
     }
   }
 

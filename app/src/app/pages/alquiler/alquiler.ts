@@ -15,6 +15,7 @@ import { LiquidacionPage } from './liquidacion';
 import { Potes } from './potes';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
+import { sonarCaja } from '../../shared/sonido-caja';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
 type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'clientes' | 'inventario';
@@ -408,6 +409,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
         pagoEfectivo: reparto.efectivo,
         inicio: c.horaManual ? deHoraLocal(c.horaInicio) : null,
       });
+      sonarCaja();
       const devolver = new Date(a.fin_pactado).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' });
       this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP. Devolver: ${devolver}.`);
       await this.subirContratosNuevos(a.id, c.contratoArchivos);

@@ -10,6 +10,7 @@ import { Modalidad, PuestoConEstado } from '../../core/models';
 import { MAX_CONTROLES_ADICIONALES, calcularCobro } from '../../core/pricing';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
+import { sonarCaja } from '../../shared/sonido-caja';
 
 /** Umbral de aviso para conteo regresivo: a partir de acá cambia el color / suena aviso. */
 const SEGUNDOS_AVISO = 5 * 60; // 5 minutos
@@ -565,6 +566,7 @@ export class Sala implements OnInit, OnDestroy {
 
     if (umbral === 'aviso') reproducirBeep(880, 150);
     else if (umbral === 'critico') reproducirBeep(880, 300);
-    else reproducirBeep(660, 600);
+    // Se acabó el tiempo de la consola: caja registradora (hay que cobrar).
+    else sonarCaja();
   }
 }
