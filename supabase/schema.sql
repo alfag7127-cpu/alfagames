@@ -3498,3 +3498,59 @@ grant execute on function public.liquidar_potes(text, text) to authenticated;
 grant select, insert, update, delete on public.socios, public.liquidaciones, public.liquidacion_socios to authenticated;
 
 alter publication supabase_realtime add table public.liquidaciones;
+
+-- ============================================================
+-- 29. GASTOS: EL TRABAJADOR LOS VE Y LA MERCANCIA SE REGISTRA SOLA (2026-11-01)
+-- ============================================================
+-- El trabajador presenta las cuentas del dia: ve los gastos de la sala (solo leer;
+-- registrar y borrar sigue siendo del admin). Cargar mercancia (agregar_stock)
+-- registra el gasto de la compra (cantidad x precio de compra) en la fecha de hoy;
+-- si se borra la entrada de mercancia, se borra su gasto.
+
+create policy "gastos_select_sala" on public.gastos
+  for select to authenticated using (private.puede_sala());
+
+alter table public.gastos
+  add column if not exists producto_entrada_id bigint references public.producto_entradas (id) on delete cascade;
+
+create or replace function public.agregar_stock(p_producto_id bigint, p_cantidad integer, p_precio_compra numeric default null)
+returns public.productos
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_producto public.productos;
+  v_entrada_id bigint;
+begin
+  if not private.is_admin() then
+    raise exception 'Solo el admin puede cargar inventario';
+  end if;
+  if p_cantidad is null or p_cantidad <= 0 then
+    raise exception 'La cantidad debe ser mayor a 0';
+  end if;
+  update public.productos
+  set stock = stock + p_cantidad,
+      precio_compra = coalesce(p_precio_compra, precio_compra)
+  where id = p_producto_id
+  returning * into v_producto;
+  if v_producto.id is null then
+    raise exception 'El producto % no existe', p_producto_id;
+  end if;
+  insert into public.producto_entradas (producto_id, cantidad, precio_compra)
+  values (p_producto_id, p_cantidad, v_producto.precio_compra)
+  returning id into v_entrada_id;
+  -- La compra de mercancia es un gasto de la sala ese dia.
+  if p_cantidad * v_producto.precio_compra > 0 then
+    insert into public.gastos (fecha, descripcion, monto, categoria, admin_id, producto_entrada_id)
+    values (
+      (now() at time zone 'America/Bogota')::date,
+      'Mercancía: ' || p_cantidad || ' × ' || v_producto.nombre,
+      p_cantidad * v_producto.precio_compra,
+      'Insumos',
+      auth.uid(),
+      v_entrada_id
+    );
+  end if;
+  return v_producto;
+end;
+$$;

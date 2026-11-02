@@ -25,7 +25,7 @@ interface GrupoDia {
   totalSesiones: number;
   totalProductos: number;
   total: number;
-  /** Gastos de la sala ese día (solo los ve el admin). */
+  /** Gastos de la sala ese día (incluye compras de mercancía). */
   gastos: number;
   neto: number;
 }
@@ -144,8 +144,8 @@ export class Historial implements OnInit {
       const [sesiones, ventas, gastos] = await Promise.all([
         this.sesionesService.listarHistorial({ desde, hasta }),
         this.productosService.ventas(desde, hasta),
-        // Los gastos tienen fecha (día de Colombia), no hora. Solo el admin los ve.
-        this.auth.isAdmin() ? this.gastosService.listar(this.desde || undefined, this.hasta || undefined) : Promise.resolve([]),
+        // Los gastos tienen fecha (día de Colombia), no hora.
+        this.gastosService.listar(this.desde || undefined, this.hasta || undefined),
       ]);
       this.sesiones.set(sesiones);
       this.ventas.set(ventas);

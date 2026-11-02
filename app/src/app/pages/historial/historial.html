@@ -43,11 +43,9 @@
     <p class="text-[11px] uppercase tracking-wide text-indigo-200">Total cobrado</p>
     <p class="text-2xl font-bold tabular-nums">{{ totalPeriodo() | number: '1.0-0' }}</p>
     <p class="text-xs text-indigo-200 tabular-nums">Sala {{ totalSala() | number: '1.0-0' }} · Productos {{ totalProductos() | number: '1.0-0' }}</p>
-    @if (auth.isAdmin()) {
       <p class="mt-1 border-t border-white/20 pt-1 text-xs text-indigo-100 tabular-nums">
         − Gastos {{ totalGastos() | number: '1.0-0' }} = <b class="text-sm text-white">Neto {{ netoPeriodo() | number: '1.0-0' }}</b>
       </p>
-    }
   </div>
   <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Sesiones</p>
@@ -78,7 +76,7 @@
         }
         ·
         <span class="font-bold text-slate-900 tabular-nums">{{ g.total | number: '1.0-0' }} COP</span>
-        @if (auth.isAdmin() && g.gastos) {
+        @if (g.gastos) {
           <span class="tabular-nums text-red-600"> · Gastos −{{ g.gastos | number: '1.0-0' }}</span>
           · <span class="font-bold tabular-nums" [class.text-emerald-700]="g.neto >= 0" [class.text-red-700]="g.neto < 0">Neto {{ g.neto | number: '1.0-0' }}</span>
         }

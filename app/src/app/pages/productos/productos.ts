@@ -255,7 +255,7 @@ export class Productos implements OnInit, OnDestroy {
     const costo = costoTexto == null || costoTexto === '' ? null : Number(costoTexto);
     try {
       await this.servicio.agregarStock(p.id, Math.round(cantidad), costo);
-      this.toast.exito(`+${Math.round(cantidad)} ${p.nombre}.`);
+      this.toast.exito(`+${Math.round(cantidad)} ${p.nombre}. La compra quedó registrada en Gastos de hoy.`);
       await this.cargar();
     } catch (e) {
       this.toast.error(this.mensaje(e));
