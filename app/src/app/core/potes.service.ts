@@ -107,6 +107,16 @@ export class PotesService {
     return data as Socio[];
   }
 
+  /** Fija el porcentaje de un socio; el otro queda con lo que falta para 100. */
+  async asignarPorcentaje(socioId: number, porcentaje: number): Promise<Socio[]> {
+    const { data, error } = await this.supabase.client.rpc('asignar_porcentaje_socio', {
+      p_socio_id: socioId,
+      p_porcentaje: porcentaje,
+    });
+    if (error) throw error;
+    return data as Socio[];
+  }
+
   async liquidaciones(): Promise<Liquidacion[]> {
     const { data, error } = await this.supabase.client
       .from('liquidaciones')

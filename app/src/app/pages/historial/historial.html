@@ -37,30 +37,28 @@
   }
 </div>
 
-<!-- Resumen -->
+<!-- Resumen: lo cobrado (sin gastos) y el neto (cobrado − gastos) en grande, lado a lado -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
   <div class="rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 text-white p-4 shadow-sm">
-    <p class="text-[11px] uppercase tracking-wide text-indigo-200">Total cobrado</p>
-    <p class="text-2xl font-bold tabular-nums">{{ totalPeriodo() | number: '1.0-0' }}</p>
+    <p class="text-[11px] uppercase tracking-wide text-indigo-200">Total cobrado (sin gastos)</p>
+    <p class="text-2xl sm:text-3xl font-bold tabular-nums">{{ totalPeriodo() | number: '1.0-0' }}</p>
     <p class="text-xs text-indigo-200 tabular-nums">Sala {{ totalSala() | number: '1.0-0' }} · Productos {{ totalProductos() | number: '1.0-0' }}</p>
-      <p class="mt-1 border-t border-white/20 pt-1 text-xs text-indigo-100 tabular-nums">
-        − Gastos {{ totalGastos() | number: '1.0-0' }} = <b class="text-sm text-white">Neto {{ netoPeriodo() | number: '1.0-0' }}</b>
-      </p>
+  </div>
+  <div class="rounded-xl bg-gradient-to-br p-4 text-white shadow-sm"
+    [class.from-emerald-600]="netoPeriodo() >= 0" [class.to-emerald-800]="netoPeriodo() >= 0"
+    [class.from-red-600]="netoPeriodo() < 0" [class.to-red-800]="netoPeriodo() < 0">
+    <p class="text-[11px] uppercase tracking-wide text-white/80">Total neto</p>
+    <p class="text-2xl sm:text-3xl font-black tabular-nums">{{ netoPeriodo() | number: '1.0-0' }}</p>
+    <p class="text-xs text-white/80 tabular-nums">Cobrado {{ totalPeriodo() | number: '1.0-0' }} − Gastos {{ totalGastos() | number: '1.0-0' }}</p>
   </div>
   <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Sesiones</p>
     <p class="text-2xl font-bold text-slate-900 tabular-nums">{{ sesiones().length }}</p>
+    <p class="text-xs text-slate-400 tabular-nums">Promedio por sesión {{ ticketPromedio() | number: '1.0-0' }}</p>
   </div>
   <div class="rounded-xl bg-white ring-1 ring-slate-100 p-4 shadow-sm">
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Horas cobradas</p>
     <p class="text-2xl font-bold text-slate-900">{{ horasPeriodo() | duracion: 'horas' }}</p>
-  </div>
-  <div class="rounded-xl bg-white ring-1 p-4 shadow-sm" [class.ring-amber-300]="minutosSinCobrar() > 0" [class.ring-slate-100]="minutosSinCobrar() === 0">
-    <p class="text-[11px] uppercase tracking-wide text-slate-500">Tiempo jugado sin cobrar</p>
-    <p class="text-2xl font-bold tabular-nums" [class.text-amber-700]="minutosSinCobrar() > 0" [class.text-slate-900]="minutosSinCobrar() === 0">
-      {{ minutosSinCobrar() ? (minutosSinCobrar() | duracion) : '0' }}
-    </p>
-    <p class="text-xs text-slate-400">Promedio por sesión {{ ticketPromedio() | number: '1.0-0' }}</p>
   </div>
 </div>
 

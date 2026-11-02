@@ -59,10 +59,6 @@ export class Historial implements OnInit {
   /** Lo que queda del día: cobrado (sala + productos) menos gastos de la sala. */
   readonly netoPeriodo = computed(() => this.totalPeriodo() - this.totalGastos());
   readonly horasPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.horas_cobradas ?? 0), 0));
-  /** Minutos jugados de más (no cobrados) en el período, por cierres con desfase. */
-  readonly minutosSinCobrar = computed(() =>
-    this.finalizadas().reduce((t, s) => t + Math.max(0, this.desfase(s) ?? 0), 0),
-  );
   readonly ticketPromedio = computed(() =>
     this.finalizadas().length ? Math.round(this.totalSala() / this.finalizadas().length) : 0,
   );

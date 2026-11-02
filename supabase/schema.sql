@@ -4211,3 +4211,46 @@ select c.id,
     c.serial
 from public.alquiler_consolas c
 left join public.alquileres a on a.consola_id = c.id and a.estado = 'activo';
+
+-- ============================================================
+-- 37. PORCENTAJE DE CADA SOCIO EDITABLE (2026-11-02)
+-- ============================================================
+-- Los socios del alquiler cambian su reparto desde Liquidacion: al fijar el porcentaje
+-- de uno, el otro queda con lo que falta para 100 (ej. 60 / 40). Funciona con dos socios
+-- activos. Las liquidaciones ya hechas guardaron su propio porcentaje y no cambian.
+-- SECURITY DEFINER: la tabla socios solo la escribe el admin; adentro se valida
+-- private.puede_alquiler().
+
+create or replace function public.asignar_porcentaje_socio(p_socio_id bigint, p_porcentaje numeric)
+returns setof public.socios
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n int;
+begin
+  if not private.puede_alquiler() then
+    raise exception 'Solo los socios del alquiler pueden cambiar los porcentajes';
+  end if;
+  if p_porcentaje is null or p_porcentaje <= 0 or p_porcentaje >= 100 then
+    raise exception 'El porcentaje debe estar entre 1 y 99';
+  end if;
+  select count(*) into v_n from public.socios where activo;
+  if v_n <> 2 then
+    raise exception 'El reparto automático funciona con dos socios activos (hay %)', v_n;
+  end if;
+  if not exists (select 1 from public.socios where id = p_socio_id and activo) then
+    raise exception 'Ese socio no existe';
+  end if;
+
+  update public.socios
+  set porcentaje = case when id = p_socio_id then round(p_porcentaje, 2) else 100 - round(p_porcentaje, 2) end
+  where activo;
+
+  return query select * from public.socios where activo order by orden, id;
+end;
+$$;
+
+revoke all on function public.asignar_porcentaje_socio(bigint, numeric) from public, anon;
+grant execute on function public.asignar_porcentaje_socio(bigint, numeric) to authenticated;

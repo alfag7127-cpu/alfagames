@@ -104,6 +104,31 @@ export function nombrePeriodo(periodo: string): string {
           <p class="mt-2 text-xs text-slate-500 tabular-nums">Hoy hay {{ saldoHoy() | number: '1.0-0' }} en los potes: lo que entró después del {{ etiquetaCorte() }} queda para la siguiente liquidación.</p>
         }
 
+        <!-- Porcentaje de cada socio: al cambiar uno, el otro queda con lo que falta para 100 -->
+        <div class="mt-3 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Reparto entre socios</p>
+          <div class="grid grid-cols-2 gap-3">
+            @for (s of socios(); track s.id) {
+              <label class="text-sm font-medium text-slate-700">
+                {{ s.nombre }}
+                <span class="mt-1 flex items-center gap-1">
+                  <input type="number" min="1" max="99" step="1" inputmode="numeric" [ngModel]="s.porcentaje"
+                    (ngModelChange)="cambiarPorcentaje(s.id, $event)" [name]="'pct-' + s.id" [disabled]="!auth.puedeAlquiler()"
+                    class="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-lg font-bold text-slate-900 tabular-nums" />
+                  <span class="text-lg font-bold text-slate-500">%</span>
+                </span>
+              </label>
+            }
+          </div>
+          @if (porcentajesCambiados()) {
+            <div class="mt-2 flex items-center gap-3">
+              <button type="button" (click)="guardarPorcentajes()" [disabled]="guardando()"
+                class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">Guardar porcentajes</button>
+              <button type="button" (click)="cargar()" class="text-sm text-slate-500 hover:underline">Deshacer</button>
+            </div>
+          }
+        </div>
+
         <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
           @for (p of reparto(); track p.socio) {
             <div class="rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 p-4 text-white shadow-sm">
@@ -179,6 +204,9 @@ export class LiquidacionPage implements OnInit, OnDestroy {
   readonly mes = signal<RangoPote[]>([]);
   readonly saldoHoy = signal(0);
   readonly socios = signal<Socio[]>([]);
+  /** Porcentajes guardados (para saber si hay cambios sin guardar). */
+  private readonly porcentajesGuardados = signal<Record<number, number>>({});
+  readonly porcentajesCambiados = computed(() => this.socios().some((s) => this.porcentajesGuardados()[s.id] !== s.porcentaje));
   readonly liquidaciones = signal<Liquidacion[]>([]);
   readonly prestado = signal(0);
   readonly guardando = signal(false);
@@ -223,7 +251,7 @@ export class LiquidacionPage implements OnInit, OnDestroy {
   /** True si el reparto no es exacto (al último socio le queda algún peso de más). */
   readonly sobrante = computed(() => {
     const r = this.reparto();
-    return r.length > 1 && new Set(r.map((p) => p.total)).size > 1 && new Set(r.map((p) => p.porcentaje)).size === 1;
+    return r.some((p) => p.total !== (this.total() * p.porcentaje) / 100);
   });
 
   constructor(
@@ -255,11 +283,38 @@ export class LiquidacionPage implements OnInit, OnDestroy {
       // Se ordena por mes: la primera es la última liquidada.
       liquidaciones.sort((a, b) => b.periodo.localeCompare(a.periodo));
       await this.cargarMes();
-      this.socios.set(socios);
+      this.socios.set(socios.map((s) => ({ ...s, porcentaje: Number(s.porcentaje) })));
+      this.porcentajesGuardados.set(Object.fromEntries(socios.map((s) => [s.id, Number(s.porcentaje)])));
       this.liquidaciones.set(liquidaciones);
       this.prestado.set(prestamos.reduce((t, p) => t + Math.max(0, p.pendiente), 0));
     } catch (e) {
       this.toast.error(this.mensaje(e));
+    }
+  }
+
+  /** Vista previa: el socio elegido toma el porcentaje y el otro lo que falta para 100. */
+  cambiarPorcentaje(id: number, valor: number | null): void {
+    const pct = Math.min(99, Math.max(1, Math.round(Number(valor) || 0)));
+    if (!valor) return;
+    this.socios.update((lista) =>
+      lista.length === 2 ? lista.map((s) => ({ ...s, porcentaje: s.id === id ? pct : 100 - pct })) : lista,
+    );
+  }
+
+  async guardarPorcentajes(): Promise<void> {
+    const primero = this.socios()[0];
+    if (!primero) return;
+    const texto = this.socios().map((s) => `${s.nombre} ${s.porcentaje} %`).join(' y ');
+    if (!confirm(`¿Guardar el reparto ${texto}? Se usa en las próximas liquidaciones; las ya hechas no cambian.`)) return;
+    this.guardando.set(true);
+    try {
+      await this.potes.asignarPorcentaje(primero.id, primero.porcentaje);
+      this.toast.exito(`Reparto guardado: ${texto}.`);
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensaje(e));
+    } finally {
+      this.guardando.set(false);
     }
   }
 

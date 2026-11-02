@@ -21,4 +21,15 @@ describe('repartir (liquidación entre socios)', () => {
     expect(r[1].total).toBe(503);
     expect(r[0].total + r[1].total).toBe(1_004);
   });
+
+  it('reparte 60 / 40 por pote', () => {
+    const r = repartir(1_000_000, 500_000, [
+      { nombre: 'Frank Muñoz', porcentaje: 60 },
+      { nombre: 'Steven Oliveros', porcentaje: 40 },
+    ]);
+    expect(r.map((p) => [p.llave, p.efectivo, p.total])).toEqual([
+      [600_000, 300_000, 900_000],
+      [400_000, 200_000, 600_000],
+    ]);
+  });
 });
