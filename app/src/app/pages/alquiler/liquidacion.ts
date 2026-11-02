@@ -46,8 +46,8 @@ export function nombrePeriodo(periodo: string): string {
 /**
  * Liquidación mensual del alquiler por corte de mes (hora de Colombia): reparte entre los
  * socios lo que había en los potes al terminar el último día del mes elegido. Lo que entró
- * después queda para el mes siguiente. Todos los del alquiler la ven; solo el admin liquida
- * o anula (solo la última).
+ * después queda para el mes siguiente. Los socios del alquiler (admin y rol alquiler) liquidan
+ * y anulan (solo la última).
  */
 @Component({
   selector: 'app-liquidacion',
@@ -122,7 +122,7 @@ export function nombrePeriodo(periodo: string): string {
           <p class="mt-2 text-xs text-amber-700">Hay {{ prestado() | number: '1.0-0' }} prestados por cobrar: no están en los potes, así que no entran en esta liquidación.</p>
         }
 
-        @if (auth.isAdmin()) {
+        @if (auth.puedeAlquiler()) {
           <label class="mt-3 block text-xs font-medium text-slate-500">
             Notas (opcional)
             <input [(ngModel)]="notas" name="notas" placeholder="Ej. pagado por Nequi el 1 de noviembre"
@@ -133,7 +133,7 @@ export function nombrePeriodo(periodo: string): string {
             {{ guardando() ? 'Liquidando…' : 'Liquidar ' + nombrePeriodo(periodo) + ' y vaciar potes' }}
           </button>
         } @else {
-          <p class="mt-3 text-xs text-slate-500">Solo el admin puede hacer la liquidación.</p>
+          <p class="mt-3 text-xs text-slate-500">Solo los socios del alquiler pueden hacer la liquidación.</p>
         }
       </section>
 
@@ -162,7 +162,7 @@ export function nombrePeriodo(periodo: string): string {
               @if (l.notas) {
                 <p class="mt-1 text-xs text-slate-500">{{ l.notas }}</p>
               }
-              @if (auth.isAdmin() && $first) {
+              @if (auth.puedeAlquiler() && $first) {
                 <button type="button" (click)="anular(l)" class="mt-2 text-xs text-red-600 hover:underline">Anular (el dinero vuelve a los potes)</button>
               }
             </li>

@@ -3880,3 +3880,72 @@ $$;
 
 revoke all on function public.editar_alquiler(bigint, text, text, text, text, timestamptz, timestamptz, numeric, numeric, numeric) from public, anon;
 grant execute on function public.editar_alquiler(bigint, text, text, text, text, timestamptz, timestamptz, numeric, numeric, numeric) to authenticated;
+
+-- ============================================================
+-- 34. EL SOCIO DEL ALQUILER TAMBIEN LIQUIDA (2026-11-01)
+-- ============================================================
+-- Frank (rol alquiler) administra el alquiler: puede liquidar y anular la ultima
+-- liquidacion. liquidar_potes pasa a SECURITY DEFINER (escribe liquidaciones y
+-- movimientos de liquidacion, que por RLS solo escribe el admin) y valida adentro
+-- private.puede_alquiler(). Anular = borrar la liquidacion (cascada a sus movimientos).
+
+create or replace function public.liquidar_potes(p_periodo text, p_notas text default null)
+returns public.liquidaciones language plpgsql security definer set search_path = public
+as $$
+declare
+  v_corte date; v_llave numeric; v_efectivo numeric; v_liq public.liquidaciones; v_pct_total numeric; v_n int; v_i int := 0;
+  v_resto_llave numeric; v_resto_efectivo numeric; v_parte_llave numeric; v_parte_efectivo numeric; v_ultimo text; s record;
+begin
+  if not private.puede_alquiler() then raise exception 'Solo los socios del alquiler pueden liquidar los potes'; end if;
+  if p_periodo !~ '^\d{4}-(0[1-9]|1[0-2])$' then raise exception 'Mes inválido: %', p_periodo; end if;
+  if p_periodo > to_char(now() at time zone 'America/Bogota', 'YYYY-MM') then
+    raise exception 'No se puede liquidar un mes que no ha empezado';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('liquidar_potes'));
+  select max(periodo) into v_ultimo from public.liquidaciones;
+  if v_ultimo is not null and p_periodo <= v_ultimo then
+    raise exception 'Ya está liquidado hasta %: liquida un mes posterior', v_ultimo;
+  end if;
+  -- Corte: ultimo dia del mes (hora de Colombia).
+  v_corte := (to_date(p_periodo || '-01', 'YYYY-MM-DD') + interval '1 month' - interval '1 day')::date;
+  select greatest(coalesce(max(r.saldo_final) filter (where r.pote = 'llave'), 0), 0),
+         greatest(coalesce(max(r.saldo_final) filter (where r.pote = 'efectivo'), 0), 0)
+    into v_llave, v_efectivo
+  from public.potes_rango(null, v_corte) r;
+  if v_llave + v_efectivo <= 0 then
+    raise exception 'Al cierre de % los potes están vacíos: no hay nada que liquidar', p_periodo;
+  end if;
+  select coalesce(sum(porcentaje), 0), count(*) into v_pct_total, v_n from public.socios where activo;
+  if v_n = 0 or v_pct_total <> 100 then
+    raise exception 'Los porcentajes de los socios deben sumar 100 %% (suman %)', v_pct_total;
+  end if;
+  insert into public.liquidaciones (periodo, corte, saldo_llave, saldo_efectivo, total, notas, admin_id)
+  values (p_periodo, v_corte, v_llave, v_efectivo, v_llave + v_efectivo, nullif(trim(coalesce(p_notas, '')), ''), auth.uid())
+  returning * into v_liq;
+  v_resto_llave := v_llave; v_resto_efectivo := v_efectivo;
+  for s in select nombre, porcentaje from public.socios where activo order by orden, id loop
+    v_i := v_i + 1;
+    if v_i = v_n then v_parte_llave := v_resto_llave; v_parte_efectivo := v_resto_efectivo;
+    else v_parte_llave := floor(v_llave * s.porcentaje / 100); v_parte_efectivo := floor(v_efectivo * s.porcentaje / 100);
+    end if;
+    v_resto_llave := v_resto_llave - v_parte_llave; v_resto_efectivo := v_resto_efectivo - v_parte_efectivo;
+    insert into public.liquidacion_socios (liquidacion_id, socio, porcentaje, monto_llave, monto_efectivo, monto, orden)
+    values (v_liq.id, s.nombre, s.porcentaje, v_parte_llave, v_parte_efectivo, v_parte_llave + v_parte_efectivo, v_i);
+  end loop;
+  if v_llave > 0 then
+    insert into public.pote_movimientos (fecha, tipo, pote, monto, descripcion, liquidacion_id, admin_id)
+    values (v_corte, 'liquidacion', 'llave', v_llave, 'Liquidación ' || p_periodo, v_liq.id, auth.uid());
+  end if;
+  if v_efectivo > 0 then
+    insert into public.pote_movimientos (fecha, tipo, pote, monto, descripcion, liquidacion_id, admin_id)
+    values (v_corte, 'liquidacion', 'efectivo', v_efectivo, 'Liquidación ' || p_periodo, v_liq.id, auth.uid());
+  end if;
+  return v_liq;
+end;
+$$;
+
+revoke all on function public.liquidar_potes(text, text) from public, anon;
+grant execute on function public.liquidar_potes(text, text) to authenticated;
+
+create policy "liquidaciones_delete_alquiler" on public.liquidaciones
+  for delete to authenticated using (private.puede_alquiler());
