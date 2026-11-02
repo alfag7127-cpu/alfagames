@@ -39,81 +39,24 @@
   </div>
 </section>
 
-<!-- Pestañas -->
-<div class="flex gap-1 mb-4 rounded-xl bg-slate-200/70 p-1 text-sm font-medium w-full sm:w-fit overflow-x-auto">
-  <button
-    (click)="pestana.set('consolas')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'consolas'"
-    [class.shadow-sm]="pestana() === 'consolas'"
-    [class.text-emerald-700]="pestana() === 'consolas'"
-    [class.text-slate-600]="pestana() !== 'consolas'"
-  >
-    Consolas
-  </button>
-  <button
-    (click)="pestana.set('historial')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'historial'"
-    [class.shadow-sm]="pestana() === 'historial'"
-    [class.text-emerald-700]="pestana() === 'historial'"
-    [class.text-slate-600]="pestana() !== 'historial'"
-  >
-    Historial
-  </button>
-  <button
-    (click)="pestana.set('graficas')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'graficas'"
-    [class.shadow-sm]="pestana() === 'graficas'"
-    [class.text-emerald-700]="pestana() === 'graficas'"
-    [class.text-slate-600]="pestana() !== 'graficas'"
-  >
-    📊 Gráficas
-  </button>
-  <button
-    (click)="pestana.set('potes')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'potes'"
-    [class.shadow-sm]="pestana() === 'potes'"
-    [class.text-emerald-700]="pestana() === 'potes'"
-    [class.text-slate-600]="pestana() !== 'potes'"
-  >
-    💰 Potes
-  </button>
-  <button
-    (click)="pestana.set('liquidacion')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'liquidacion'"
-    [class.shadow-sm]="pestana() === 'liquidacion'"
-    [class.text-emerald-700]="pestana() === 'liquidacion'"
-    [class.text-slate-600]="pestana() !== 'liquidacion'"
-  >
-    🤝 Liquidación
-  </button>
-  <button
-    (click)="pestana.set('clientes')"
-    class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-    [class.bg-white]="pestana() === 'clientes'"
-    [class.shadow-sm]="pestana() === 'clientes'"
-    [class.text-emerald-700]="pestana() === 'clientes'"
-    [class.text-slate-600]="pestana() !== 'clientes'"
-  >
-    👤 Clientes
-  </button>
-  @if (auth.puedeAlquiler()) {
-    <button
-      (click)="pestana.set('inventario')"
-      class="flex-1 sm:flex-none rounded-lg px-4 py-1.5 transition-colors whitespace-nowrap"
-      [class.bg-white]="pestana() === 'inventario'"
-      [class.shadow-sm]="pestana() === 'inventario'"
-      [class.text-emerald-700]="pestana() === 'inventario'"
-      [class.text-slate-600]="pestana() !== 'inventario'"
-    >
-      ⚙️ Configuración
-    </button>
+<!-- Pestañas: solo íconos (el nombre sale al pasar el mouse y para lectores de pantalla) -->
+<nav class="grid grid-cols-7 gap-1 mb-4 rounded-2xl bg-slate-200/70 p-1 w-full sm:w-fit sm:flex" aria-label="Secciones del alquiler">
+  @for (p of pestanas; track p.id) {
+    @if (!p.soloAlquiler || auth.puedeAlquiler()) {
+      <button type="button" (click)="pestana.set(p.id)" [title]="p.texto" [attr.aria-label]="p.texto"
+        [attr.aria-current]="pestana() === p.id ? 'page' : null"
+        class="flex h-12 items-center justify-center rounded-xl text-2xl transition-all hover:bg-white/60 sm:w-14"
+        [class.bg-white]="pestana() === p.id" [class.shadow]="pestana() === p.id" [class.ring-2]="pestana() === p.id"
+        [class.ring-emerald-400]="pestana() === p.id" [class.opacity-70]="pestana() !== p.id">
+        @if (p.id === 'consolas') {
+          <img src="img/control-ps5.png" alt="" class="h-7 w-9 object-contain" />
+        } @else {
+          <span aria-hidden="true">{{ p.icono }}</span>
+        }
+      </button>
+    }
   }
-</div>
+</nav>
 
 <!-- ═══ CONSOLAS ═══ -->
 @if (pestana() === 'consolas') {

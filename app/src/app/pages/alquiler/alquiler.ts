@@ -141,6 +141,16 @@ function deHoraLocal(valor: string): string {
 })
 export class AlquilerPage implements OnInit, OnDestroy {
   readonly pestana = signal<Pestana>('consolas');
+  /** Menú de secciones: íconos grandes (el texto va en el title y aria-label). */
+  readonly pestanas: { id: Pestana; icono: string; texto: string; soloAlquiler?: boolean }[] = [
+    { id: 'consolas', icono: '🎮', texto: 'Consolas' },
+    { id: 'historial', icono: '📖', texto: 'Historial' },
+    { id: 'graficas', icono: '📊', texto: 'Gráficas' },
+    { id: 'potes', icono: '💰', texto: 'Potes' },
+    { id: 'liquidacion', icono: '🤝', texto: 'Liquidación' },
+    { id: 'clientes', icono: '👤', texto: 'Clientes' },
+    { id: 'inventario', icono: '⚙️', texto: 'Configuración', soloAlquiler: true },
+  ];
   readonly consolas = signal<ConsolaVM[]>([]);
   readonly tarifas = signal<AlquilerTarifa[]>([]);
   readonly config = signal<AlquilerConfig | null>(null);
