@@ -5,7 +5,7 @@ import { AuthService } from '../../core/auth.service';
 import { PoteMovimiento, PrestamoPendiente, RangoPote, TipoMovimiento } from '../../core/models';
 import { NOMBRE_TIPO, PotesService, TIPOS_MANUALES, TIPOS_SALIDA } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
-import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioMes } from '../../core/zona-horaria';
+import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioMes, rangoMesAnterior } from '../../core/zona-horaria';
 import { NOMBRE_POTE, Pote } from '../../shared/pago-potes';
 import { PesosDirective } from '../../shared/pesos.directive';
 
@@ -35,6 +35,7 @@ interface DiaMovimientos {
         <input type="date" [(ngModel)]="hasta" name="m-hasta" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm" />
       </label>
       <button type="button" (click)="filtrar()" class="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-900">Filtrar</button>
+      <button type="button" (click)="mesAnterior()" class="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">Mes anterior</button>
       @if (inicio()) {
         <button type="button" (click)="desdeElInicio()" class="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">Desde el inicio de los potes</button>
       }
@@ -293,6 +294,12 @@ export class Potes implements OnInit {
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
+  }
+
+  /** Pone en el filtro el mes inmediatamente anterior y filtra. */
+  mesAnterior(): void {
+    ({ desde: this.desde, hasta: this.hasta } = rangoMesAnterior());
+    this.filtrar();
   }
 
   desdeElInicio(): void {

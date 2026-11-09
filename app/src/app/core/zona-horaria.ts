@@ -33,3 +33,9 @@ export function sumarDias(fechaISO: string, dias: number): string {
 export function inicioMes(fechaISO: string = fechaColombia()): string {
   return `${fechaISO.slice(0, 7)}-01`;
 }
+
+/** Rango del mes inmediatamente anterior al de la fecha dada (por defecto, hoy en Colombia). */
+export function rangoMesAnterior(fechaISO: string = fechaColombia()): { desde: string; hasta: string } {
+  const hasta = sumarDias(inicioMes(fechaISO), -1);
+  return { desde: inicioMes(hasta), hasta };
+}

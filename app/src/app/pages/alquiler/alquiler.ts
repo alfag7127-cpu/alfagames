@@ -6,7 +6,7 @@ import { PotesService } from '../../core/potes.service';
 import { AuthService } from '../../core/auth.service';
 import { Alquiler, AlquilerConfig, AlquilerTarifa, ConsolaConEstado, TipoConsola } from '../../core/models';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, rangoMesAnterior } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ControlIcono } from '../../shared/control-icono';
 import { PesosDirective } from '../../shared/pesos.directive';
@@ -273,6 +273,12 @@ export class AlquilerPage implements OnInit, OnDestroy {
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     }
+  }
+
+  /** Historial: pone en el filtro el mes inmediatamente anterior y filtra. */
+  mesAnterior(): void {
+    ({ desde: this.desde, hasta: this.hasta } = rangoMesAnterior());
+    this.cargarHistorial();
   }
 
   async cargarHistorial(): Promise<void> {

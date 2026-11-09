@@ -4,7 +4,7 @@
     <p class="text-sm text-slate-500">Sesiones por día, en hora de Colombia</p>
   </div>
   <div class="flex rounded-xl bg-slate-200/70 p-1 text-sm font-medium">
-    @for (r of [{ id: 'mes', txt: 'Este mes' }, { id: 'hoy', txt: 'Hoy' }, { id: '7', txt: '7 días' }, { id: '30', txt: '30 días' }]; track r.id) {
+    @for (r of [{ id: 'mes', txt: 'Este mes' }, { id: 'mesAnterior', txt: 'Mes anterior' }, { id: 'hoy', txt: 'Hoy' }, { id: '7', txt: '7 días' }, { id: '30', txt: '30 días' }]; track r.id) {
       <button
         (click)="elegirRango($any(r.id))"
         class="rounded-lg px-3 py-1.5 transition-colors"

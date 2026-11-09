@@ -15,6 +15,7 @@ import {
   finDiaColombia,
   inicioDiaColombia,
   inicioMes,
+  rangoMesAnterior,
   sumarDias,
 } from '../../core/zona-horaria';
 
@@ -31,7 +32,7 @@ interface GrupoDia {
   neto: number;
 }
 
-type Rango = 'mes' | 'hoy' | '7' | '30';
+type Rango = 'mes' | 'mesAnterior' | 'hoy' | '7' | '30';
 
 @Component({
   selector: 'app-historial',
@@ -117,6 +118,10 @@ export class Historial implements OnInit {
 
   elegirRango(r: Rango): void {
     this.rango.set(r);
+    if (r === 'mesAnterior') {
+      ({ desde: this.desde, hasta: this.hasta } = rangoMesAnterior());
+      return void this.cargar();
+    }
     this.hasta = fechaColombia();
     this.desde = r === 'mes' ? inicioMes(this.hasta) : r === 'hoy' ? this.hasta : sumarDias(this.hasta, r === '7' ? -6 : -29);
     this.cargar();

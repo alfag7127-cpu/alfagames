@@ -4,10 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { Producto, VentaProducto } from '../../core/models';
 import { ProductosService } from '../../core/productos.service';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, sumarDias } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, rangoMesAnterior, sumarDias } from '../../core/zona-horaria';
 import { VentaProductos } from '../../shared/venta-productos';
 
-type Rango = 'mes' | 'hoy' | 'ayer' | '7';
+type Rango = 'mes' | 'mesAnterior' | 'hoy' | 'ayer' | '7';
 
 /** Venta de productos en el mostrador (admin y trabajador) y lo vendido por fechas (hoy por defecto). */
 @Component({
@@ -68,6 +68,7 @@ export class Ventas implements OnInit, OnDestroy {
   readonly rango = signal<Rango | null>('mes');
   readonly rangos: { id: Rango; txt: string }[] = [
     { id: 'mes', txt: 'Este mes' },
+    { id: 'mesAnterior', txt: 'Mes anterior' },
     { id: 'hoy', txt: 'Hoy' },
     { id: 'ayer', txt: 'Ayer' },
     { id: '7', txt: '7 días' },
@@ -82,6 +83,7 @@ export class Ventas implements OnInit, OnDestroy {
     if (r === 'hoy') return 'Vendido hoy';
     if (r === 'ayer') return 'Vendido ayer';
     if (r === 'mes') return 'Vendido este mes';
+    if (r === 'mesAnterior') return 'Vendido el mes anterior';
     const { desde, hasta } = this.filtro();
     return desde === hasta ? `Vendido el ${desde}` : `Vendido del ${desde} al ${hasta}`;
   });
@@ -108,6 +110,10 @@ export class Ventas implements OnInit, OnDestroy {
   elegirRango(r: Rango): void {
     const hoy = fechaColombia();
     this.rango.set(r);
+    if (r === 'mesAnterior') {
+      ({ desde: this.desde, hasta: this.hasta } = rangoMesAnterior(hoy));
+      return void this.cargar();
+    }
     this.hasta = r === 'ayer' ? sumarDias(hoy, -1) : hoy;
     this.desde = r === 'mes' ? inicioMes(hoy) : r === '7' ? sumarDias(hoy, -6) : this.hasta;
     this.cargar();

@@ -23,7 +23,7 @@ Admin ve todo; empleado (trabajador) solo Sala → En vivo, Ventas e Historial (
 
 ## Fechas
 
-Todos los filtros de fechas abren en el mes en curso (`inicioMes()` de `zona-horaria.ts` hasta hoy); el usuario puede cambiar las fechas después. Todo en hora de Colombia: usar `app/src/app/core/zona-horaria.ts` para días y filtros (nunca `toISOString().slice(0, 10)` para "hoy"). `DatePipe` ya viene configurado con locale `es-CO` y zona `-0500` en `app.config.ts`.
+Todos los filtros de fechas abren en el mes en curso (`inicioMes()` de `zona-horaria.ts` hasta hoy) y tienen botón "Mes anterior" (`rangoMesAnterior()`: el mes inmediatamente anterior completo); el usuario puede cambiar las fechas después. Todo en hora de Colombia: usar `app/src/app/core/zona-horaria.ts` para días y filtros (nunca `toISOString().slice(0, 10)` para "hoy"). `DatePipe` ya viene configurado con locale `es-CO` y zona `-0500` en `app.config.ts`.
 
 ## Supabase
 

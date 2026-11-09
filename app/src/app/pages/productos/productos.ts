@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Producto, VentaProducto } from '../../core/models';
 import { ProductosService } from '../../core/productos.service';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, rangoMesAnterior } from '../../core/zona-horaria';
 import { VentaProductos } from '../../shared/venta-productos';
 
 /** Inventario de productos de la sala, sus precios y las ventas del período (solo admin). */
@@ -143,6 +143,7 @@ import { VentaProductos } from '../../shared/venta-productos';
           <input type="date" [(ngModel)]="desde" name="v-desde" class="rounded-lg border border-slate-300 px-2 py-1 text-xs" />
           <input type="date" [(ngModel)]="hasta" name="v-hasta" class="rounded-lg border border-slate-300 px-2 py-1 text-xs" />
           <button type="button" (click)="cargarVentas()" class="rounded-lg bg-slate-800 px-3 py-1 text-xs text-white">Filtrar</button>
+          <button type="button" (click)="mesAnterior()" class="rounded-lg bg-slate-100 px-3 py-1 text-xs text-slate-700 hover:bg-slate-200">Mes anterior</button>
         </div>
         <ul class="divide-y divide-slate-100 text-sm max-h-[480px] overflow-y-auto">
           @for (v of ventas(); track v.id) {
@@ -213,6 +214,12 @@ export class Productos implements OnInit, OnDestroy {
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
+  }
+
+  /** Pone en el filtro el mes inmediatamente anterior y filtra. */
+  mesAnterior(): void {
+    ({ desde: this.desde, hasta: this.hasta } = rangoMesAnterior());
+    this.cargarVentas();
   }
 
   async cargarVentas(): Promise<void> {
