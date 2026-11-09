@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlquilerService, normalizarTelefono } from '../../core/alquiler.service';
@@ -6,7 +6,7 @@ import { PotesService } from '../../core/potes.service';
 import { AuthService } from '../../core/auth.service';
 import { Alquiler, AlquilerConfig, AlquilerTarifa, ConsolaConEstado, TipoConsola } from '../../core/models';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ControlIcono } from '../../shared/control-icono';
 import { PesosDirective } from '../../shared/pesos.directive';
@@ -78,6 +78,26 @@ interface ConsolaVM extends ConsolaConEstado {
   edPagoLlave: number | null;
 }
 
+/** Formulario para corregir un alquiler desde el historial. */
+interface EdicionHistorial {
+  id: number;
+  devuelto: boolean;
+  nombre: string;
+  telefono: string;
+  direccion: string;
+  notas: string;
+  /** "YYYY-MM-DDTHH:mm" en hora de Colombia. */
+  inicio: string;
+  fin: string;
+  recibido: string;
+  /** Precio de la entrega (sin el ajuste hecho al recibir). */
+  precio: number | null;
+  ajuste: number;
+  pagoModo: ModoPago | null;
+  pagoLlave: number | null;
+  guardando: boolean;
+}
+
 const FORM_VACIO = {
   procesando: false,
   formAbierto: false,
@@ -136,7 +156,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes],
+  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -163,7 +183,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   private unsubscribe?: () => void;
 
   // Filtros del historial (fechas en hora de Colombia)
-  desde = sumarDias(fechaColombia(), -30);
+  desde = inicioMes();
   hasta = fechaColombia();
 
   // Admin: nueva consola
@@ -195,6 +215,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   /** Historial: qué fila tiene abierto su contrato. */
   readonly contratoAbierto = signal<number | null>(null);
+  /** Historial: alquiler que se está corrigiendo. */
+  readonly edicionHist = signal<EdicionHistorial | null>(null);
   /** Pagos del período por pote (cuentan el día en que entró el dinero). */
   readonly pagosPeriodo = signal<PagoConAlquiler[]>([]);
   readonly potes = computed(() => {
@@ -215,14 +237,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.cargar();
-    // El historial arranca desde el día en que empezaron los potes (incluye el dinero de antes de la app).
-    this.potesService
-      .inicio()
-      .then((i) => {
-        if (i) this.desde = i;
-      })
-      .catch(() => undefined)
-      .finally(() => this.cargarHistorial());
+    this.cargarHistorial();
     this.unsubscribe = this.alquiler.onCambios(() => {
       this.cargar();
       this.cargarHistorial();
@@ -538,6 +553,67 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   toggleContratoHistorial(id: number): void {
     this.contratoAbierto.update((actual) => (actual === id ? null : id));
+  }
+
+  // ── Corregir un alquiler desde el historial (activo o devuelto) ──
+
+  abrirEdicionHistorial(a: Alquiler): void {
+    if (this.edicionHist()?.id === a.id) return this.edicionHist.set(null);
+    const pagos = a.alquiler_pagos ?? [];
+    const entrega = (pote: Pote) =>
+      pagos.filter((p) => p.concepto === 'entrega' && p.pote === pote).reduce((s, p) => s + p.monto, 0);
+    const ajuste = pagos.filter((p) => p.concepto === 'ajuste').reduce((s, p) => s + p.monto, 0);
+    const llave = entrega('llave');
+    const efectivo = entrega('efectivo');
+    this.contratoAbierto.set(null);
+    this.edicionHist.set({
+      id: a.id,
+      devuelto: a.estado === 'devuelto',
+      nombre: a.cliente_nombre ?? '',
+      telefono: a.cliente_telefono ?? '',
+      direccion: a.cliente_direccion ?? '',
+      notas: a.notas ?? '',
+      inicio: aHoraLocal(a.inicio),
+      fin: aHoraLocal(a.fin_pactado),
+      recibido: aHoraLocal(a.devuelto_en),
+      precio: a.precio_total - ajuste,
+      ajuste,
+      pagoModo: llave && efectivo ? 'mixto' : efectivo ? 'efectivo' : 'llave',
+      pagoLlave: llave,
+      guardando: false,
+    });
+  }
+
+  async guardarEdicionHistorial(): Promise<void> {
+    const e = this.edicionHist();
+    if (!e) return;
+    if (!e.nombre.trim()) return this.toast.error('Escribe el nombre del cliente.');
+    if (!e.inicio || !e.fin) return this.toast.error('Completa la hora de entrega y la de devolución pactada.');
+    if (e.devuelto && !e.recibido) return this.toast.error('Completa la hora en que se recibió.');
+    if (e.precio == null || e.precio < 0) return this.toast.error('Escribe el precio de la entrega.');
+    const reparto = e.precio === 0 ? { llave: 0, efectivo: 0 } : repartirPago(e.precio, e.pagoModo, e.pagoLlave);
+    if (!reparto) return this.toast.error('Indica cómo pagó: Llave, Efectivo o Mixto (que cuadre con el precio).');
+    this.edicionHist.set({ ...e, guardando: true });
+    try {
+      await this.alquiler.editar(e.id, {
+        clienteNombre: e.nombre.trim(),
+        clienteTelefono: e.telefono.trim() || null,
+        clienteDireccion: e.direccion.trim() || null,
+        notas: e.notas.trim() || null,
+        inicio: deHoraLocal(e.inicio),
+        finPactado: deHoraLocal(e.fin),
+        precioTotal: e.precio,
+        pagoLlave: reparto.llave,
+        pagoEfectivo: reparto.efectivo,
+        devueltoEn: e.devuelto ? deHoraLocal(e.recibido) : null,
+      });
+      this.toast.exito('Alquiler corregido.');
+      this.edicionHist.set(null);
+      await Promise.all([this.cargar(), this.cargarHistorial()]);
+    } catch (err) {
+      this.toast.error(this.mensajeError(err));
+      this.edicionHist.set({ ...e, guardando: false });
+    }
   }
 
   // ── Devolver / cancelar ──

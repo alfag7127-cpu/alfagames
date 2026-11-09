@@ -28,3 +28,8 @@ export function sumarDias(fechaISO: string, dias: number): string {
   d.setUTCDate(d.getUTCDate() + dias);
   return d.toISOString().slice(0, 10);
 }
+
+/** Primer día del mes de una fecha YYYY-MM-DD (por defecto, el mes en curso en Colombia). */
+export function inicioMes(fechaISO: string = fechaColombia()): string {
+  return `${fechaISO.slice(0, 7)}-01`;
+}

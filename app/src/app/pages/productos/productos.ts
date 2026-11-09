@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Producto, VentaProducto } from '../../core/models';
 import { ProductosService } from '../../core/productos.service';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes } from '../../core/zona-horaria';
 import { VentaProductos } from '../../shared/venta-productos';
 
 /** Inventario de productos de la sala, sus precios y las ventas del período (solo admin). */
@@ -178,7 +178,7 @@ export class Productos implements OnInit, OnDestroy {
   nuevoCompra: number | null = null;
   nuevoVenta: number | null = null;
   nuevoCantidad: number | null = null;
-  desde = sumarDias(fechaColombia(), -6);
+  desde = inicioMes();
   hasta = fechaColombia();
 
   readonly resumen = computed(() => {

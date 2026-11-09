@@ -5,7 +5,7 @@ import { AuthService } from '../../core/auth.service';
 import { PoteMovimiento, PrestamoPendiente, RangoPote, TipoMovimiento } from '../../core/models';
 import { NOMBRE_TIPO, PotesService, TIPOS_MANUALES, TIPOS_SALIDA } from '../../core/potes.service';
 import { ToastService } from '../../core/toast.service';
-import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, sumarDias } from '../../core/zona-horaria';
+import { OFFSET_COLOMBIA, ZONA_HORARIA, fechaColombia, inicioMes } from '../../core/zona-horaria';
 import { NOMBRE_POTE, Pote } from '../../shared/pago-potes';
 import { PesosDirective } from '../../shared/pesos.directive';
 
@@ -247,7 +247,7 @@ export class Potes implements OnInit {
   descripcion = '';
 
   // Filtro
-  desde = sumarDias(fechaColombia(), -30);
+  desde = inicioMes();
   hasta = fechaColombia();
 
   readonly totalSaldo = computed(() => this.rango().reduce((s, p) => s + p.saldo_final, 0));
@@ -286,11 +286,8 @@ export class Potes implements OnInit {
 
   async cargar(): Promise<void> {
     try {
-      // La primera vez se arranca desde el día en que empezaron los potes.
-      if (!this.inicio()) {
-        this.inicio.set(await this.potes.inicio());
-        if (this.inicio()) this.desde = this.inicio()!;
-      }
+      // Fecha en que empezaron los potes (botón "Desde el inicio").
+      if (!this.inicio()) this.inicio.set(await this.potes.inicio());
       this.prestamos.set(await this.potes.prestamosPendientes());
       await this.filtrar();
     } catch (e) {

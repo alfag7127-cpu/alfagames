@@ -471,6 +471,62 @@
 }
 
 <!-- ═══ HISTORIAL ═══ -->
+<!-- Formulario para corregir un alquiler del historial (se usa en la tabla y en las tarjetas). -->
+<ng-template #formEdicionHist let-e>
+  <div class="space-y-2 rounded-lg bg-amber-50/70 ring-1 ring-amber-200 p-3 max-w-2xl">
+    <p class="text-xs font-semibold text-amber-800">✏️ Corregir el registro (las extensiones no cambian)</p>
+    <input [(ngModel)]="e.nombre" name="hist-nombre" placeholder="Nombre del cliente"
+      class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+    <div class="grid grid-cols-2 gap-2">
+      <input [(ngModel)]="e.telefono" name="hist-tel" placeholder="Teléfono"
+        class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+      <input [(ngModel)]="e.direccion" name="hist-dir" placeholder="Dirección"
+        class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+    </div>
+    <div [class]="e.devuelto ? 'grid grid-cols-2 sm:grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'">
+      <label class="text-xs font-medium text-slate-500">
+        Entregada
+        <input type="datetime-local" [(ngModel)]="e.inicio" name="hist-ini"
+          class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+      </label>
+      <label class="text-xs font-medium text-slate-500">
+        Devolver (pactada)
+        <input type="datetime-local" [(ngModel)]="e.fin" name="hist-fin"
+          class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+      </label>
+      @if (e.devuelto) {
+        <label class="text-xs font-medium text-slate-500">
+          Recibida
+          <input type="datetime-local" [(ngModel)]="e.recibido" name="hist-rec"
+            class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+        </label>
+      }
+    </div>
+    <label class="block text-xs font-medium text-slate-500">
+      Precio de la entrega (COP)
+      <input appPesos [(ngModel)]="e.precio" name="hist-precio"
+        class="block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold text-slate-800" />
+    </label>
+    @if (e.ajuste) {
+      <p class="text-xs text-slate-500">
+        Al recibirla se {{ e.ajuste > 0 ? 'cobró' : 'devolvió' }} {{ (e.ajuste > 0 ? e.ajuste : -e.ajuste) | number: '1.0-0' }}: se conserva y se suma al total.
+      </p>
+    }
+    @if (e.precio) {
+      <app-pago-potes [total]="e.precio" [nombre]="'hist-' + e.id" [(modo)]="e.pagoModo" [(montoLlave)]="e.pagoLlave" />
+    }
+    <input [(ngModel)]="e.notas" name="hist-notas" placeholder="Notas"
+      class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+    <div class="flex gap-2">
+      <button (click)="guardarEdicionHistorial()" [disabled]="e.guardando"
+        class="flex-1 rounded-lg bg-amber-600 text-white text-sm font-medium py-2 hover:bg-amber-700 disabled:opacity-50">
+        {{ e.guardando ? 'Guardando...' : 'Guardar corrección' }}
+      </button>
+      <button (click)="edicionHist.set(null)" class="rounded-lg bg-white text-slate-700 text-sm px-3 ring-1 ring-slate-200 hover:bg-slate-100">Cancelar</button>
+    </div>
+  </div>
+</ng-template>
+
 @if (pestana() === 'historial') {
   <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-100 p-3 mb-4 flex flex-wrap items-end gap-3">
     <label class="text-xs font-medium text-slate-500">
@@ -525,7 +581,7 @@
             <th class="px-4 py-2.5 font-medium text-right">Pagado</th>
             <th class="px-4 py-2.5 font-medium">Potes</th>
             <th class="px-4 py-2.5 font-medium">Estado</th>
-            <th class="px-4 py-2.5 font-medium">Contrato</th>
+            <th class="px-4 py-2.5 font-medium"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -575,12 +631,26 @@
                   {{ a.estado === 'cancelado' ? 'anulado' : a.estado }}
                 </span>
               </td>
-              <td class="px-4 py-3">
-                <button type="button" (click)="toggleContratoHistorial(a.id)" class="text-indigo-600 hover:underline whitespace-nowrap">
-                  📎 {{ contratoAbierto() === a.id ? 'Ocultar' : 'Ver' }}
+              <td class="px-4 py-3 whitespace-nowrap">
+                @if (a.estado !== 'cancelado') {
+                  <button type="button" (click)="abrirEdicionHistorial(a)" class="text-amber-700 hover:underline mr-3">
+                    ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
+                  </button>
+                }
+                <button type="button" (click)="toggleContratoHistorial(a.id)" class="text-indigo-600 hover:underline">
+                  📎 {{ contratoAbierto() === a.id ? 'Ocultar' : 'Contrato' }}
                 </button>
               </td>
             </tr>
+            @if (edicionHist(); as e) {
+              @if (e.id === a.id) {
+                <tr class="bg-amber-50/40">
+                  <td colspan="8" class="px-4 py-3">
+                    <ng-container *ngTemplateOutlet="formEdicionHist; context: { $implicit: e }" />
+                  </td>
+                </tr>
+              }
+            }
             @if (contratoAbierto() === a.id) {
               <tr class="bg-slate-50/60">
                 <td colspan="8" class="px-4 py-3">
@@ -624,10 +694,24 @@
               <span class="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-xs font-medium">💵 {{ porPote(a, 'efectivo') | number: '1.0-0' }}</span>
             }
           </div>
-          <button type="button" (click)="toggleContratoHistorial(a.id)" class="text-xs text-indigo-600 hover:underline">
-            📎 {{ contratoAbierto() === a.id ? 'Ocultar' : 'Contrato' }}
-          </button>
+          <div class="flex items-center gap-3 shrink-0">
+            @if (a.estado !== 'cancelado') {
+              <button type="button" (click)="abrirEdicionHistorial(a)" class="text-xs text-amber-700 hover:underline">
+                ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
+              </button>
+            }
+            <button type="button" (click)="toggleContratoHistorial(a.id)" class="text-xs text-indigo-600 hover:underline">
+              📎 {{ contratoAbierto() === a.id ? 'Ocultar' : 'Contrato' }}
+            </button>
+          </div>
         </div>
+        @if (edicionHist(); as e) {
+          @if (e.id === a.id) {
+            <div class="mt-3">
+              <ng-container *ngTemplateOutlet="formEdicionHist; context: { $implicit: e }" />
+            </div>
+          }
+        }
         @if (contratoAbierto() === a.id) {
           <div class="mt-3">
             <app-contratos [alquilerId]="a.id" [puedeEliminar]="auth.isAdmin()" />

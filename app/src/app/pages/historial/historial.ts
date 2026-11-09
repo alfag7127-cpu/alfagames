@@ -14,6 +14,7 @@ import {
   fechaColombia,
   finDiaColombia,
   inicioDiaColombia,
+  inicioMes,
   sumarDias,
 } from '../../core/zona-horaria';
 
@@ -30,7 +31,7 @@ interface GrupoDia {
   neto: number;
 }
 
-type Rango = 'hoy' | '7' | '30';
+type Rango = 'mes' | 'hoy' | '7' | '30';
 
 @Component({
   selector: 'app-historial',
@@ -45,8 +46,8 @@ export class Historial implements OnInit {
   readonly nombresProductos = signal<Record<number, string>>({});
   readonly nombresUsuarios = signal<Record<string, string>>({});
   readonly cargando = signal(false);
-  readonly rango = signal<Rango | null>('7');
-  desde = sumarDias(fechaColombia(), -6);
+  readonly rango = signal<Rango | null>('mes');
+  desde = inicioMes();
   hasta = fechaColombia();
 
   private readonly finalizadas = computed(() => this.sesiones().filter((s) => s.estado === 'finalizada'));
@@ -106,11 +107,6 @@ export class Historial implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    // El trabajador entra a cuadrar caja: arranca en el día de hoy.
-    if (!this.auth.isAdmin()) {
-      this.rango.set('hoy');
-      this.desde = this.hasta;
-    }
     this.sesionesService.listarNombresPuestos().then((m) => this.nombresPuestos.set(m));
     this.sesionesService.listarNombresUsuarios().then((m) => this.nombresUsuarios.set(m)).catch(() => undefined);
     this.productosService
@@ -122,7 +118,7 @@ export class Historial implements OnInit {
   elegirRango(r: Rango): void {
     this.rango.set(r);
     this.hasta = fechaColombia();
-    this.desde = r === 'hoy' ? this.hasta : sumarDias(this.hasta, r === '7' ? -6 : -29);
+    this.desde = r === 'mes' ? inicioMes(this.hasta) : r === 'hoy' ? this.hasta : sumarDias(this.hasta, r === '7' ? -6 : -29);
     this.cargar();
   }
 

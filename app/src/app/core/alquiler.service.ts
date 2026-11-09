@@ -28,6 +28,8 @@ export interface EdicionAlquiler {
   precioTotal: number;
   pagoLlave: number;
   pagoEfectivo: number;
+  /** Hora real de recibido (solo alquileres devueltos); null = no cambia. */
+  devueltoEn?: string | null;
 }
 
 export interface NuevoAlquiler {
@@ -279,6 +281,7 @@ export class AlquilerService {
       p_precio_total: e.precioTotal,
       p_pago_llave: e.pagoLlave,
       p_pago_efectivo: e.pagoEfectivo,
+      p_devuelto_en: e.devueltoEn ?? null,
     });
     if (error) throw error;
     return data as Alquiler;

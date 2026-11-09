@@ -4,10 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { Producto, VentaProducto } from '../../core/models';
 import { ProductosService } from '../../core/productos.service';
 import { ToastService } from '../../core/toast.service';
-import { fechaColombia, finDiaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
+import { fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, sumarDias } from '../../core/zona-horaria';
 import { VentaProductos } from '../../shared/venta-productos';
 
-type Rango = 'hoy' | 'ayer' | '7';
+type Rango = 'mes' | 'hoy' | 'ayer' | '7';
 
 /** Venta de productos en el mostrador (admin y trabajador) y lo vendido por fechas (hoy por defecto). */
 @Component({
@@ -65,13 +65,14 @@ type Rango = 'hoy' | 'ayer' | '7';
 export class Ventas implements OnInit, OnDestroy {
   readonly ventas = signal<VentaProducto[]>([]);
   private readonly productos = signal<Producto[]>([]);
-  readonly rango = signal<Rango | null>('hoy');
+  readonly rango = signal<Rango | null>('mes');
   readonly rangos: { id: Rango; txt: string }[] = [
+    { id: 'mes', txt: 'Este mes' },
     { id: 'hoy', txt: 'Hoy' },
     { id: 'ayer', txt: 'Ayer' },
     { id: '7', txt: '7 días' },
   ];
-  desde = fechaColombia();
+  desde = inicioMes();
   hasta = fechaColombia();
   /** Fechas que se están mostrando (las del último filtro aplicado). */
   private readonly filtro = signal({ desde: this.desde, hasta: this.hasta });
@@ -80,6 +81,7 @@ export class Ventas implements OnInit, OnDestroy {
     const r = this.rango();
     if (r === 'hoy') return 'Vendido hoy';
     if (r === 'ayer') return 'Vendido ayer';
+    if (r === 'mes') return 'Vendido este mes';
     const { desde, hasta } = this.filtro();
     return desde === hasta ? `Vendido el ${desde}` : `Vendido del ${desde} al ${hasta}`;
   });
@@ -107,7 +109,7 @@ export class Ventas implements OnInit, OnDestroy {
     const hoy = fechaColombia();
     this.rango.set(r);
     this.hasta = r === 'ayer' ? sumarDias(hoy, -1) : hoy;
-    this.desde = r === '7' ? sumarDias(hoy, -6) : this.hasta;
+    this.desde = r === 'mes' ? inicioMes(hoy) : r === '7' ? sumarDias(hoy, -6) : this.hasta;
     this.cargar();
   }
 
@@ -121,6 +123,10 @@ export class Ventas implements OnInit, OnDestroy {
   async cargar(): Promise<void> {
     // Al cambiar de día con la pantalla abierta, "Hoy" sigue siendo hoy.
     if (this.rango() === 'hoy') this.desde = this.hasta = fechaColombia();
+    if (this.rango() === 'mes') {
+      this.hasta = fechaColombia();
+      this.desde = inicioMes(this.hasta);
+    }
     this.filtro.set({ desde: this.desde, hasta: this.hasta });
     try {
       const [productos, ventas] = await Promise.all([
