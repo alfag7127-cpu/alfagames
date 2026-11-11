@@ -91,9 +91,14 @@ function diaYHora(iso: string | number): string {
                         <p class="text-sm text-red-100">
                           Le quedan <b>{{ duracion(minutosHasta(c.libre_en)) }}</b> · se desocupa a las {{ hora(c.libre_en) }}
                         </p>
+                        <button type="button" (click)="elegir(c)"
+                          class="mt-3 w-full rounded-xl bg-white/90 py-2.5 text-sm font-bold text-red-700 hover:bg-white">
+                          Reservar desde las {{ hora(c.libre_en) }}
+                        </button>
                       } @else {
                         <p class="mt-2 text-sm text-red-100">Tiempo libre (sin hora de salida)</p>
                         <p class="text-sm text-red-100">Lleva jugando <b>{{ duracion(c.minutos_jugados) }}</b></p>
+                        <p class="mt-1 text-xs text-red-200/80">No se puede reservar hasta saber a qué hora termina.</p>
                       }
                     } @else {
                       <button type="button" (click)="elegir(c)"
@@ -120,6 +125,11 @@ function diaYHora(iso: string | number): string {
           @case ('datos') {
             <section class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-5 space-y-4">
               <p class="text-sm text-slate-300">Consola <b class="text-white">{{ consola()?.nombre }}</b> · Paso 1 de 3</p>
+              @if (consola()?.libre_en) {
+                <p class="rounded-xl bg-red-500/15 ring-1 ring-red-400/40 px-3 py-2 text-sm text-red-100">
+                  Está ocupada ahora: tu reserva puede empezar desde las {{ hora(consola()!.libre_en!) }}, cuando termina el cliente que está jugando.
+                </p>
+              }
               <label class="block text-sm">
                 Nombre
                 <input [(ngModel)]="nombre" name="nombre" autocomplete="name" maxlength="60"
@@ -293,8 +303,15 @@ export class Reservar implements OnInit, OnDestroy {
     return Math.max(1, Math.ceil((new Date(iso).getTime() - this.ahora()) / 60_000));
   }
 
+  /** Desde cuándo se puede reservar la consola elegida: ahora, o cuando termina la sesión en curso. */
+  private desdeMs(): number {
+    const libre = this.consola()?.libre_en;
+    // Al minuto siguiente del fin (el input solo maneja minutos).
+    return libre ? Math.max(Date.now(), Math.ceil(new Date(libre).getTime() / 60_000) * 60_000) : Date.now();
+  }
+
   minimoInicio(): string {
-    return aHoraLocal(Date.now());
+    return aHoraLocal(this.desdeMs());
   }
 
   maximoInicio(): string {
@@ -304,6 +321,7 @@ export class Reservar implements OnInit, OnDestroy {
   elegir(c: ConsolaPublica): void {
     this.error.set(null);
     this.consola.set(c);
+    this.inicio.set('');
     this.paso.set('datos');
     window.scrollTo({ top: 0 });
   }
@@ -318,9 +336,11 @@ export class Reservar implements OnInit, OnDestroy {
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
     this.error.set(null);
-    // Por defecto: en 15 minutos, redondeado al siguiente cuarto de hora.
+    // Por defecto: libre ya → en 15 minutos (redondeado al cuarto de hora); ocupada → cuando termina.
     const cuarto = 15 * 60_000;
-    if (!this.inicio()) this.inicio.set(aHoraLocal(Math.ceil((Date.now() + cuarto) / cuarto) * cuarto));
+    if (!this.inicio()) {
+      this.inicio.set(aHoraLocal(this.consola()?.libre_en ? this.desdeMs() : Math.ceil((Date.now() + cuarto) / cuarto) * cuarto));
+    }
     this.paso.set('tiempo');
   }
 
@@ -332,6 +352,9 @@ export class Reservar implements OnInit, OnDestroy {
     if (!this.inicio()) return this.error.set('Elige a qué hora llegas.');
     const inicio = this.inicioMs();
     if (inicio < Date.now() - 2 * 60_000) return this.error.set('Esa hora ya pasó. Elige una hora desde ahora.');
+    if (c.libre_en && inicio < this.desdeMs() - 60_000) {
+      return this.error.set(`${c.nombre} está ocupada hasta las ${hora(c.libre_en)}. Elige una hora desde entonces.`);
+    }
     const fin = inicio + minutos * 60_000;
     const choque = c.reservas.find((r) => new Date(r.inicio).getTime() < fin && new Date(r.fin).getTime() > inicio);
     if (choque) {

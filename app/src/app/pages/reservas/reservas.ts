@@ -79,7 +79,7 @@ function dia(iso: string): string {
         <div class="mt-3 space-y-3">
           <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
             @for (c of consolas(); track c.id) {
-              <button type="button" (click)="localPuesto = c.id"
+              <button type="button" (click)="elegirLocal(c)"
                 class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
                 [class.bg-indigo-600]="localPuesto === c.id" [class.text-white]="localPuesto === c.id" [class.border-indigo-600]="localPuesto === c.id"
                 [class.border-slate-300]="localPuesto !== c.id"
@@ -408,6 +408,13 @@ export class ReservasPage implements OnInit, OnDestroy {
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
+  }
+
+  /** Si la consola está ocupada con hora de fin, la reserva arranca cuando termina esa sesión. */
+  elegirLocal(c: ConsolaPublica): void {
+    this.localPuesto = c.id;
+    const ahora = Date.now();
+    this.localInicio = aHoraLocal(c.libre_en ? Math.max(ahora, Math.ceil(new Date(c.libre_en).getTime() / 60_000) * 60_000) : ahora);
   }
 
   async reservarLocal(): Promise<void> {

@@ -460,6 +460,17 @@ export class Sala implements OnInit, OnDestroy {
   /** Conteo regresivo: el cliente compra más tiempo; el precio se recalcula sobre el total. */
   async extender(p: PuestoVM, minutos: number): Promise<void> {
     if (!p.sesion_id) return;
+    // Hay reserva después de esta sesión: avisar si el tiempo extra se le mete encima.
+    const reserva = this.proximaReserva(p.id);
+    if (reserva) {
+      const finNuevo = Date.now() + (this.segundosRestantes(p) + minutos * 60) * 1000;
+      if (
+        finNuevo > new Date(reserva.inicio).getTime() &&
+        !confirm(`${p.nombre} está reservada ${this.textoReserva(reserva)}.\nCon +${formatearDuracion(minutos)} se cruza con la reserva. ¿Agregar el tiempo de todas formas?`)
+      ) {
+        return;
+      }
+    }
     this.marcarProcesando(p.id, true);
     try {
       const sesion = await this.sesiones.extenderSesion(p.sesion_id, minutos);
