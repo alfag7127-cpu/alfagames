@@ -14,6 +14,7 @@ const base: Reserva = {
   confirmada_por: null,
   confirmada_en: null,
   created_at: '2026-11-11T20:00:00.000Z',
+  origen: 'web',
 };
 
 describe('reservas', () => {

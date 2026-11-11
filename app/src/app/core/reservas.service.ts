@@ -13,7 +13,8 @@ export interface Reserva {
   id: number;
   puesto_id: number;
   cliente_nombre: string;
-  cliente_telefono: string;
+  /** Opcional en las reservas hechas en el local. */
+  cliente_telefono: string | null;
   inicio: string;
   minutos: number;
   precio: number;
@@ -22,6 +23,8 @@ export interface Reserva {
   confirmada_por: string | null;
   confirmada_en: string | null;
   created_at: string;
+  /** web = desde el enlace público (paga con el QR); local = la hizo el trabajador (paga al cerrar). */
+  origen: 'web' | 'local';
 }
 
 export interface ReservasConfig {
@@ -107,6 +110,19 @@ export class ReservasService {
       .order('inicio');
     if (error) throw error;
     return (data as Reserva[]).map((r) => ({ ...r, precio: Number(r.precio) }));
+  }
+
+  /** El trabajador aparta una consola para un cliente del local: queda confirmada y paga al cerrar. */
+  async reservarLocal(r: { puestoId: number; nombre: string; telefono: string | null; inicio: string; minutos: number }): Promise<Reserva> {
+    const { data, error } = await this.supabase.client.rpc('reservar_local', {
+      p_puesto_id: r.puestoId,
+      p_cliente_nombre: r.nombre,
+      p_cliente_telefono: r.telefono,
+      p_inicio: r.inicio,
+      p_minutos: r.minutos,
+    });
+    if (error) throw error;
+    return data as Reserva;
   }
 
   async confirmar(id: number): Promise<void> {

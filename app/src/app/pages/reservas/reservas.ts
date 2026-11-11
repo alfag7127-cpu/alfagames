@@ -3,6 +3,8 @@ import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import {
+  ConsolaPublica,
+  MINUTOS_RESERVA,
   Reserva,
   ReservasConfig,
   ReservasService,
@@ -15,6 +17,16 @@ import { ToastService } from '../../core/toast.service';
 import { ZONA_HORARIA, fechaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { sonarCaja } from '../../shared/sonido-caja';
+
+/** "YYYY-MM-DDTHH:mm" en hora de Colombia, para un input datetime-local. */
+function aHoraLocal(ms: number): string {
+  return new Date(ms).toLocaleString('sv-SE', { timeZone: ZONA_HORARIA }).slice(0, 16).replace(' ', 'T');
+}
+
+/** "YYYY-MM-DDTHH:mm" (hora de Colombia) → ms. */
+function deHoraLocal(valor: string): number {
+  return new Date(`${valor}:00-05:00`).getTime();
+}
 
 function hora(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit' });
@@ -53,6 +65,57 @@ function dia(iso: string): string {
       </div>
       @if (config() && !config()!.qr_path) {
         <p class="mt-2 text-xs text-amber-700">⚠️ Falta subir el QR de pago{{ auth.isAdmin() ? ' (abajo, en Configuración)' : ' (lo sube el admin)' }}.</p>
+      }
+    </section>
+
+    <!-- Reservar en el local (clientes que llegan sin avisar) -->
+    <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 mb-4">
+      <button type="button" (click)="formLocal.set(!formLocal())" class="flex w-full items-center justify-between font-semibold text-slate-900">
+        <span>➕ Reservar en el local</span>
+        <span class="text-sm text-indigo-600">{{ formLocal() ? 'Cerrar' : 'Abrir' }}</span>
+      </button>
+      @if (formLocal()) {
+        <p class="mt-1 text-xs text-slate-500">Aparta la consola para un cliente que está aquí. Queda confirmada y paga al cerrar la sesión.</p>
+        <div class="mt-3 space-y-3">
+          <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+            @for (c of consolas(); track c.id) {
+              <button type="button" (click)="localPuesto = c.id"
+                class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
+                [class.bg-indigo-600]="localPuesto === c.id" [class.text-white]="localPuesto === c.id" [class.border-indigo-600]="localPuesto === c.id"
+                [class.border-slate-300]="localPuesto !== c.id"
+                [class.text-red-700]="localPuesto !== c.id && c.ocupada" [class.text-emerald-700]="localPuesto !== c.id && !c.ocupada">
+                {{ c.nombre }}
+                <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+              </button>
+            }
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input [(ngModel)]="localNombre" name="l-nombre" placeholder="Nombre del cliente" maxlength="60"
+              class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+            <input [(ngModel)]="localTelefono" name="l-tel" type="tel" placeholder="Celular (opcional)"
+              class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          </div>
+          <div class="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+            @for (p of precios(); track p.minutos) {
+              <button type="button" (click)="localMinutos = p.minutos"
+                class="rounded-lg border py-1 text-xs font-medium"
+                [class.bg-indigo-600]="localMinutos === p.minutos" [class.text-white]="localMinutos === p.minutos" [class.border-indigo-600]="localMinutos === p.minutos"
+                [class.border-slate-300]="localMinutos !== p.minutos">
+                {{ duracion(p.minutos) }}
+                <span class="block text-[10px] opacity-75">{{ p.precio | number: '1.0-0' }}</span>
+              </button>
+            }
+          </div>
+          <label class="block text-xs font-medium text-slate-500">
+            Hora de inicio
+            <input type="datetime-local" [(ngModel)]="localInicio" name="l-inicio"
+              class="mt-1 block w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-800" />
+          </label>
+          <button type="button" (click)="reservarLocal()" [disabled]="guardandoLocal()"
+            class="w-full rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            {{ guardandoLocal() ? 'Reservando…' : 'Apartar consola' }}
+          </button>
+        </div>
       }
     </section>
 
@@ -98,12 +161,14 @@ function dia(iso: string): string {
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p class="font-semibold text-slate-900">#{{ r.id }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
-                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
+                <p class="text-sm text-slate-600">
+                  {{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
+                </p>
                 @if (yaEmpezo(r)) {
                   <p class="text-xs font-semibold text-red-600">Ya es la hora: su tiempo está corriendo desde las {{ hora(r.inicio) }}.</p>
                 }
               </div>
-              <p class="text-xl font-bold text-emerald-700 tabular-nums">{{ r.precio | number: '1.0-0' }} <span class="text-xs font-medium">pagado</span></p>
+              <p class="text-xl font-bold text-emerald-700 tabular-nums">{{ r.precio | number: '1.0-0' }} <span class="text-xs font-medium">{{ r.origen === 'local' ? 'paga al cerrar' : 'pagado' }}</span></p>
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
               <button type="button" (click)="iniciar(r)" [disabled]="procesando() === r.id"
@@ -184,6 +249,16 @@ export class ReservasPage implements OnInit, OnDestroy {
   )}`;
   whatsappLocal = '';
   minutosPagar = 30;
+  // Reservar en el local (clientes que llegan sin avisar)
+  readonly formLocal = signal(false);
+  readonly guardandoLocal = signal(false);
+  readonly consolas = signal<ConsolaPublica[]>([]);
+  readonly precios = signal(MINUTOS_RESERVA.map((minutos) => ({ minutos, precio: 0 })));
+  localPuesto: number | null = null;
+  localNombre = '';
+  localTelefono = '';
+  localMinutos = 120;
+  localInicio = aHoraLocal(Date.now());
 
   readonly hora = hora;
   readonly dia = dia;
@@ -228,10 +303,13 @@ export class ReservasPage implements OnInit, OnDestroy {
 
   async cargar(): Promise<void> {
     try {
-      const [lista, config] = await Promise.all([
+      const [lista, config, estado] = await Promise.all([
         this.reservas.listar(inicioDiaColombia(sumarDias(fechaColombia(), -7))),
         this.reservas.config(),
+        this.reservas.estadoPublico(),
       ]);
+      this.consolas.set(estado.consolas);
+      this.precios.set(estado.precios);
       this.lista.set(lista);
       if (!this.config()) {
         this.whatsappLocal = config.whatsapp ?? '';
@@ -329,6 +407,33 @@ export class ReservasPage implements OnInit, OnDestroy {
       this.config.set(await this.reservas.config());
     } catch (e) {
       this.toast.error(this.mensaje(e));
+    }
+  }
+
+  async reservarLocal(): Promise<void> {
+    if (!this.localPuesto) return this.toast.error('Elige la consola.');
+    if (this.localNombre.trim().length < 2) return this.toast.error('Escribe el nombre del cliente.');
+    if (!this.localInicio) return this.toast.error('Elige la hora de inicio.');
+    this.guardandoLocal.set(true);
+    try {
+      const r = await this.reservas.reservarLocal({
+        puestoId: this.localPuesto,
+        nombre: this.localNombre.trim(),
+        telefono: this.localTelefono.trim() || null,
+        inicio: new Date(deHoraLocal(this.localInicio)).toISOString(),
+        minutos: this.localMinutos,
+      });
+      this.toast.exito(`${this.nombrePuesto(r.puesto_id)} apartada para ${r.cliente_nombre}: ${dia(r.inicio)} ${hora(r.inicio)} – ${hora(finReserva(r))}.`);
+      this.localNombre = '';
+      this.localTelefono = '';
+      this.localPuesto = null;
+      this.localInicio = aHoraLocal(Date.now());
+      this.formLocal.set(false);
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensaje(e));
+    } finally {
+      this.guardandoLocal.set(false);
     }
   }
 

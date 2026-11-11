@@ -4819,3 +4819,106 @@ end;
 $$;
 revoke all on function public.iniciar_reserva(bigint) from public, anon;
 grant execute on function public.iniciar_reserva(bigint) to authenticated;
+
+-- ============================================================
+-- 41. RESERVAS HECHAS EN EL LOCAL (2026-11-11)
+-- ============================================================
+-- El trabajador o el admin apartan una consola para un cliente que esta en el local
+-- (reservar_local): queda confirmada de una vez (origen local) y se paga al cerrar la
+-- sesion. El celular es opcional. private.validar_horario_reserva revisa choques con
+-- reservas vigentes y con la sesion activa.
+
+alter table public.reservas
+  add column if not exists origen text not null default 'web' check (origen in ('web', 'local')),
+  add column if not exists creada_por uuid references public.profiles (id);
+-- En el local el celular es opcional.
+alter table public.reservas alter column cliente_telefono drop not null;
+
+-- Revisa que el horario este libre en esa consola: sin reservas vigentes que se crucen
+-- y sin una sesion activa que siga a esa hora (cronometrado no tiene hora de salida).
+create or replace function private.validar_horario_reserva(p_puesto_id bigint, p_inicio timestamptz, p_minutos int)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_fin_sesion timestamptz;
+begin
+  if not exists (select 1 from public.puestos where id = p_puesto_id and activo) then
+    raise exception 'Esa consola no está disponible';
+  end if;
+  select * into v_s from public.sesiones where puesto_id = p_puesto_id and estado = 'activa';
+  if v_s.id is not null then
+    v_fin_sesion := case when v_s.modalidad = 'conteo_regresivo' then private.fin_regresiva(v_s.id) end;
+    if v_fin_sesion is null or v_fin_sesion > p_inicio then
+      raise exception 'Esa consola está ocupada a esa hora. Elige otra consola u otra hora.';
+    end if;
+  end if;
+  if exists (
+    select 1 from public.reservas r
+    where r.puesto_id = p_puesto_id
+      and private.reserva_vigente(r.estado, r.created_at)
+      and tstzrange(r.inicio, r.inicio + make_interval(mins => r.minutos))
+          && tstzrange(p_inicio, p_inicio + make_interval(mins => p_minutos))
+  ) then
+    raise exception 'Esa consola ya está reservada en ese horario. Elige otra hora u otra consola.';
+  end if;
+end;
+$$;
+revoke all on function private.validar_horario_reserva(bigint, timestamptz, int) from public, anon;
+
+-- El trabajador (o el admin) aparta una consola para un cliente que esta en el local.
+-- Queda confirmada de una vez; se paga al cerrar la sesion en la Sala.
+create or replace function public.reservar_local(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_inicio timestamptz,
+  p_minutos int
+)
+returns public.reservas
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_tel text := nullif(private.normalizar_telefono(coalesce(p_cliente_telefono, '')), '');
+  v_r public.reservas;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para reservar'; end if;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe el nombre del cliente';
+  end if;
+  if v_tel is not null and (char_length(v_tel) < 7 or char_length(v_tel) > 15) then
+    raise exception 'El celular no es válido (o déjalo vacío)';
+  end if;
+  if p_minutos is null or p_minutos < 30 or p_minutos > 360 then
+    raise exception 'El tiempo va de 30 minutos a 6 horas';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '5 minutes' then
+    raise exception 'La hora de la reserva ya pasó';
+  end if;
+  if p_inicio > now() + interval '60 days' then
+    raise exception 'La fecha está demasiado lejos';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('reserva_puesto'), p_puesto_id::int);
+  perform private.validar_horario_reserva(p_puesto_id, p_inicio, p_minutos);
+
+  insert into public.reservas (
+    puesto_id, cliente_nombre, cliente_telefono, inicio, minutos, precio,
+    estado, origen, creada_por, confirmada_por, confirmada_en
+  ) values (
+    p_puesto_id, v_nombre, v_tel, p_inicio, p_minutos, private.precio_reserva(p_minutos),
+    'confirmada', 'local', auth.uid(), auth.uid(), now()
+  )
+  returning * into v_r;
+  return v_r;
+end;
+$$;
+revoke all on function public.reservar_local(bigint, text, text, timestamptz, int) from public, anon;
+grant execute on function public.reservar_local(bigint, text, text, timestamptz, int) to authenticated;

@@ -307,6 +307,23 @@ export class Sala implements OnInit, OnDestroy {
       if (regresivo && (!p.minutosInput || p.minutosInput <= 0)) {
         throw new Error('Indica cuántos minutos de conteo regresivo.');
       }
+      // No pisar una reserva: avisa si el tiempo de esta sesión se cruza con la próxima.
+      const reserva = this.proximaReserva(p.id);
+      if (reserva) {
+        const inicioReserva = new Date(reserva.inicio).getTime();
+        const choca = regresivo ? Date.now() + p.minutosInput * 60_000 > inicioReserva : true;
+        const libres = Math.max(0, Math.floor((inicioReserva - Date.now()) / 60_000));
+        if (
+          choca &&
+          !confirm(
+            `${p.nombre} está reservada ${this.textoReserva(reserva)}.\n` +
+              `Solo quedan ${formatearDuracion(libres)} libres antes de la reserva.\n¿Abrir la sesión de todas formas?`,
+          )
+        ) {
+          this.marcarProcesando(p.id, false);
+          return;
+        }
+      }
       await this.sesiones.abrirSesion({
         puestoId: p.id,
         clienteNombre: p.clienteInput.trim() || null,
