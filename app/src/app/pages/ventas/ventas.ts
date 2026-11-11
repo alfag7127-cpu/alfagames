@@ -21,7 +21,7 @@ type Rango = 'mes' | 'mesAnterior' | 'hoy' | 'ayer' | '7';
     <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-sky-100">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 class="font-semibold text-slate-900">{{ titulo() }}</h2>
-        <div class="flex rounded-xl bg-slate-200/70 p-1 text-sm font-medium">
+        <div class="flex flex-wrap rounded-xl bg-slate-200/70 p-1 text-sm font-medium">
           @for (r of rangos; track r.id) {
             <button type="button" (click)="elegirRango(r.id)" class="rounded-lg px-3 py-1 transition-colors"
               [class.bg-white]="rango() === r.id" [class.shadow-sm]="rango() === r.id"
@@ -65,15 +65,16 @@ type Rango = 'mes' | 'mesAnterior' | 'hoy' | 'ayer' | '7';
 export class Ventas implements OnInit, OnDestroy {
   readonly ventas = signal<VentaProducto[]>([]);
   private readonly productos = signal<Producto[]>([]);
-  readonly rango = signal<Rango | null>('mes');
+  readonly rango = signal<Rango | null>('hoy');
   readonly rangos: { id: Rango; txt: string }[] = [
-    { id: 'mes', txt: 'Este mes' },
-    { id: 'mesAnterior', txt: 'Mes anterior' },
     { id: 'hoy', txt: 'Hoy' },
     { id: 'ayer', txt: 'Ayer' },
-    { id: '7', txt: '7 días' },
+    { id: '7', txt: 'Semana' },
+    { id: 'mes', txt: 'Este mes' },
+    { id: 'mesAnterior', txt: 'Mes anterior' },
   ];
-  desde = inicioMes();
+  // Al entrar siempre muestra el día de hoy.
+  desde = fechaColombia();
   hasta = fechaColombia();
   /** Fechas que se están mostrando (las del último filtro aplicado). */
   private readonly filtro = signal({ desde: this.desde, hasta: this.hasta });
