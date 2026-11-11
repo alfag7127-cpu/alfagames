@@ -57,6 +57,9 @@ export interface PuestoConEstado {
   id: number;
   nombre: string;
   activo: boolean;
+  /** Mantenimiento, alquilada por fuera…: no se abren sesiones ni se reserva. */
+  fuera_servicio: boolean;
+  motivo_fuera: string | null;
   sesion_id: number | null;
   cliente_nombre: string | null;
   hora_inicio: string | null;

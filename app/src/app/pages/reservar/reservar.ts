@@ -76,13 +76,14 @@ function diaYHora(iso: string | number): string {
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 @for (c of estado()!.consolas; track c.id) {
                   <article class="rounded-2xl p-4 ring-2"
-                    [class.bg-emerald-500/10]="!c.ocupada" [class.ring-emerald-500/70]="!c.ocupada"
-                    [class.bg-red-500/10]="c.ocupada" [class.ring-red-500/70]="c.ocupada">
+                    [class.bg-emerald-500/10]="!c.ocupada && !c.fuera_servicio" [class.ring-emerald-500/70]="!c.ocupada && !c.fuera_servicio"
+                    [class.bg-red-500/10]="c.ocupada" [class.ring-red-500/70]="c.ocupada"
+                    [class.bg-white/5]="c.fuera_servicio && !c.ocupada" [class.ring-slate-600]="c.fuera_servicio && !c.ocupada" [class.opacity-70]="c.fuera_servicio && !c.ocupada">
                     <div class="flex items-center justify-between gap-2">
                       <h2 class="text-lg font-bold">🎮 {{ c.nombre }}</h2>
                       <span class="rounded-full px-2.5 py-0.5 text-xs font-bold"
-                        [class.bg-emerald-500]="!c.ocupada" [class.bg-red-600]="c.ocupada">
-                        {{ c.ocupada ? 'Ocupada' : 'Disponible' }}
+                        [class.bg-emerald-500]="!c.ocupada && !c.fuera_servicio" [class.bg-red-600]="c.ocupada" [class.bg-slate-600]="c.fuera_servicio && !c.ocupada">
+                        {{ c.ocupada ? 'Ocupada' : c.fuera_servicio ? 'Fuera de servicio' : 'Disponible' }}
                       </span>
                     </div>
                     @if (c.ocupada) {
@@ -100,6 +101,8 @@ function diaYHora(iso: string | number): string {
                         <p class="text-sm text-red-100">Lleva jugando <b>{{ duracion(c.minutos_jugados) }}</b></p>
                         <p class="mt-1 text-xs text-red-200/80">No se puede reservar hasta saber a qué hora termina.</p>
                       }
+                    } @else if (c.fuera_servicio) {
+                      <p class="mt-2 text-sm text-slate-300">No disponible por ahora.</p>
                     } @else {
                       <button type="button" (click)="elegir(c)"
                         class="mt-3 w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">

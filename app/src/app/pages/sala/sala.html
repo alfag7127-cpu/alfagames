@@ -13,7 +13,9 @@
   @for (p of puestos(); track p.id) {
     <article
       class="rounded-2xl border bg-white shadow-sm ring-1 ring-black/5 transition-all p-5"
-      [class.border-emerald-200]="!p.sesion_id"
+      [class.border-emerald-200]="!p.sesion_id && !p.fuera_servicio"
+      [class.border-slate-300]="p.fuera_servicio"
+      [class.bg-slate-100]="p.fuera_servicio"
       [class.border-amber-300]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
       [class.border-amber-500]="nivelAlerta(p) === 'aviso'"
       [class.border-red-500]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
@@ -31,8 +33,10 @@
         </div>
         <span
           class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-          [class.bg-emerald-100]="!p.sesion_id"
-          [class.text-emerald-700]="!p.sesion_id"
+          [class.bg-emerald-100]="!p.sesion_id && !p.fuera_servicio"
+          [class.text-emerald-700]="!p.sesion_id && !p.fuera_servicio"
+          [class.bg-slate-200]="p.fuera_servicio"
+          [class.text-slate-600]="p.fuera_servicio"
           [class.bg-amber-100]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
           [class.text-amber-700]="!!p.sesion_id && nivelAlerta(p) === 'normal'"
           [class.bg-red-100]="nivelAlerta(p) === 'aviso' || nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
@@ -40,11 +44,12 @@
         >
           <span
             class="h-1.5 w-1.5 rounded-full"
-            [class.bg-emerald-500]="!p.sesion_id"
+            [class.bg-emerald-500]="!p.sesion_id && !p.fuera_servicio"
+            [class.bg-slate-400]="p.fuera_servicio"
             [class.bg-amber-500]="!!p.sesion_id && nivelAlerta(p) !== 'vencido' && nivelAlerta(p) !== 'critico'"
             [class.bg-red-500]="nivelAlerta(p) === 'critico' || nivelAlerta(p) === 'vencido'"
           ></span>
-          {{ p.sesion_id ? 'Ocupado' : 'Libre' }}
+          {{ p.sesion_id ? 'Ocupado' : p.fuera_servicio ? 'Fuera de servicio' : 'Libre' }}
         </span>
       </div>
 
@@ -57,8 +62,19 @@
         </a>
       }
 
+      <!-- ═══ FUERA DE SERVICIO ═══ -->
+      @if (p.fuera_servicio && !p.sesion_id) {
+        <p class="mb-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
+          🔧 {{ p.motivo_fuera || 'Fuera de servicio' }}
+        </p>
+        <button type="button" (click)="volverAServicio(p)" [disabled]="p.procesando"
+          class="w-full rounded-xl bg-emerald-600 text-white text-sm font-medium py-2.5 hover:bg-emerald-700 disabled:opacity-50">
+          ✅ Volver a servicio
+        </button>
+      }
+
       <!-- ═══ LIBRE ═══ -->
-      @if (!p.sesion_id) {
+      @if (!p.sesion_id && !p.fuera_servicio) {
         @if (!p.formAbierto) {
           <button
             (click)="toggleForm(p.id)"
@@ -68,6 +84,23 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14" />
             </svg>
             Abrir sesión
+          </button>
+          @if (p.servicioAbierto) {
+            <div class="mt-2 rounded-lg bg-slate-50 p-2 space-y-1.5">
+              <p class="text-xs text-slate-600">¿Por qué queda fuera de servicio?</p>
+              <div class="grid grid-cols-2 gap-1.5">
+                @for (m of motivosFuera; track m) {
+                  <button type="button" (click)="ponerFueraServicio(p, m)" [disabled]="p.procesando"
+                    class="rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">{{ m }}</button>
+                }
+                <button type="button" (click)="ponerFueraServicio(p, null)" [disabled]="p.procesando"
+                  class="rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">Otro…</button>
+              </div>
+            </div>
+          }
+          <button type="button" (click)="p.servicioAbierto = !p.servicioAbierto"
+            class="w-full mt-2 text-xs text-slate-500 hover:text-slate-700 hover:underline">
+            {{ p.servicioAbierto ? 'Cancelar' : '🔧 Poner fuera de servicio' }}
           </button>
         } @else {
           <div class="space-y-3">

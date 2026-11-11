@@ -83,6 +83,16 @@ export class SesionesService {
     return data as Sesion;
   }
 
+  /** Pone o quita una consola de servicio (mantenimiento, alquilada por fuera…). */
+  async cambiarServicio(puestoId: number, fuera: boolean, motivo: string | null): Promise<void> {
+    const { error } = await this.supabase.client.rpc('cambiar_servicio_puesto', {
+      p_puesto_id: puestoId,
+      p_fuera: fuera,
+      p_motivo: motivo,
+    });
+    if (error) throw error;
+  }
+
   /** Pausa el tiempo de la sesión: mientras dure no se cobra. */
   async pausarSesion(sesionId: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('pausar_sesion', { p_sesion_id: sesionId });

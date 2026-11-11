@@ -39,6 +39,8 @@ export interface ConsolaPublica {
   id: number;
   nombre: string;
   ocupada: boolean;
+  fuera_servicio: boolean;
+  motivo_fuera: string | null;
   modalidad: 'cronometrado' | 'conteo_regresivo' | null;
   minutos_pedidos: number | null;
   minutos_jugados: number | null;

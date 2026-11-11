@@ -4973,3 +4973,169 @@ end;
 $$;
 revoke all on function public.transferir_reserva(bigint, bigint, boolean) from public, anon;
 grant execute on function public.transferir_reserva(bigint, bigint, boolean) to authenticated;
+
+-- ============================================================
+-- 43. CONSOLAS FUERA DE SERVICIO (2026-11-11)
+-- ============================================================
+-- Una consola puede quedar fuera de servicio (mantenimiento, alquilada por fuera del
+-- local...): cambiar_servicio_puesto (admin y trabajador; no si tiene sesion abierta).
+-- Los triggers impiden abrir sesiones, transferirlas o reservar esa consola. vista_puestos
+-- y reservas_publico exponen fuera_servicio y motivo_fuera.
+
+alter table public.puestos
+  add column if not exists fuera_servicio boolean not null default false,
+  add column if not exists motivo_fuera text;
+
+-- Poner o quitar una consola de servicio (mantenimiento, alquilada por fuera...). Admin y trabajador.
+create or replace function public.cambiar_servicio_puesto(p_puesto_id bigint, p_fuera boolean, p_motivo text)
+returns public.puestos
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_p public.puestos;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para cambiar el estado de las consolas'; end if;
+  if p_fuera and exists (select 1 from public.sesiones where puesto_id = p_puesto_id and estado = 'activa') then
+    raise exception 'La consola tiene una sesión abierta: ciérrala o transfiérela primero';
+  end if;
+  update public.puestos
+  set fuera_servicio = coalesce(p_fuera, false),
+      motivo_fuera = case when p_fuera then nullif(trim(coalesce(p_motivo, '')), '') end
+  where id = p_puesto_id
+  returning * into v_p;
+  if v_p.id is null then raise exception 'La consola % no existe', p_puesto_id; end if;
+  return v_p;
+end;
+$$;
+revoke all on function public.cambiar_servicio_puesto(bigint, boolean, text) from public, anon;
+grant execute on function public.cambiar_servicio_puesto(bigint, boolean, text) to authenticated;
+
+-- No se abren sesiones ni se reservan consolas fuera de servicio (cubre todas las RPC).
+create or replace function private.bloquear_fuera_servicio()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.puestos where id = new.puesto_id and fuera_servicio) then
+    raise exception 'Esa consola está fuera de servicio';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists sesiones_fuera_servicio on public.sesiones;
+create trigger sesiones_fuera_servicio
+  before insert or update of puesto_id on public.sesiones
+  for each row when (new.estado = 'activa')
+  execute function private.bloquear_fuera_servicio();
+
+drop trigger if exists reservas_fuera_servicio on public.reservas;
+create trigger reservas_fuera_servicio
+  before insert or update of puesto_id on public.reservas
+  for each row execute function private.bloquear_fuera_servicio();
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles,
+  s.pausada,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', pa.desde, 'hasta', pa.hasta) order by pa.desde)
+      from public.sesion_pausas pa
+      where pa.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as pausas,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', pr.nombre, 'cantidad', v.cantidad, 'total', v.total) order by v.created_at)
+      from public.ventas_productos v
+      join public.productos pr on pr.id = v.producto_id
+      where v.sesion_id = s.id and v.estado = 'vendida'
+    ),
+    '[]'::jsonb
+  ) as consumos,
+  coalesce(
+    (select sum(v.total) from public.ventas_productos v where v.sesion_id = s.id and v.estado = 'vendida'),
+    0
+  ) as total_consumos,
+  p.fuera_servicio,
+  p.motivo_fuera
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;
+create or replace function public.reservas_publico()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.reservas_config;
+begin
+  select * into v_cfg from public.reservas_config where id = 1;
+  return jsonb_build_object(
+    'ahora', now(),
+    'qr_path', v_cfg.qr_path,
+    'whatsapp', v_cfg.whatsapp,
+    'minutos_para_pagar', v_cfg.minutos_para_pagar,
+    'dias_maximos', v_cfg.dias_maximos,
+    'precios', (
+      select jsonb_agg(jsonb_build_object('minutos', m, 'precio', private.precio_reserva(m)) order by m)
+      from unnest(array[30, 60, 90, 120, 180, 240, 300, 360]) m
+    ),
+    'consolas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', p.id,
+        'nombre', p.nombre,
+        'ocupada', s.id is not null,
+        'fuera_servicio', p.fuera_servicio,
+        'motivo_fuera', p.motivo_fuera,
+        'modalidad', s.modalidad,
+        'minutos_pedidos', s.minutos_asignados,
+        'minutos_jugados', case when s.id is null then null
+          else round(private.minutos_efectivos(s.id, s.hora_inicio, now())) end,
+        'libre_en', case when s.modalidad = 'conteo_regresivo' then private.fin_regresiva(s.id) end,
+        'reservas', coalesce((
+          select jsonb_agg(jsonb_build_object('inicio', r.inicio, 'fin', r.inicio + make_interval(mins => r.minutos)) order by r.inicio)
+          from public.reservas r
+          where r.puesto_id = p.id
+            and private.reserva_vigente(r.estado, r.created_at)
+            and r.inicio + make_interval(mins => r.minutos) > now()
+        ), '[]'::jsonb)
+      ) order by p.id)
+      from public.puestos p
+      left join public.sesiones s on s.puesto_id = p.id and s.estado = 'activa'
+      where p.activo
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.reservas_publico() from public;
+grant execute on function public.reservas_publico() to anon, authenticated;

@@ -50,6 +50,8 @@ interface PuestoVM extends PuestoConEstado {
   productoAbierto: boolean;
   productoId: number | null;
   productoCantidad: number;
+  // Poner fuera de servicio (elegir motivo)
+  servicioAbierto: boolean;
   procesando: boolean;
 }
 
@@ -260,6 +262,7 @@ export class Sala implements OnInit, OnDestroy {
             productoAbierto: false,
             productoId: null,
             productoCantidad: 1,
+            servicioAbierto: false,
             procesando: false,
           };
         }),
@@ -439,7 +442,7 @@ export class Sala implements OnInit, OnDestroy {
 
   /** Consolas libres a las que se puede mover la sesión de `p`. */
   consolasLibres(p: PuestoVM): PuestoVM[] {
-    return this.puestos().filter((x) => !x.sesion_id && x.id !== p.id);
+    return this.puestos().filter((x) => !x.sesion_id && !x.fuera_servicio && x.id !== p.id);
   }
 
   async transferir(p: PuestoVM): Promise<void> {
@@ -478,6 +481,42 @@ export class Sala implements OnInit, OnDestroy {
       this.toast.exito(
         `${p.nombre}: +${minutos} min. Nuevo total $${(sesion.precio_total ?? 0).toLocaleString('es-CO')} COP.`,
       );
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  readonly motivosFuera = ['Mantenimiento', 'Alquilada por fuera', 'Dañada'];
+
+  /** Mantenimiento, alquilada por fuera…: no se abren sesiones ni se reserva hasta volver a servicio. */
+  async ponerFueraServicio(p: PuestoVM, motivo: string | null): Promise<void> {
+    const texto = motivo ?? prompt('Motivo (ej. Mantenimiento, alquilada a Juan hasta el lunes):')?.trim();
+    if (texto == null) return;
+    const reserva = this.proximaReserva(p.id);
+    if (reserva && !confirm(`${p.nombre} tiene una reserva ${this.textoReserva(reserva)}.
+Muévela a otra consola en Reservas (⇄ Mover). ¿Ponerla fuera de servicio de todas formas?`)) {
+      return;
+    }
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.cambiarServicio(p.id, true, texto || null);
+      await this.cargar();
+      this.toast.info(`${p.nombre} quedó fuera de servicio.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
+  async volverAServicio(p: PuestoVM): Promise<void> {
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.cambiarServicio(p.id, false, null);
+      await this.cargar();
+      this.toast.exito(`${p.nombre} volvió a servicio.`);
     } catch (e) {
       this.toast.error(this.mensajeError(e));
     } finally {

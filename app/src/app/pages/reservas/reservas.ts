@@ -79,13 +79,13 @@ function dia(iso: string): string {
         <div class="mt-3 space-y-3">
           <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
             @for (c of consolas(); track c.id) {
-              <button type="button" (click)="elegirLocal(c)"
+              <button type="button" (click)="elegirLocal(c)" [disabled]="c.fuera_servicio" [class.opacity-40]="c.fuera_servicio"
                 class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
                 [class.bg-indigo-600]="localPuesto === c.id" [class.text-white]="localPuesto === c.id" [class.border-indigo-600]="localPuesto === c.id"
                 [class.border-slate-300]="localPuesto !== c.id"
                 [class.text-red-700]="localPuesto !== c.id && c.ocupada" [class.text-emerald-700]="localPuesto !== c.id && !c.ocupada">
                 {{ c.nombre }}
-                <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
               </button>
             }
           </div>
@@ -153,13 +153,13 @@ function dia(iso: string): string {
                 <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                   @for (c of consolas(); track c.id) {
                     @if (c.id !== r.puesto_id) {
-                      <button type="button" (click)="elegirDestino(r, c)"
+                      <button type="button" (click)="elegirDestino(r, c)" [disabled]="c.fuera_servicio" [class.opacity-40]="c.fuera_servicio"
                         class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
                         [class.bg-indigo-600]="destino === c.id" [class.text-white]="destino === c.id" [class.border-indigo-600]="destino === c.id"
                         [class.border-slate-300]="destino !== c.id"
                         [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
                         {{ c.nombre }}
-                        <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                        <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
                       </button>
                     }
                   }
@@ -219,13 +219,13 @@ function dia(iso: string): string {
                 <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                   @for (c of consolas(); track c.id) {
                     @if (c.id !== r.puesto_id) {
-                      <button type="button" (click)="elegirDestino(r, c)"
+                      <button type="button" (click)="elegirDestino(r, c)" [disabled]="c.fuera_servicio" [class.opacity-40]="c.fuera_servicio"
                         class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
                         [class.bg-indigo-600]="destino === c.id" [class.text-white]="destino === c.id" [class.border-indigo-600]="destino === c.id"
                         [class.border-slate-300]="destino !== c.id"
                         [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
                         {{ c.nombre }}
-                        <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                        <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
                       </button>
                     }
                   }
