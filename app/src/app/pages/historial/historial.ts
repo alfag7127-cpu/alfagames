@@ -32,7 +32,7 @@ interface GrupoDia {
   neto: number;
 }
 
-type Rango = 'mes' | 'mesAnterior' | 'hoy' | '7' | '30';
+type Rango = 'hoy' | 'ayer' | '7' | 'mes' | 'mesAnterior';
 
 @Component({
   selector: 'app-historial',
@@ -47,8 +47,9 @@ export class Historial implements OnInit {
   readonly nombresProductos = signal<Record<number, string>>({});
   readonly nombresUsuarios = signal<Record<string, string>>({});
   readonly cargando = signal(false);
-  readonly rango = signal<Rango | null>('mes');
-  desde = inicioMes();
+  readonly rango = signal<Rango | null>('hoy');
+  // Al entrar siempre muestra el día de hoy.
+  desde = fechaColombia();
   hasta = fechaColombia();
 
   private readonly finalizadas = computed(() => this.sesiones().filter((s) => s.estado === 'finalizada'));
@@ -60,6 +61,15 @@ export class Historial implements OnInit {
   readonly totalGastos = computed(() => this.gastos().reduce((t, g) => t + g.monto, 0));
   /** Lo que queda del día: cobrado (sala + productos) menos gastos de la sala. */
   readonly netoPeriodo = computed(() => this.totalPeriodo() - this.totalGastos());
+  /** Cómo pagaron las sesiones cobradas (tiempo + productos de la sesión). */
+  readonly pagos = computed(() => {
+    const conPago = this.finalizadas().filter((s) => s.pago_efectivo != null || s.pago_transferencia != null);
+    return {
+      efectivo: conPago.reduce((t, s) => t + (s.pago_efectivo ?? 0), 0),
+      transferencia: conPago.reduce((t, s) => t + (s.pago_transferencia ?? 0), 0),
+      sinRegistrar: this.finalizadas().length - conPago.length,
+    };
+  });
   readonly horasPeriodo = computed(() => this.finalizadas().reduce((sum, s) => sum + (s.horas_cobradas ?? 0), 0));
   readonly ticketPromedio = computed(() =>
     this.finalizadas().length ? Math.round(this.totalSala() / this.finalizadas().length) : 0,
@@ -123,7 +133,8 @@ export class Historial implements OnInit {
       return void this.cargar();
     }
     this.hasta = fechaColombia();
-    this.desde = r === 'mes' ? inicioMes(this.hasta) : r === 'hoy' ? this.hasta : sumarDias(this.hasta, r === '7' ? -6 : -29);
+    if (r === 'ayer') this.hasta = sumarDias(this.hasta, -1);
+    this.desde = r === 'mes' ? inicioMes(this.hasta) : r === '7' ? sumarDias(this.hasta, -6) : this.hasta;
     this.cargar();
   }
 
@@ -188,6 +199,17 @@ export class Historial implements OnInit {
   /** Productos cargados a la cuenta de una sesión. */
   productosDeSesion(sesionId: number): VentaProducto[] {
     return this.ventas().filter((v) => v.sesion_id === sesionId && v.estado === 'vendida');
+  }
+
+  /** Forma de pago de una sesión cobrada: "💵 Efectivo", "📲 Transferencia" o el reparto mixto. */
+  textoPago(s: Sesion): string | null {
+    if (s.estado !== 'finalizada' || (s.pago_efectivo == null && s.pago_transferencia == null)) return null;
+    const efectivo = s.pago_efectivo ?? 0;
+    const transferencia = s.pago_transferencia ?? 0;
+    if (efectivo && transferencia) {
+      return `💵 ${efectivo.toLocaleString('es-CO')} + 📲 ${transferencia.toLocaleString('es-CO')}`;
+    }
+    return transferencia ? '📲 Transferencia' : '💵 Efectivo';
   }
 
   totalProductosSesion(sesionId: number): number {

@@ -1,3 +1,4 @@
+import { FormaPagoSala, PagoSala, pagoSala } from '../../shared/pago-sala';
 import { PesosDirective } from '../../shared/pesos.directive';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ProductosService } from '../../core/productos.service';
@@ -33,6 +34,9 @@ interface PuestoVM extends PuestoConEstado {
   // Al cobrar: cambiar el precio sugerido por otro
   cambiarPrecio: boolean;
   precioFinalInput: number | null;
+  // Al cobrar: cómo pagó (efectivo, transferencia o mixto)
+  formaPago: FormaPagoSala | null;
+  pagoTransferencia: number | null;
   // Transferir la sesión a otra consola
   transferirAbierto: boolean;
   destinoInput: number | null;
@@ -80,7 +84,7 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 
 @Component({
   selector: 'app-sala',
-  imports: [DuracionPipe, FormsModule, DecimalPipe, PesosDirective],
+  imports: [DuracionPipe, FormsModule, DecimalPipe, PesosDirective, PagoSala],
   templateUrl: './sala.html',
 })
 export class Sala implements OnInit, OnDestroy {
@@ -202,6 +206,8 @@ export class Sala implements OnInit, OnDestroy {
             precioManualInput: null,
             cambiarPrecio: false,
             precioFinalInput: null,
+            formaPago: null,
+            pagoTransferencia: null,
             transferirAbierto: false,
             destinoInput: null,
             cambioModoAbierto: false,
@@ -220,7 +226,9 @@ export class Sala implements OnInit, OnDestroy {
 
   toggleForm(puestoId: number): void {
     this.puestos.update((list) =>
-      list.map((p) => (p.id === puestoId ? { ...p, formAbierto: !p.formAbierto } : p)),
+      list.map((p) =>
+        p.id === puestoId ? { ...p, formAbierto: !p.formAbierto, formaPago: null, pagoTransferencia: null } : p,
+      ),
     );
   }
 
@@ -404,6 +412,23 @@ export class Sala implements OnInit, OnDestroy {
     }
   }
 
+  /** Conteo regresivo: el cliente pide menos tiempo; el precio se recalcula sobre el total. */
+  async reducir(p: PuestoVM, minutos: number): Promise<void> {
+    if (!p.sesion_id) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      const sesion = await this.sesiones.reducirSesion(p.sesion_id, minutos);
+      await this.cargar();
+      this.toast.exito(
+        `${p.nombre}: -${minutos} min. Nuevo total $${(sesion.precio_total ?? 0).toLocaleString('es-CO')} COP.`,
+      );
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
   async cerrar(p: PuestoVM): Promise<void> {
     if (!p.sesion_id) return;
     this.marcarProcesando(p.id, true);
@@ -415,7 +440,11 @@ export class Sala implements OnInit, OnDestroy {
         }
         precioFinal = p.precioFinalInput;
       }
-      const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioFinal);
+      const pago = pagoSala(this.totalACobrar(p), p.formaPago, p.pagoTransferencia);
+      if (!pago) {
+        throw new Error('Indica cómo pagó: Efectivo, Transferencia o Mixto (la transferencia no puede pasar del total).');
+      }
+      const sesion = await this.sesiones.cerrarSesion(p.sesion_id, precioFinal, pago);
       await this.cargar();
       const total = sesion.precio_total ?? 0;
       const productos = p.total_consumos ?? 0;

@@ -3,8 +3,8 @@
     <h2 class="text-lg font-bold text-slate-900">Historial</h2>
     <p class="text-sm text-slate-500">Sesiones por día, en hora de Colombia</p>
   </div>
-  <div class="flex rounded-xl bg-slate-200/70 p-1 text-sm font-medium">
-    @for (r of [{ id: 'mes', txt: 'Este mes' }, { id: 'mesAnterior', txt: 'Mes anterior' }, { id: 'hoy', txt: 'Hoy' }, { id: '7', txt: '7 días' }, { id: '30', txt: '30 días' }]; track r.id) {
+  <div class="flex flex-wrap rounded-xl bg-slate-200/70 p-1 text-sm font-medium">
+    @for (r of [{ id: 'hoy', txt: 'Hoy' }, { id: 'ayer', txt: 'Ayer' }, { id: '7', txt: 'Semana' }, { id: 'mes', txt: 'Este mes' }, { id: 'mesAnterior', txt: 'Mes anterior' }]; track r.id) {
       <button
         (click)="elegirRango($any(r.id))"
         class="rounded-lg px-3 py-1.5 transition-colors"
@@ -60,6 +60,24 @@
     <p class="text-[11px] uppercase tracking-wide text-slate-500">Horas cobradas</p>
     <p class="text-2xl font-bold text-slate-900">{{ horasPeriodo() | duracion: 'horas' }}</p>
   </div>
+</div>
+
+<!-- Cómo pagaron las sesiones cobradas -->
+<div class="grid grid-cols-2 gap-3 mb-5">
+  <div class="rounded-xl bg-emerald-50 ring-1 ring-emerald-100 p-3">
+    <p class="text-[11px] uppercase tracking-wide text-emerald-700">💵 Efectivo</p>
+    <p class="text-xl font-bold text-emerald-900 tabular-nums">{{ pagos().efectivo | number: '1.0-0' }}</p>
+  </div>
+  <div class="rounded-xl bg-sky-50 ring-1 ring-sky-100 p-3">
+    <p class="text-[11px] uppercase tracking-wide text-sky-700">📲 Transferencia</p>
+    <p class="text-xl font-bold text-sky-900 tabular-nums">{{ pagos().transferencia | number: '1.0-0' }}</p>
+  </div>
+  <p class="col-span-2 -mt-1 text-xs text-slate-500">
+    Lo cobrado al cerrar cada sesión (tiempo + productos cargados a la consola).
+    @if (pagos().sinRegistrar) {
+      {{ pagos().sinRegistrar }} sesi{{ pagos().sinRegistrar === 1 ? 'ón cobrada' : 'ones cobradas' }} antes de registrar la forma de pago.
+    }
+  </p>
 </div>
 
 <!-- Sesiones por día -->
@@ -147,6 +165,9 @@
                     sugerido {{ s.precio_sugerido | number: '1.0-0' }}
                   </span>
                 }
+                @if (textoPago(s); as tp) {
+                  <span class="block text-[11px] font-medium text-slate-500 whitespace-nowrap">{{ tp }}</span>
+                }
               </td>
               <td class="px-4 py-2.5">
                 <span
@@ -200,6 +221,9 @@
             </div>
             <div class="text-right shrink-0">
               <p class="font-bold text-slate-900 tabular-nums">{{ s.precio_total != null ? (s.precio_total | number: '1.0-0') : '—' }}</p>
+              @if (textoPago(s); as tp) {
+                <p class="text-[11px] text-slate-500">{{ tp }}</p>
+              }
               <p class="text-[11px] capitalize"
                 [class.text-emerald-600]="s.estado === 'finalizada'"
                 [class.text-amber-600]="s.estado === 'activa'"

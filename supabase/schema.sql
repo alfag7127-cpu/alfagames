@@ -4393,3 +4393,109 @@ as $$
   select public.editar_alquiler(p_alquiler_id, p_cliente_nombre, p_cliente_telefono, p_cliente_direccion, p_notas,
     p_inicio, p_fin_pactado, p_precio_total, p_pago_llave, p_pago_efectivo, null::timestamptz);
 $$;
+
+-- ============================================================
+-- 39. SALA: FORMA DE PAGO AL COBRAR Y QUITAR TIEMPO (2026-11-11)
+-- ============================================================
+-- Al cobrar se registra como pago: efectivo, transferencia o mixto. Cubre todo
+-- lo cobrado al cerrar (tiempo + productos cargados a la sesion). Nueva version de
+-- cerrar_sesion con 4 parametros, sin defaults (no choca con la de 2, que queda para
+-- clientes viejos). El monto que llega en null es "el resto": el total exacto lo
+-- calcula el servidor al cerrar (en cronometrado puede cambiar frente a la vista previa).
+-- reducir_sesion: quita minutos a un conteo regresivo (lo contrario de extender_sesion).
+
+alter table public.sesiones
+  add column if not exists pago_efectivo numeric(12, 0),
+  add column if not exists pago_transferencia numeric(12, 0);
+
+create or replace function public.cerrar_sesion(
+  p_sesion_id bigint,
+  p_precio_final numeric,
+  p_pago_efectivo numeric,
+  p_pago_transferencia numeric
+)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+  v_consumos numeric;
+  v_total numeric;
+  v_efectivo numeric;
+  v_transferencia numeric;
+begin
+  if p_pago_efectivo is null and p_pago_transferencia is null then
+    raise exception 'Indica cómo pagó: efectivo, transferencia o mixto';
+  end if;
+  if coalesce(p_pago_efectivo, 0) < 0 or coalesce(p_pago_transferencia, 0) < 0 then
+    raise exception 'Los montos del pago no pueden ser negativos';
+  end if;
+
+  v_s := public.cerrar_sesion(p_sesion_id, p_precio_final);
+
+  select coalesce(sum(total), 0) into v_consumos
+  from public.ventas_productos
+  where sesion_id = p_sesion_id and estado = 'vendida';
+  v_total := coalesce(v_s.precio_total, 0) + v_consumos;
+
+  -- El monto que llega en null es "el resto" (el total exacto lo calcula el servidor al cerrar).
+  v_efectivo := coalesce(p_pago_efectivo, v_total - p_pago_transferencia);
+  v_transferencia := coalesce(p_pago_transferencia, v_total - p_pago_efectivo);
+
+  if v_efectivo < 0 or v_transferencia < 0 or v_efectivo + v_transferencia <> v_total then
+    raise exception 'El pago (efectivo % + transferencia %) no cuadra con el total a cobrar (%)',
+      v_efectivo, v_transferencia, v_total;
+  end if;
+
+  update public.sesiones
+  set pago_efectivo = v_efectivo,
+      pago_transferencia = v_transferencia
+  where id = p_sesion_id
+  returning * into v_s;
+
+  return v_s;
+end;
+$$;
+
+revoke all on function public.cerrar_sesion(bigint, numeric, numeric, numeric) from public, anon;
+grant execute on function public.cerrar_sesion(bigint, numeric, numeric, numeric) to authenticated;
+-- Conteo regresivo: quitar tiempo (lo contrario de extender_sesion). El precio se recalcula.
+create or replace function public.reducir_sesion(p_sesion_id bigint, p_minutos int)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  if p_minutos is null or p_minutos <= 0 then
+    raise exception 'Los minutos a quitar deben ser mayores a 0';
+  end if;
+
+  select * into v_s from public.sesiones
+  where id = p_sesion_id and estado = 'activa' and modalidad = 'conteo_regresivo';
+  if v_s.id is null then
+    raise exception 'La sesion % no es un conteo regresivo activo', p_sesion_id;
+  end if;
+  if v_s.minutos_asignados - p_minutos <= 0 then
+    raise exception 'No se puede quitar ese tiempo: la sesion tiene % min pactados', v_s.minutos_asignados;
+  end if;
+
+  update public.sesiones
+  set minutos_asignados = minutos_asignados - p_minutos
+  where id = p_sesion_id and estado = 'activa' and modalidad = 'conteo_regresivo'
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'No tienes permiso sobre la sesion %', p_sesion_id;
+  end if;
+
+  perform private.recalcular_regresiva(p_sesion_id);
+
+  select * into v_s from public.sesiones where id = p_sesion_id;
+  return v_s;
+end;
+$$;
+
+revoke all on function public.reducir_sesion(bigint, int) from public, anon;
+grant execute on function public.reducir_sesion(bigint, int) to authenticated;

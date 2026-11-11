@@ -418,7 +418,18 @@
 
         @if (p.modalidad === 'conteo_regresivo') {
           <div class="flex items-center gap-1.5 mb-3">
-            <span class="text-xs text-slate-500 mr-auto">Extender tiempo</span>
+            <span class="text-xs text-slate-500 mr-auto">Tiempo</span>
+            @for (menos of [60, 30]; track menos) {
+              <button
+                type="button"
+                (click)="reducir(p, menos)"
+                [disabled]="p.procesando || (p.minutos_asignados ?? 0) <= menos"
+                title="Quitar tiempo (el precio se recalcula)"
+                class="rounded-lg border border-rose-200 bg-rose-50 text-xs font-medium text-rose-700 px-2 py-1 hover:bg-rose-100 disabled:opacity-40"
+              >
+                −{{ menos | duracion }}
+              </button>
+            }
             @for (extra of [30, 60]; track extra) {
               <button
                 type="button"
@@ -474,6 +485,13 @@
                 />
               </label>
             }
+
+            <app-pago-sala
+              [total]="totalACobrar(p)"
+              [nombre]="'sala-' + p.id"
+              [(forma)]="p.formaPago"
+              [(transferencia)]="p.pagoTransferencia"
+            />
 
             <div class="flex gap-2">
               <button

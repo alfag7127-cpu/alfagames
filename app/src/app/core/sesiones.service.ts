@@ -106,6 +106,16 @@ export class SesionesService {
     return data as Sesion;
   }
 
+  /** Conteo regresivo: quita minutos y el servidor recalcula el precio sobre el total. */
+  async reducirSesion(sesionId: number, minutos: number): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('reducir_sesion', {
+      p_sesion_id: sesionId,
+      p_minutos: minutos,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
   /** Conteo regresivo: suma minutos y el servidor recalcula el precio sobre el total. */
   async extenderSesion(sesionId: number, minutos: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('extender_sesion', {
@@ -122,10 +132,17 @@ export class SesionesService {
    * de verdad financiera. El servidor guarda su precio sugerido; si `precioFinal`
    * viene, es lo que se cobra (quien cobra puede ajustar el precio según la situación).
    */
-  async cerrarSesion(sesionId: number, precioFinal: number | null): Promise<Sesion> {
+  async cerrarSesion(
+    sesionId: number,
+    precioFinal: number | null,
+    pago: { efectivo: number | null; transferencia: number | null },
+  ): Promise<Sesion> {
+    // El monto en null es "el resto" del total que calcula el servidor.
     const { data, error } = await this.supabase.client.rpc('cerrar_sesion', {
       p_sesion_id: sesionId,
       p_precio_final: precioFinal,
+      p_pago_efectivo: pago.efectivo,
+      p_pago_transferencia: pago.transferencia,
     });
     if (error) throw error;
     return data as Sesion;
