@@ -122,7 +122,7 @@ Negocio aparte de la sala: el cliente se lleva la consola a su casa.
   | PS4 | 4 horas | $30.000 |
   | PS4 | 10 horas | $40.000 |
   | PS4 | 24 horas | $50.000 |
-  | PS4 | La noche (7 PM a 9 AM) | $30.000 |
+  | PS4 | La noche (7 PM a 9 AM) | $40.000 |
   | PS5 | 4 horas | $30.000 |
   | PS5 | 10 horas | $40.000 |
   | PS5 | 24 horas | $75.000 |
