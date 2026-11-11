@@ -80,6 +80,11 @@
     </div>
   }
 
+  <!-- Aviso de reserva nueva desde el enlace público (Sala: admin y trabajador) -->
+  @if (auth.puedeSala()) {
+    <app-avisos-reservas />
+  }
+
   <!-- Avisos emergentes del alquiler (alquilada / recoger), en cualquier pantalla -->
   @if (auth.puedeAlquiler()) {
     <app-avisos-alquiler />

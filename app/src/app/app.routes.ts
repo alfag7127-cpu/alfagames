@@ -10,6 +10,8 @@ import { Sala } from './pages/sala/sala';
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
+  // Página pública (sin login): los clientes reservan su consola desde el enlace que se comparte por WhatsApp.
+  { path: 'reservar', loadComponent: () => import('./pages/reservar/reservar').then((m) => m.Reservar) },
   {
     path: '',
     component: Shell,
@@ -56,6 +58,11 @@ export const routes: Routes = [
         path: 'usuarios',
         canActivate: [adminGuard],
         loadComponent: () => import('./pages/usuarios/usuarios').then((m) => m.Usuarios),
+      },
+      {
+        path: 'reservas',
+        canActivate: [salaGuard],
+        loadComponent: () => import('./pages/reservas/reservas').then((m) => m.ReservasPage),
       },
       {
         path: 'alquiler',

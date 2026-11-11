@@ -4499,3 +4499,323 @@ $$;
 
 revoke all on function public.reducir_sesion(bigint, int) from public, anon;
 grant execute on function public.reducir_sesion(bigint, int) to authenticated;
+
+-- ============================================================
+-- 40. RESERVAS DE CONSOLAS DESDE UN ENLACE PUBLICO (2026-11-11)
+-- ============================================================
+-- Pagina publica /reservar (sin login): el cliente ve que consolas estan libres u ocupadas
+-- (reservas_publico, sin nombres), elige consola, hora y tiempo, y reserva (crear_reserva).
+-- La reserva queda pendiente hasta que el local confirma el pago (confirmar_reserva); si no
+-- se confirma en reservas_config.minutos_para_pagar deja de apartar la consola. Al llegar
+-- el cliente, iniciar_reserva abre la sesion en conteo regresivo con el precio pagado; si
+-- llega tarde, el tiempo cuenta desde la hora reservada. Precio = tarifa de la sala.
+-- QR de pago en el bucket publico "reservas" (lo sube el admin).
+
+-- Tabla de reservas
+create table if not exists public.reservas (
+  id bigint generated always as identity primary key,
+  puesto_id bigint not null references public.puestos (id),
+  cliente_nombre text not null check (char_length(trim(cliente_nombre)) between 2 and 60),
+  cliente_telefono text not null check (char_length(cliente_telefono) between 7 and 15),
+  inicio timestamptz not null,
+  minutos int not null check (minutos between 30 and 360),
+  precio numeric(12, 0) not null check (precio >= 0),
+  estado text not null default 'pendiente' check (estado in ('pendiente', 'confirmada', 'usada', 'cancelada')),
+  sesion_id bigint references public.sesiones (id),
+  confirmada_por uuid references public.profiles (id),
+  confirmada_en timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists reservas_por_puesto on public.reservas (puesto_id, inicio);
+create index if not exists reservas_por_inicio on public.reservas (inicio);
+
+alter table public.reservas enable row level security;
+create policy "reservas_ver_sala" on public.reservas
+  for select to authenticated using (private.puede_sala());
+-- Se crean y cambian solo por RPC (crear_reserva, confirmar_reserva, cancelar_reserva, iniciar_reserva).
+
+-- Configuracion (fila unica): QR de pago, WhatsApp del local y tiempo para pagar.
+create table if not exists public.reservas_config (
+  id int primary key default 1 check (id = 1),
+  qr_path text,
+  whatsapp text,
+  minutos_para_pagar int not null default 30 check (minutos_para_pagar between 5 and 240),
+  dias_maximos int not null default 7 check (dias_maximos between 1 and 60)
+);
+insert into public.reservas_config (id) values (1) on conflict (id) do nothing;
+alter table public.reservas_config enable row level security;
+create policy "reservas_config_ver" on public.reservas_config
+  for select to anon, authenticated using (true);
+create policy "reservas_config_admin" on public.reservas_config
+  for update to authenticated using (private.is_admin()) with check (private.is_admin());
+
+-- Bucket publico para la imagen del QR (solo el admin la sube o la cambia).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('reservas', 'reservas', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+create policy "reservas_qr_subir" on storage.objects
+  for insert to authenticated with check (bucket_id = 'reservas' and private.is_admin());
+create policy "reservas_qr_cambiar" on storage.objects
+  for update to authenticated using (bucket_id = 'reservas' and private.is_admin());
+create policy "reservas_qr_borrar" on storage.objects
+  for delete to authenticated using (bucket_id = 'reservas' and private.is_admin());
+
+alter publication supabase_realtime add table public.reservas;
+
+-- Reserva que todavia aparta la consola: confirmada, o pendiente dentro del tiempo para pagar.
+create or replace function private.reserva_vigente(p_estado text, p_creada timestamptz)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p_estado = 'confirmada'
+    or (p_estado = 'pendiente'
+        and p_creada > now() - make_interval(mins => (select minutos_para_pagar from public.reservas_config where id = 1)));
+$$;
+revoke all on function private.reserva_vigente(text, timestamptz) from public, anon;
+grant execute on function private.reserva_vigente(text, timestamptz) to authenticated;
+
+-- Precio de una reserva: la tarifa de la sala en conteo regresivo con 1 control.
+create or replace function private.precio_reserva(p_minutos int)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c.precio_total from private.calcular_cobro(p_minutos, '{}'::numeric[], null) c;
+$$;
+revoke all on function private.precio_reserva(int) from public, anon;
+
+-- Pagina publica: estado de las consolas (sin nombres de clientes), reservas que vienen y precios.
+create or replace function public.reservas_publico()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.reservas_config;
+begin
+  select * into v_cfg from public.reservas_config where id = 1;
+  return jsonb_build_object(
+    'ahora', now(),
+    'qr_path', v_cfg.qr_path,
+    'whatsapp', v_cfg.whatsapp,
+    'minutos_para_pagar', v_cfg.minutos_para_pagar,
+    'dias_maximos', v_cfg.dias_maximos,
+    'precios', (
+      select jsonb_agg(jsonb_build_object('minutos', m, 'precio', private.precio_reserva(m)) order by m)
+      from unnest(array[30, 60, 90, 120, 180, 240, 300, 360]) m
+    ),
+    'consolas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', p.id,
+        'nombre', p.nombre,
+        'ocupada', s.id is not null,
+        'modalidad', s.modalidad,
+        'minutos_pedidos', s.minutos_asignados,
+        'minutos_jugados', case when s.id is null then null
+          else round(private.minutos_efectivos(s.id, s.hora_inicio, now())) end,
+        'libre_en', case when s.modalidad = 'conteo_regresivo' then private.fin_regresiva(s.id) end,
+        'reservas', coalesce((
+          select jsonb_agg(jsonb_build_object('inicio', r.inicio, 'fin', r.inicio + make_interval(mins => r.minutos)) order by r.inicio)
+          from public.reservas r
+          where r.puesto_id = p.id
+            and private.reserva_vigente(r.estado, r.created_at)
+            and r.inicio + make_interval(mins => r.minutos) > now()
+        ), '[]'::jsonb)
+      ) order by p.id)
+      from public.puestos p
+      left join public.sesiones s on s.puesto_id = p.id and s.estado = 'activa'
+      where p.activo
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.reservas_publico() from public;
+grant execute on function public.reservas_publico() to anon, authenticated;
+
+-- El cliente reserva desde el enlace publico. Queda pendiente hasta que el local confirme el pago.
+create or replace function public.crear_reserva(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_inicio timestamptz,
+  p_minutos int
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.reservas_config;
+  v_tel text := private.normalizar_telefono(p_cliente_telefono);
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_fin timestamptz;
+  v_s public.sesiones;
+  v_fin_sesion timestamptz;
+  v_r public.reservas;
+begin
+  select * into v_cfg from public.reservas_config where id = 1;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe tu nombre';
+  end if;
+  if v_tel is null or char_length(v_tel) < 7 or char_length(v_tel) > 15 then
+    raise exception 'Escribe un número de celular válido';
+  end if;
+  if p_minutos is null or p_minutos not in (30, 60, 90, 120, 180, 240, 300, 360) then
+    raise exception 'Elige un tiempo de juego válido';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '2 minutes' then
+    raise exception 'La hora de la reserva ya pasó';
+  end if;
+  if p_inicio > now() + make_interval(days => v_cfg.dias_maximos) then
+    raise exception 'Solo se puede reservar hasta % días antes', v_cfg.dias_maximos;
+  end if;
+  if not exists (select 1 from public.puestos where id = p_puesto_id and activo) then
+    raise exception 'Esa consola no está disponible';
+  end if;
+
+  -- Una a la vez por consola, para que dos personas no tomen el mismo horario.
+  perform pg_advisory_xact_lock(hashtext('reserva_puesto'), p_puesto_id::int);
+
+  if (select count(*) from public.reservas
+      where cliente_telefono = v_tel and estado = 'pendiente'
+        and private.reserva_vigente(estado, created_at)) >= 2 then
+    raise exception 'Ya tienes reservas pendientes de pago. Envía el comprobante por WhatsApp para confirmarlas.';
+  end if;
+  if (select count(*) from public.reservas
+      where estado = 'pendiente' and private.reserva_vigente(estado, created_at)) >= 30 then
+    raise exception 'Hay muchas reservas pendientes en este momento. Intenta en unos minutos.';
+  end if;
+
+  v_fin := p_inicio + make_interval(mins => p_minutos);
+
+  select * into v_s from public.sesiones where puesto_id = p_puesto_id and estado = 'activa';
+  if v_s.id is not null then
+    v_fin_sesion := case when v_s.modalidad = 'conteo_regresivo' then private.fin_regresiva(v_s.id) end;
+    if v_fin_sesion is null or v_fin_sesion > p_inicio then
+      raise exception 'Esa consola está ocupada a esa hora. Elige otra consola u otra hora.';
+    end if;
+  end if;
+
+  if exists (
+    select 1 from public.reservas r
+    where r.puesto_id = p_puesto_id
+      and private.reserva_vigente(r.estado, r.created_at)
+      and tstzrange(r.inicio, r.inicio + make_interval(mins => r.minutos)) && tstzrange(p_inicio, v_fin)
+  ) then
+    raise exception 'Esa consola ya está reservada en ese horario. Elige otra hora u otra consola.';
+  end if;
+
+  insert into public.reservas (puesto_id, cliente_nombre, cliente_telefono, inicio, minutos, precio)
+  values (p_puesto_id, v_nombre, v_tel, p_inicio, p_minutos, private.precio_reserva(p_minutos))
+  returning * into v_r;
+
+  return jsonb_build_object(
+    'id', v_r.id,
+    'consola', (select nombre from public.puestos where id = p_puesto_id),
+    'inicio', v_r.inicio,
+    'fin', v_fin,
+    'minutos', v_r.minutos,
+    'precio', v_r.precio,
+    'minutos_para_pagar', v_cfg.minutos_para_pagar
+  );
+end;
+$$;
+revoke all on function public.crear_reserva(bigint, text, text, timestamptz, int) from public;
+grant execute on function public.crear_reserva(bigint, text, text, timestamptz, int) to anon, authenticated;
+
+-- El local confirma que recibio el pago.
+create or replace function public.confirmar_reserva(p_reserva_id bigint)
+returns public.reservas
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_r public.reservas;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para confirmar reservas'; end if;
+  select * into v_r from public.reservas where id = p_reserva_id for update;
+  if v_r.id is null then raise exception 'La reserva % no existe', p_reserva_id; end if;
+  if v_r.estado <> 'pendiente' then raise exception 'La reserva ya está %', v_r.estado; end if;
+  -- Si se vencio el tiempo para pagar, solo se confirma si el horario sigue libre.
+  if not private.reserva_vigente(v_r.estado, v_r.created_at) and exists (
+    select 1 from public.reservas r
+    where r.id <> v_r.id and r.puesto_id = v_r.puesto_id
+      and private.reserva_vigente(r.estado, r.created_at)
+      and tstzrange(r.inicio, r.inicio + make_interval(mins => r.minutos))
+          && tstzrange(v_r.inicio, v_r.inicio + make_interval(mins => v_r.minutos))
+  ) then
+    raise exception 'Se venció el tiempo para pagar y otra persona ya reservó ese horario';
+  end if;
+  update public.reservas
+  set estado = 'confirmada', confirmada_por = auth.uid(), confirmada_en = now()
+  where id = p_reserva_id
+  returning * into v_r;
+  return v_r;
+end;
+$$;
+revoke all on function public.confirmar_reserva(bigint) from public, anon;
+grant execute on function public.confirmar_reserva(bigint) to authenticated;
+
+create or replace function public.cancelar_reserva(p_reserva_id bigint)
+returns public.reservas
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_r public.reservas;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para cancelar reservas'; end if;
+  update public.reservas set estado = 'cancelada'
+  where id = p_reserva_id and estado in ('pendiente', 'confirmada')
+  returning * into v_r;
+  if v_r.id is null then raise exception 'La reserva % no se puede cancelar', p_reserva_id; end if;
+  return v_r;
+end;
+$$;
+revoke all on function public.cancelar_reserva(bigint) from public, anon;
+grant execute on function public.cancelar_reserva(bigint) to authenticated;
+
+-- Llega el cliente (o se cumple la hora): abre la sesion en conteo regresivo con el precio
+-- ya pagado. Si llega tarde, el tiempo cuenta desde la hora reservada.
+create or replace function public.iniciar_reserva(p_reserva_id bigint)
+returns public.sesiones
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_r public.reservas;
+  v_s public.sesiones;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para iniciar reservas'; end if;
+  select * into v_r from public.reservas where id = p_reserva_id for update;
+  if v_r.id is null then raise exception 'La reserva % no existe', p_reserva_id; end if;
+  if v_r.estado <> 'confirmada' then
+    raise exception 'Solo se inicia una reserva con el pago confirmado (está %)', v_r.estado;
+  end if;
+  if exists (select 1 from public.sesiones where puesto_id = v_r.puesto_id and estado = 'activa') then
+    raise exception 'La consola todavía está ocupada: ciérrala o transfiere esa sesión primero';
+  end if;
+
+  v_s := public.abrir_sesion(v_r.puesto_id, 'Reserva: ' || v_r.cliente_nombre, 'conteo_regresivo', v_r.minutos, 0, v_r.precio);
+
+  if v_r.inicio < now() then
+    update public.sesiones set hora_inicio = v_r.inicio where id = v_s.id returning * into v_s;
+  end if;
+
+  update public.reservas set estado = 'usada', sesion_id = v_s.id where id = v_r.id;
+  return v_s;
+end;
+$$;
+revoke all on function public.iniciar_reserva(bigint) from public, anon;
+grant execute on function public.iniciar_reserva(bigint) to authenticated;

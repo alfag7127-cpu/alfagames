@@ -48,6 +48,15 @@
         </span>
       </div>
 
+      @if (proximaReserva(p.id); as r) {
+        <a routerLink="/reservas"
+          class="-mt-2 mb-3 block rounded-lg px-3 py-1.5 text-xs font-medium ring-1"
+          [class.bg-indigo-50]="r.estado === 'confirmada'" [class.text-indigo-800]="r.estado === 'confirmada'" [class.ring-indigo-200]="r.estado === 'confirmada'"
+          [class.bg-amber-50]="r.estado === 'pendiente'" [class.text-amber-800]="r.estado === 'pendiente'" [class.ring-amber-200]="r.estado === 'pendiente'">
+          📅 Reservada {{ textoReserva(r) }}
+        </a>
+      }
+
       <!-- ═══ LIBRE ═══ -->
       @if (!p.sesion_id) {
         @if (!p.formAbierto) {

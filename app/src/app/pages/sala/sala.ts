@@ -1,3 +1,4 @@
+import { RouterLink } from '@angular/router';
 import { FormaPagoSala, PagoSala, pagoSala } from '../../shared/pago-sala';
 import { PesosDirective } from '../../shared/pesos.directive';
 import { formatearDuracion } from '../../shared/duracion.pipe';
@@ -13,6 +14,8 @@ import { MAX_CONTROLES_ADICIONALES, calcularCobro } from '../../core/pricing';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
 import { sonarCaja } from '../../shared/sonido-caja';
+import { Reserva, ReservasService, finReserva, reservaVigente } from '../../core/reservas.service';
+import { ZONA_HORARIA, fechaColombia, inicioDiaColombia } from '../../core/zona-horaria';
 
 /** Umbral de aviso para conteo regresivo: a partir de acá cambia el color / suena aviso. */
 const SEGUNDOS_AVISO = 5 * 60; // 5 minutos
@@ -84,7 +87,7 @@ function reproducirBeep(frecuencia: number, duracionMs: number): void {
 
 @Component({
   selector: 'app-sala',
-  imports: [DuracionPipe, FormsModule, DecimalPipe, PesosDirective, PagoSala],
+  imports: [DuracionPipe, FormsModule, DecimalPipe, PesosDirective, PagoSala, RouterLink],
   templateUrl: './sala.html',
 })
 export class Sala implements OnInit, OnDestroy {
@@ -93,6 +96,10 @@ export class Sala implements OnInit, OnDestroy {
   private timerHandle?: ReturnType<typeof setInterval>;
   private unsubscribeRealtime?: () => void;
   private unsubscribeProductos?: () => void;
+  private unsubscribeReservas?: () => void;
+  /** Reservas que vienen (confirmadas o pendientes de pago que aún apartan la consola). */
+  private readonly reservas = signal<Reserva[]>([]);
+  private minutosParaPagar = 30;
   /** Productos a la venta (para cargarlos a la cuenta de una consola). */
   readonly productos = signal<Producto[]>([]);
   /** Qué umbrales ya se avisaron para cada sesión, para no repetir el aviso cada segundo. */
@@ -103,6 +110,7 @@ export class Sala implements OnInit, OnDestroy {
     private readonly auth: AuthService,
     private readonly toast: ToastService,
     private readonly productosService: ProductosService,
+    private readonly reservasService: ReservasService,
   ) {}
 
   ngOnInit(): void {
@@ -118,12 +126,49 @@ export class Sala implements OnInit, OnDestroy {
       this.revisarAlertas();
     }, 1000);
     this.pedirPermisoNotificaciones();
+    this.cargarReservas();
+    this.unsubscribeReservas = this.reservasService.onCambios(() => this.cargarReservas());
   }
 
   ngOnDestroy(): void {
     clearInterval(this.timerHandle);
     this.unsubscribeRealtime?.();
     this.unsubscribeProductos?.();
+    this.unsubscribeReservas?.();
+  }
+
+  private async cargarReservas(): Promise<void> {
+    try {
+      const [lista, config] = await Promise.all([
+        this.reservasService.listar(inicioDiaColombia(fechaColombia())),
+        this.reservasService.config(),
+      ]);
+      this.minutosParaPagar = config.minutos_para_pagar;
+      this.reservas.set(lista);
+    } catch {
+      /* sin reservas visibles: la Sala sigue funcionando */
+    }
+  }
+
+  /** Próxima reserva de la consola (hoy o mañana) que todavía aparta el horario. */
+  proximaReserva(puestoId: number): Reserva | null {
+    const ahora = this.ahora();
+    return (
+      this.reservas().find(
+        (r) =>
+          r.puesto_id === puestoId &&
+          reservaVigente(r, this.minutosParaPagar, ahora) &&
+          new Date(finReserva(r)).getTime() > ahora &&
+          new Date(r.inicio).getTime() < ahora + 24 * 3_600_000,
+      ) ?? null
+    );
+  }
+
+  textoReserva(r: Reserva): string {
+    const d = new Date(r.inicio);
+    const dia = fechaColombia(d) === fechaColombia() ? '' : 'mañana ';
+    const h = d.toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit' });
+    return `${dia}${h} · ${r.cliente_nombre} · ${formatearDuracion(r.minutos)}${r.estado === 'pendiente' ? ' · falta confirmar pago' : ''}`;
   }
 
   private async cargarProductos(): Promise<void> {

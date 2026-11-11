@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter } from 'rxjs';
 import { AuthService } from '../core/auth.service';
 import { AvisosAlquiler } from '../shared/avisos-alquiler';
+import { AvisosReservas } from '../shared/avisos-reservas';
 
 interface EnlaceMenu {
   ruta: string;
@@ -14,16 +15,17 @@ interface EnlaceMenu {
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvisosAlquiler],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvisosAlquiler, AvisosReservas],
   templateUrl: './shell.html',
 })
 export class Shell {
   /** Menú lateral en el celular: se abre con ☰ y se esconde al elegir una sección. */
   readonly menuAbierto = signal(false);
 
-  /** Solo dos secciones; cada una tiene sus pestañas adentro. */
+  /** Secciones del menú; Sala y Alquiler tienen sus pestañas adentro. */
   readonly enlaces: EnlaceMenu[] = [
     { ruta: '/sala', icono: '🎮', texto: 'Sala', modulo: 'sala' },
+    { ruta: '/reservas', icono: '📅', texto: 'Reservas', modulo: 'sala' },
     { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', modulo: 'alquiler' },
   ];
 
