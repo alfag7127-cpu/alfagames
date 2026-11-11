@@ -136,6 +136,16 @@ export class ReservasService {
   }
 
   /** Abre la sesión de la reserva en la Sala (conteo regresivo con el precio ya pagado). */
+  /** Mueve la reserva a otra consola (la original queda libre). Con `iniciarYa` empieza ahora allá. */
+  async transferir(id: number, puestoDestino: number, iniciarYa: boolean): Promise<void> {
+    const { error } = await this.supabase.client.rpc('transferir_reserva', {
+      p_reserva_id: id,
+      p_puesto_destino: puestoDestino,
+      p_iniciar_ya: iniciarYa,
+    });
+    if (error) throw error;
+  }
+
   async iniciar(id: number): Promise<void> {
     const { error } = await this.supabase.client.rpc('iniciar_reserva', { p_reserva_id: id });
     if (error) throw error;

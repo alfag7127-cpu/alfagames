@@ -4922,3 +4922,54 @@ end;
 $$;
 revoke all on function public.reservar_local(bigint, text, text, timestamptz, int) from public, anon;
 grant execute on function public.reservar_local(bigint, text, text, timestamptz, int) to authenticated;
+
+-- ============================================================
+-- 42. MOVER UNA RESERVA A OTRA CONSOLA (2026-11-11)
+-- ============================================================
+-- Si se desocupa antes otra consola, la reserva se mueve alla y la consola original
+-- queda libre en ese horario. Con p_iniciar_ya la reserva empieza ahora en la consola
+-- destino (abre la sesion con iniciar_reserva; debe estar confirmada).
+
+create or replace function public.transferir_reserva(
+  p_reserva_id bigint,
+  p_puesto_destino bigint,
+  p_iniciar_ya boolean
+)
+returns public.reservas
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_r public.reservas;
+  v_inicio timestamptz;
+begin
+  if not private.puede_sala() then raise exception 'No tienes permiso para mover reservas'; end if;
+  select * into v_r from public.reservas where id = p_reserva_id for update;
+  if v_r.id is null then raise exception 'La reserva % no existe', p_reserva_id; end if;
+  if not private.reserva_vigente(v_r.estado, v_r.created_at) then
+    raise exception 'Solo se mueve una reserva confirmada o pendiente de pago (está %)', v_r.estado;
+  end if;
+  if p_puesto_destino = v_r.puesto_id then raise exception 'La reserva ya está en esa consola'; end if;
+  if p_iniciar_ya and v_r.estado <> 'confirmada' then
+    raise exception 'Confirma el pago antes de iniciar la reserva';
+  end if;
+
+  v_inicio := case when p_iniciar_ya then now() else v_r.inicio end;
+
+  perform pg_advisory_xact_lock(hashtext('reserva_puesto'), p_puesto_destino::int);
+  perform private.validar_horario_reserva(p_puesto_destino, v_inicio, v_r.minutos);
+
+  update public.reservas set puesto_id = p_puesto_destino, inicio = v_inicio
+  where id = v_r.id
+  returning * into v_r;
+
+  if p_iniciar_ya then
+    perform public.iniciar_reserva(v_r.id);
+    select * into v_r from public.reservas where id = p_reserva_id;
+  end if;
+  return v_r;
+end;
+$$;
+revoke all on function public.transferir_reserva(bigint, bigint, boolean) from public, anon;
+grant execute on function public.transferir_reserva(bigint, bigint, boolean) to authenticated;

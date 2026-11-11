@@ -142,9 +142,41 @@ function dia(iso: string): string {
               @if (whatsapp(r); as wa) {
                 <a [href]="wa" target="_blank" rel="noopener" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">WhatsApp</a>
               }
+              <button type="button" (click)="abrirMover(r)" [disabled]="procesando() === r.id"
+                class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50">⇄ Mover</button>
               <button type="button" (click)="cancelar(r)" [disabled]="procesando() === r.id"
                 class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 disabled:opacity-50">Cancelar</button>
             </div>
+            @if (moviendo() === r.id) {
+              <div class="mt-3 rounded-lg bg-slate-50 p-3 space-y-2">
+                <p class="text-xs font-medium text-slate-600">Mover la reserva a (la consola {{ nombrePuesto(r.puesto_id) }} queda libre):</p>
+                <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  @for (c of consolas(); track c.id) {
+                    @if (c.id !== r.puesto_id) {
+                      <button type="button" (click)="elegirDestino(r, c)"
+                        class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
+                        [class.bg-indigo-600]="destino === c.id" [class.text-white]="destino === c.id" [class.border-indigo-600]="destino === c.id"
+                        [class.border-slate-300]="destino !== c.id"
+                        [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
+                        {{ c.nombre }}
+                        <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                      </button>
+                    }
+                  }
+                </div>
+                @if (r.estado === 'confirmada') {
+                  <label class="flex items-center gap-2 text-xs text-slate-700">
+                    <input type="checkbox" [(ngModel)]="iniciarYa" name="iniciar-ya-{{ r.id }}" class="rounded" />
+                    Empezar ahora en esa consola (abre la sesión en la Sala)
+                  </label>
+                }
+                <div class="flex gap-2">
+                  <button type="button" (click)="mover(r)" [disabled]="!destino || procesando() === r.id"
+                    class="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">Mover reserva</button>
+                  <button type="button" (click)="moviendo.set(null)" class="rounded-lg bg-white px-3 text-sm text-slate-700 ring-1 ring-slate-200">Cerrar</button>
+                </div>
+              </div>
+            }
           </article>
         } @empty {
           <p class="text-sm text-slate-500">No hay reservas esperando pago.</p>
@@ -176,9 +208,41 @@ function dia(iso: string): string {
               @if (whatsapp(r); as wa) {
                 <a [href]="wa" target="_blank" rel="noopener" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">WhatsApp</a>
               }
+              <button type="button" (click)="abrirMover(r)" [disabled]="procesando() === r.id"
+                class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50">⇄ Mover</button>
               <button type="button" (click)="cancelar(r)" [disabled]="procesando() === r.id"
                 class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 disabled:opacity-50">Cancelar</button>
             </div>
+            @if (moviendo() === r.id) {
+              <div class="mt-3 rounded-lg bg-slate-50 p-3 space-y-2">
+                <p class="text-xs font-medium text-slate-600">Mover la reserva a (la consola {{ nombrePuesto(r.puesto_id) }} queda libre):</p>
+                <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  @for (c of consolas(); track c.id) {
+                    @if (c.id !== r.puesto_id) {
+                      <button type="button" (click)="elegirDestino(r, c)"
+                        class="rounded-lg border px-2 py-1.5 text-xs font-semibold"
+                        [class.bg-indigo-600]="destino === c.id" [class.text-white]="destino === c.id" [class.border-indigo-600]="destino === c.id"
+                        [class.border-slate-300]="destino !== c.id"
+                        [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
+                        {{ c.nombre }}
+                        <span class="block text-[10px] font-normal">{{ c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                      </button>
+                    }
+                  }
+                </div>
+                @if (r.estado === 'confirmada') {
+                  <label class="flex items-center gap-2 text-xs text-slate-700">
+                    <input type="checkbox" [(ngModel)]="iniciarYa" name="iniciar-ya-{{ r.id }}" class="rounded" />
+                    Empezar ahora en esa consola (abre la sesión en la Sala)
+                  </label>
+                }
+                <div class="flex gap-2">
+                  <button type="button" (click)="mover(r)" [disabled]="!destino || procesando() === r.id"
+                    class="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">Mover reserva</button>
+                  <button type="button" (click)="moviendo.set(null)" class="rounded-lg bg-white px-3 text-sm text-slate-700 ring-1 ring-slate-200">Cerrar</button>
+                </div>
+              </div>
+            }
           </article>
         } @empty {
           <p class="text-sm text-slate-500">No hay reservas confirmadas por venir.</p>
@@ -242,6 +306,10 @@ export class ReservasPage implements OnInit, OnDestroy {
   readonly config = signal<ReservasConfig | null>(null);
   readonly nombres = signal<Record<number, string>>({});
   readonly procesando = signal<number | null>(null);
+  /** Reserva con el panel "Mover" abierto. */
+  readonly moviendo = signal<number | null>(null);
+  destino: number | null = null;
+  iniciarYa = false;
   private readonly ahora = signal(Date.now());
   readonly enlace = `${location.origin}/reservar`;
   readonly enlaceCompartir = `https://wa.me/?text=${encodeURIComponent(
@@ -362,6 +430,34 @@ export class ReservasPage implements OnInit, OnDestroy {
   async cancelar(r: Reserva): Promise<void> {
     if (!confirm(`¿Cancelar la reserva #${r.id} de ${r.cliente_nombre}? La consola queda libre en ese horario.`)) return;
     await this.accion(r, () => this.reservas.cancelar(r.id), `Reserva #${r.id} cancelada.`);
+  }
+
+  abrirMover(r: Reserva): void {
+    this.destino = null;
+    this.iniciarYa = false;
+    this.moviendo.set(this.moviendo() === r.id ? null : r.id);
+  }
+
+  /** Si la consola destino está libre ya y la reserva está confirmada, propone empezar ahora. */
+  elegirDestino(r: Reserva, c: ConsolaPublica): void {
+    this.destino = c.id;
+    this.iniciarYa = r.estado === "confirmada" && !c.ocupada;
+  }
+
+  async mover(r: Reserva): Promise<void> {
+    const destino = this.destino;
+    if (!destino) return;
+    const ok = await this.accion(
+      r,
+      () => this.reservas.transferir(r.id, destino, this.iniciarYa),
+      this.iniciarYa
+        ? `Reserva #${r.id} movida a ${this.nombrePuesto(destino)} y sesión iniciada. ${this.nombrePuesto(r.puesto_id)} queda libre.`
+        : `Reserva #${r.id} movida a ${this.nombrePuesto(destino)}. ${this.nombrePuesto(r.puesto_id)} queda libre.`,
+    );
+    if (ok) {
+      this.moviendo.set(null);
+      if (this.iniciarYa) sonarCaja();
+    }
   }
 
   async iniciar(r: Reserva): Promise<void> {
