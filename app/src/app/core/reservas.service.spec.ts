@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Reserva, enlaceWhatsapp, finReserva, libreDesdeMs, numerarPorDia, reservaVigente } from './reservas.service';
+import {
+  Reserva,
+  enlaceWhatsapp,
+  finReserva,
+  libreDesdeMs,
+  numerarPorDia,
+  reservaVigente,
+} from './reservas.service';
 
 const base: Reserva = {
   id: 1,
@@ -81,8 +88,14 @@ describe('libreDesdeMs', () => {
 });
 
 describe('numerarPorDia', () => {
+  const ahoraN = new Date('2026-11-12T10:20:00Z').getTime();
   // 2026-11-12 en Colombia: 05:00Z a 04:59Z del día siguiente.
-  const r = (id: number, inicio: string, creada: string, estado: Reserva['estado'] = 'confirmada'): Reserva => ({
+  const r = (
+    id: number,
+    inicio: string,
+    creada: string,
+    estado: Reserva['estado'] = 'confirmada',
+  ): Reserva => ({
     ...base,
     id,
     inicio,
@@ -91,20 +104,43 @@ describe('numerarPorDia', () => {
   });
 
   it('empieza en 1 cada día según el día de la reserva en Colombia', () => {
-    const n = numerarPorDia([
-      r(40, '2026-11-12T15:00:00Z', '2026-11-12T10:00:00Z'),
-      r(41, '2026-11-13T02:00:00Z', '2026-11-12T11:00:00Z'), // 9 p. m. del 12 en Colombia
-      r(42, '2026-11-13T15:00:00Z', '2026-11-12T12:00:00Z'),
-    ]);
+    const n = numerarPorDia(
+      [
+        r(40, '2026-11-12T15:00:00Z', '2026-11-12T10:00:00Z'),
+        r(41, '2026-11-13T02:00:00Z', '2026-11-12T11:00:00Z'), // 9 p. m. del 12 en Colombia
+        r(42, '2026-11-13T15:00:00Z', '2026-11-12T12:00:00Z'),
+      ],
+      30,
+      ahoraN,
+    );
     expect([n.get(40), n.get(41), n.get(42)]).toEqual([1, 2, 1]);
   });
 
   it('las canceladas no cuentan y las siguientes bajan un número', () => {
-    const n = numerarPorDia([
-      r(1, '2026-11-12T15:00:00Z', '2026-11-12T10:00:00Z'),
-      r(2, '2026-11-12T16:00:00Z', '2026-11-12T10:05:00Z', 'cancelada'),
-      r(3, '2026-11-12T14:00:00Z', '2026-11-12T10:10:00Z', 'pendiente'),
-    ]);
+    const n = numerarPorDia(
+      [
+        r(1, '2026-11-12T15:00:00Z', '2026-11-12T10:00:00Z'),
+        r(2, '2026-11-12T16:00:00Z', '2026-11-12T10:05:00Z', 'cancelada'),
+        r(3, '2026-11-12T14:00:00Z', '2026-11-12T10:10:00Z', 'pendiente'),
+      ],
+      30,
+      ahoraN,
+    );
+    expect(n.get(1)).toBe(1);
+    expect(n.has(2)).toBe(false);
+    expect(n.get(3)).toBe(2);
+  });
+
+  it('una pendiente que se venció sin confirmar no cuenta; una usada sí', () => {
+    const n = numerarPorDia(
+      [
+        r(1, '2026-11-12T15:00:00Z', '2026-11-12T08:00:00Z', 'usada'),
+        r(2, '2026-11-12T16:00:00Z', '2026-11-12T09:00:00Z', 'pendiente'), // creada hace 80 min
+        r(3, '2026-11-12T17:00:00Z', '2026-11-12T10:00:00Z', 'pendiente'), // creada hace 20 min
+      ],
+      30,
+      ahoraN,
+    );
     expect(n.get(1)).toBe(1);
     expect(n.has(2)).toBe(false);
     expect(n.get(3)).toBe(2);

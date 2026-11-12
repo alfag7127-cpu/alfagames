@@ -55,8 +55,11 @@ export class AvisosReservas implements OnInit, OnDestroy {
 
   private async revisar(): Promise<void> {
     try {
-      const lista = await this.reservas.listar(inicioDiaColombia(fechaColombia()));
-      this.numeros = numerarPorDia(lista);
+      const [lista, config] = await Promise.all([
+        this.reservas.listar(inicioDiaColombia(fechaColombia())),
+        this.reservas.config(),
+      ]);
+      this.numeros = numerarPorDia(lista, config.minutos_para_pagar);
       if (this.vistos) {
         const nueva = lista.filter((r) => r.estado === 'pendiente' && !this.vistos!.has(r.id)).pop();
         if (nueva) {

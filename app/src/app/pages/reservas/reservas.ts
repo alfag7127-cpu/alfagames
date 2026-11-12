@@ -362,8 +362,8 @@ export class ReservasPage implements OnInit, OnDestroy {
 
   readonly hora = hora;
   readonly dia = dia;
-  /** Número del día de cada reserva (las canceladas no cuentan). */
-  private readonly numeros = computed(() => numerarPorDia(this.lista()));
+  /** Número del día de cada reserva (canceladas y vencidas sin pagar no cuentan). */
+  private readonly numeros = computed(() => numerarPorDia(this.lista(), this.minutosParaPagar(), this.ahora()));
 
   readonly rangos: { id: Rango; txt: string }[] = [
     { id: 'hoy', txt: 'Hoy' },
@@ -462,7 +462,7 @@ export class ReservasPage implements OnInit, OnDestroy {
     }
   }
 
-  /** Número del día; una cancelada no tiene (sale "–"). */
+  /** Número del día; una cancelada o vencida no tiene (sale "–"). */
   num(r: Reserva): string {
     const n = this.numeros().get(r.id);
     return n ? String(n) : '–';

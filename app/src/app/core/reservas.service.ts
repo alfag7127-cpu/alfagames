@@ -193,12 +193,13 @@ export function reservaVigente(r: Reserva, minutosParaPagar: number, ahora = Dat
 
 /**
  * Número de reserva del día: empieza en 1 cada día (día de la reserva en Colombia), en orden
- * de creación. Las canceladas no cuentan y no tienen número: al cancelar una, las que se
- * hicieron después bajan un número. La lista debe traer los días completos.
+ * de creación. Solo cuentan las confirmadas, las usadas y las pendientes aún dentro del tiempo
+ * para pagar: una cancelada, o una pendiente que se venció sin confirmar, no tiene número y las
+ * que se hicieron después bajan uno. La lista debe traer los días completos.
  */
-export function numerarPorDia(lista: Reserva[]): Map<number, number> {
+export function numerarPorDia(lista: Reserva[], minutosParaPagar: number, ahora = Date.now()): Map<number, number> {
   const orden = lista
-    .filter((r) => r.estado !== 'cancelada')
+    .filter((r) => r.estado === 'usada' || reservaVigente(r, minutosParaPagar, ahora))
     .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
   const porDia = new Map<string, number>();
   const numeros = new Map<number, number>();

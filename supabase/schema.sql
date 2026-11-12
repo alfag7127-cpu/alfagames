@@ -5243,3 +5243,105 @@ end;
 $$;
 revoke all on function public.crear_reserva(bigint, text, text, timestamptz, int) from public;
 grant execute on function public.crear_reserva(bigint, text, text, timestamptz, int) to anon, authenticated;
+
+-- ============================================================
+-- 45. NUMERO DE RESERVA: LAS VENCIDAS SIN PAGAR NO CUENTAN (2026-11-12)
+-- ============================================================
+-- Regla del dueno: solo cuentan confirmadas, usadas y pendientes dentro del tiempo para pagar.
+-- Una pendiente que se vencio sin confirmar (o una cancelada) no tiene numero.
+create or replace function public.crear_reserva(
+  p_puesto_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_inicio timestamptz,
+  p_minutos int
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.reservas_config;
+  v_tel text := private.normalizar_telefono(p_cliente_telefono);
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_fin timestamptz;
+  v_s public.sesiones;
+  v_fin_sesion timestamptz;
+  v_r public.reservas;
+begin
+  select * into v_cfg from public.reservas_config where id = 1;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe tu nombre';
+  end if;
+  if v_tel is null or char_length(v_tel) < 7 or char_length(v_tel) > 15 then
+    raise exception 'Escribe un número de celular válido';
+  end if;
+  if p_minutos is null or p_minutos not in (30, 60, 90, 120, 180, 240, 300, 360) then
+    raise exception 'Elige un tiempo de juego válido';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '2 minutes' then
+    raise exception 'La hora de la reserva ya pasó';
+  end if;
+  if p_inicio > now() + make_interval(days => v_cfg.dias_maximos) then
+    raise exception 'Solo se puede reservar hasta % días antes', v_cfg.dias_maximos;
+  end if;
+  if not exists (select 1 from public.puestos where id = p_puesto_id and activo) then
+    raise exception 'Esa consola no está disponible';
+  end if;
+
+  -- Una a la vez por consola, para que dos personas no tomen el mismo horario.
+  perform pg_advisory_xact_lock(hashtext('reserva_puesto'), p_puesto_id::int);
+
+  if (select count(*) from public.reservas
+      where cliente_telefono = v_tel and estado = 'pendiente'
+        and private.reserva_vigente(estado, created_at)) >= 2 then
+    raise exception 'Ya tienes reservas pendientes de pago. Envía el comprobante por WhatsApp para confirmarlas.';
+  end if;
+  if (select count(*) from public.reservas
+      where estado = 'pendiente' and private.reserva_vigente(estado, created_at)) >= 30 then
+    raise exception 'Hay muchas reservas pendientes en este momento. Intenta en unos minutos.';
+  end if;
+
+  v_fin := p_inicio + make_interval(mins => p_minutos);
+
+  select * into v_s from public.sesiones where puesto_id = p_puesto_id and estado = 'activa';
+  if v_s.id is not null then
+    v_fin_sesion := case when v_s.modalidad = 'conteo_regresivo' then private.fin_regresiva(v_s.id) end;
+    if v_fin_sesion is null or v_fin_sesion > p_inicio then
+      raise exception 'Esa consola está ocupada a esa hora. Elige otra consola u otra hora.';
+    end if;
+  end if;
+
+  if exists (
+    select 1 from public.reservas r
+    where r.puesto_id = p_puesto_id
+      and private.reserva_vigente(r.estado, r.created_at)
+      and tstzrange(r.inicio, r.inicio + make_interval(mins => r.minutos)) && tstzrange(p_inicio, v_fin)
+  ) then
+    raise exception 'Esa consola ya está reservada en ese horario. Elige otra hora u otra consola.';
+  end if;
+
+  insert into public.reservas (puesto_id, cliente_nombre, cliente_telefono, inicio, minutos, precio)
+  values (p_puesto_id, v_nombre, v_tel, p_inicio, p_minutos, private.precio_reserva(p_minutos))
+  returning * into v_r;
+
+  return jsonb_build_object(
+    'id', v_r.id,
+    'numero', (
+      select count(*) from public.reservas x
+      where (x.estado = 'usada' or private.reserva_vigente(x.estado, x.created_at))
+        and (x.inicio at time zone 'America/Bogota')::date = (v_r.inicio at time zone 'America/Bogota')::date
+        and (x.created_at, x.id) <= (v_r.created_at, v_r.id)
+    ),
+    'consola', (select nombre from public.puestos where id = p_puesto_id),
+    'inicio', v_r.inicio,
+    'fin', v_fin,
+    'minutos', v_r.minutos,
+    'precio', v_r.precio,
+    'minutos_para_pagar', v_cfg.minutos_para_pagar
+  );
+end;
+$$;
+revoke all on function public.crear_reserva(bigint, text, text, timestamptz, int) from public;
+grant execute on function public.crear_reserva(bigint, text, text, timestamptz, int) to anon, authenticated;
