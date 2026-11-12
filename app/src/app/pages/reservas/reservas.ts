@@ -10,6 +10,7 @@ import {
   ReservasService,
   enlaceWhatsapp,
   finReserva,
+  libreDesdeMs,
   reservaVigente,
 } from '../../core/reservas.service';
 import { SesionesService } from '../../core/sesiones.service';
@@ -85,7 +86,7 @@ function dia(iso: string): string {
                 [class.border-slate-300]="localPuesto !== c.id"
                 [class.text-red-700]="localPuesto !== c.id && c.ocupada" [class.text-emerald-700]="localPuesto !== c.id && !c.ocupada">
                 {{ c.nombre }}
-                <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                <span class="block text-[10px] font-normal">{{ estadoConsola(c) }}</span>
               </button>
             }
           </div>
@@ -159,7 +160,7 @@ function dia(iso: string): string {
                         [class.border-slate-300]="destino !== c.id"
                         [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
                         {{ c.nombre }}
-                        <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                        <span class="block text-[10px] font-normal">{{ estadoConsola(c) }}</span>
                       </button>
                     }
                   }
@@ -225,7 +226,7 @@ function dia(iso: string): string {
                         [class.border-slate-300]="destino !== c.id"
                         [class.text-red-700]="destino !== c.id && c.ocupada" [class.text-emerald-700]="destino !== c.id && !c.ocupada">
                         {{ c.nombre }}
-                        <span class="block text-[10px] font-normal">{{ c.fuera_servicio ? 'fuera de servicio' : c.ocupada ? (c.libre_en ? 'libre ' + hora(c.libre_en) : 'ocupada') : 'libre' }}</span>
+                        <span class="block text-[10px] font-normal">{{ estadoConsola(c) }}</span>
                       </button>
                     }
                   }
@@ -506,11 +507,21 @@ export class ReservasPage implements OnInit, OnDestroy {
     }
   }
 
-  /** Si la consola está ocupada con hora de fin, la reserva arranca cuando termina esa sesión. */
+  /** Estado corto de la consola; la hora "libre" cuenta las reservas pegadas al fin de la sesión. */
+  estadoConsola(c: ConsolaPublica): string {
+    if (c.fuera_servicio) return 'fuera de servicio';
+    if (c.ocupada && !c.libre_en) return 'ocupada';
+    const libre = libreDesdeMs(c);
+    if (libre <= Date.now() + 60_000) return 'libre';
+    return (c.ocupada ? 'libre ' : 'reservada, libre ') + hora(new Date(libre).toISOString());
+  }
+
+  /** Si la consola está ocupada o reservada ya, la reserva arranca cuando termina lo último de la cadena. */
   elegirLocal(c: ConsolaPublica): void {
     this.localPuesto = c.id;
     const ahora = Date.now();
-    this.localInicio = aHoraLocal(c.libre_en ? Math.max(ahora, Math.ceil(new Date(c.libre_en).getTime() / 60_000) * 60_000) : ahora);
+    const libre = libreDesdeMs(c, ahora);
+    this.localInicio = aHoraLocal(libre > ahora + 60_000 ? Math.ceil(libre / 60_000) * 60_000 : ahora);
   }
 
   async reservarLocal(): Promise<void> {

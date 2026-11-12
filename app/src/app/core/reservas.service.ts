@@ -194,6 +194,28 @@ export function finReserva(r: { inicio: string; minutos: number }): string {
   return new Date(new Date(r.inicio).getTime() + r.minutos * 60_000).toISOString();
 }
 
+/**
+ * Hora (ms) desde la que una consola queda libre de verdad: fin de la sesión en curso (o ahora) y,
+ * si hay reservas pegadas, el fin de la última de la cadena. Un hueco menor al tiempo mínimo
+ * de reserva no sirve para reservar, así que también se salta.
+ */
+export function libreDesdeMs(
+  c: { libre_en: string | null; reservas: { inicio: string; fin: string }[] },
+  ahora = Date.now(),
+  huecoMinimoMin = MINUTOS_RESERVA[0],
+): number {
+  let t = Math.max(ahora, c.libre_en ? new Date(c.libre_en).getTime() : ahora);
+  const orden = [...c.reservas].sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
+  for (const r of orden) {
+    const ini = new Date(r.inicio).getTime();
+    const fin = new Date(r.fin).getTime();
+    if (fin <= t) continue;
+    if (ini - t >= huecoMinimoMin * 60_000) break;
+    t = fin;
+  }
+  return t;
+}
+
 /** Enlace de WhatsApp a un número colombiano (10 dígitos = se antepone 57). */
 export function enlaceWhatsapp(telefono: string | null, texto?: string): string | null {
   const digitos = (telefono ?? '').replace(/\D/g, '');

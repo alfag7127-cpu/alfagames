@@ -7,6 +7,7 @@ import {
   ReservaCreada,
   ReservasService,
   enlaceWhatsapp,
+  libreDesdeMs,
 } from '../../core/reservas.service';
 import { ZONA_HORARIA } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
@@ -90,11 +91,16 @@ function diaYHora(iso: string | number): string {
                       @if (c.modalidad === 'conteo_regresivo' && c.libre_en) {
                         <p class="mt-2 text-sm text-red-100">Pidió <b>{{ duracion(c.minutos_pedidos) }}</b></p>
                         <p class="text-sm text-red-100">
-                          Le quedan <b>{{ duracion(minutosHasta(c.libre_en)) }}</b> · se desocupa a las {{ hora(c.libre_en) }}
+                          Le quedan <b>{{ duracion(minutosHasta(c.libre_en)) }}</b> · su tiempo termina a las {{ hora(c.libre_en) }}
                         </p>
+                        @if (reservadaDespues(c)) {
+                          <p class="mt-1 rounded-lg bg-red-600/30 px-2 py-1 text-sm text-red-50">
+                            Después ya está <b>reservada hasta las {{ hora(libreDesde(c)) }}</b>
+                          </p>
+                        }
                         <button type="button" (click)="elegir(c)"
                           class="mt-3 w-full rounded-xl bg-white/90 py-2.5 text-sm font-bold text-red-700 hover:bg-white">
-                          Reservar desde las {{ hora(c.libre_en) }}
+                          Reservar desde las {{ hora(libreDesde(c)) }}
                         </button>
                       } @else {
                         <p class="mt-2 text-sm text-red-100">Tiempo libre (sin hora de salida)</p>
@@ -103,6 +109,12 @@ function diaYHora(iso: string | number): string {
                       }
                     } @else if (c.fuera_servicio) {
                       <p class="mt-2 text-sm text-slate-300">No disponible por ahora.</p>
+                    } @else if (reservadaDespues(c)) {
+                      <p class="mt-2 text-sm text-emerald-100">Libre ahora, pero ya está <b>reservada hasta las {{ hora(libreDesde(c)) }}</b></p>
+                      <button type="button" (click)="elegir(c)"
+                        class="mt-3 w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">
+                        Reservar desde las {{ hora(libreDesde(c)) }}
+                      </button>
                     } @else {
                       <button type="button" (click)="elegir(c)"
                         class="mt-3 w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">
@@ -128,10 +140,16 @@ function diaYHora(iso: string | number): string {
           @case ('datos') {
             <section class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-5 space-y-4">
               <p class="text-sm text-slate-300">Consola <b class="text-white">{{ consola()?.nombre }}</b> · Paso 1 de 3</p>
-              @if (consola()?.libre_en) {
-                <p class="rounded-xl bg-red-500/15 ring-1 ring-red-400/40 px-3 py-2 text-sm text-red-100">
-                  Está ocupada ahora: tu reserva puede empezar desde las {{ hora(consola()!.libre_en!) }}, cuando termina el cliente que está jugando.
-                </p>
+              @if (consola(); as c) {
+                @if (reservadaDespues(c)) {
+                  <p class="rounded-xl bg-red-500/15 ring-1 ring-red-400/40 px-3 py-2 text-sm text-red-100">
+                    Ya está reservada hasta las {{ hora(libreDesde(c)) }}: tu reserva puede empezar desde esa hora.
+                  </p>
+                } @else if (c.libre_en) {
+                  <p class="rounded-xl bg-red-500/15 ring-1 ring-red-400/40 px-3 py-2 text-sm text-red-100">
+                    Está ocupada ahora: tu reserva puede empezar desde las {{ hora(c.libre_en) }}, cuando termina el cliente que está jugando.
+                  </p>
+                }
               }
               <label class="block text-sm">
                 Nombre
@@ -306,11 +324,24 @@ export class Reservar implements OnInit, OnDestroy {
     return Math.max(1, Math.ceil((new Date(iso).getTime() - this.ahora()) / 60_000));
   }
 
-  /** Desde cuándo se puede reservar la consola elegida: ahora, o cuando termina la sesión en curso. */
+  /** Hora (ISO) en que la consola queda libre de verdad: fin de la sesión y de las reservas pegadas. */
+  libreDesde(c: ConsolaPublica): string {
+    return new Date(libreDesdeMs(c, this.ahora())).toISOString();
+  }
+
+  /** Hay una reserva justo después de la sesión (o ya mismo) que corre la hora en que queda libre. */
+  reservadaDespues(c: ConsolaPublica): boolean {
+    const base = Math.max(this.ahora(), c.libre_en ? new Date(c.libre_en).getTime() : 0);
+    return libreDesdeMs(c, this.ahora()) > base;
+  }
+
+  /** Desde cuándo se puede reservar la consola elegida: ahora, o cuando terminan la sesión y las reservas pegadas. */
   private desdeMs(): number {
-    const libre = this.consola()?.libre_en;
+    const c = this.consola();
+    if (!c) return Date.now();
+    const libre = libreDesdeMs(c);
     // Al minuto siguiente del fin (el input solo maneja minutos).
-    return libre ? Math.max(Date.now(), Math.ceil(new Date(libre).getTime() / 60_000) * 60_000) : Date.now();
+    return libre > Date.now() + 60_000 ? Math.ceil(libre / 60_000) * 60_000 : Date.now();
   }
 
   minimoInicio(): string {
@@ -342,7 +373,7 @@ export class Reservar implements OnInit, OnDestroy {
     // Por defecto: libre ya → en 15 minutos (redondeado al cuarto de hora); ocupada → cuando termina.
     const cuarto = 15 * 60_000;
     if (!this.inicio()) {
-      this.inicio.set(aHoraLocal(this.consola()?.libre_en ? this.desdeMs() : Math.ceil((Date.now() + cuarto) / cuarto) * cuarto));
+      this.inicio.set(aHoraLocal(this.desdeMs() > Date.now() + 60_000 ? this.desdeMs() : Math.ceil((Date.now() + cuarto) / cuarto) * cuarto));
     }
     this.paso.set('tiempo');
   }
@@ -355,7 +386,7 @@ export class Reservar implements OnInit, OnDestroy {
     if (!this.inicio()) return this.error.set('Elige a qué hora llegas.');
     const inicio = this.inicioMs();
     if (inicio < Date.now() - 2 * 60_000) return this.error.set('Esa hora ya pasó. Elige una hora desde ahora.');
-    if (c.libre_en && inicio < this.desdeMs() - 60_000) {
+    if (c.libre_en && inicio < new Date(c.libre_en).getTime() - 60_000) {
       return this.error.set(`${c.nombre} está ocupada hasta las ${hora(c.libre_en)}. Elige una hora desde entonces.`);
     }
     const fin = inicio + minutos * 60_000;

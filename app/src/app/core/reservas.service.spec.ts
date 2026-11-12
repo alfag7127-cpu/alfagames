@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Reserva, enlaceWhatsapp, finReserva, reservaVigente } from './reservas.service';
+import { Reserva, enlaceWhatsapp, finReserva, libreDesdeMs, reservaVigente } from './reservas.service';
 
 const base: Reserva = {
   id: 1,
@@ -38,5 +38,44 @@ describe('reservas', () => {
   it('el enlace de WhatsApp antepone 57 a un celular de 10 dígitos', () => {
     expect(enlaceWhatsapp('300 123 4567', 'Hola')).toBe('https://wa.me/573001234567?text=Hola');
     expect(enlaceWhatsapp('123')).toBeNull();
+  });
+});
+
+describe('libreDesdeMs', () => {
+  const ahora = new Date('2026-11-12T20:00:00.000Z').getTime();
+  const iso = (min: number) => new Date(ahora + min * 60_000).toISOString();
+
+  it('sin sesión ni reservas: libre ya', () => {
+    expect(libreDesdeMs({ libre_en: null, reservas: [] }, ahora)).toBe(ahora);
+  });
+
+  it('sesión en curso sin reservas: cuando termina', () => {
+    expect(libreDesdeMs({ libre_en: iso(15), reservas: [] }, ahora)).toBe(ahora + 15 * 60_000);
+  });
+
+  it('reserva pegada al fin de la sesión: libre al terminar la reserva', () => {
+    const c = { libre_en: iso(15), reservas: [{ inicio: iso(15), fin: iso(135) }] };
+    expect(libreDesdeMs(c, ahora)).toBe(ahora + 135 * 60_000);
+  });
+
+  it('encadena reservas seguidas y huecos cortos', () => {
+    const c = {
+      libre_en: iso(10),
+      reservas: [
+        { inicio: iso(140), fin: iso(200) },
+        { inicio: iso(20), fin: iso(120) },
+      ],
+    };
+    expect(libreDesdeMs(c, ahora)).toBe(ahora + 200 * 60_000);
+  });
+
+  it('hueco de 30 minutos o más: libre desde el fin de la sesión', () => {
+    const c = { libre_en: iso(10), reservas: [{ inicio: iso(60), fin: iso(120) }] };
+    expect(libreDesdeMs(c, ahora)).toBe(ahora + 10 * 60_000);
+  });
+
+  it('consola libre con reserva que empieza ya', () => {
+    const c = { libre_en: null, reservas: [{ inicio: iso(10), fin: iso(70) }] };
+    expect(libreDesdeMs(c, ahora)).toBe(ahora + 70 * 60_000);
   });
 });
