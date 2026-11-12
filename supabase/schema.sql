@@ -5143,45 +5143,10 @@ grant execute on function public.reservas_publico() to anon, authenticated;
 -- ============================================================
 -- 44. NUMERO DE RESERVA POR DIA (2026-11-12)
 -- ============================================================
--- Cada reserva lleva un numero que empieza en 1 cada dia (dia de la reserva en Colombia),
--- para que el local diga "reserva #3 de hoy" en vez del id global. El id sigue siendo la llave.
-alter table public.reservas add column if not exists numero int;
-
-update public.reservas r
-set numero = n.numero
-from (
-  select id, row_number() over (
-    partition by (inicio at time zone 'America/Bogota')::date order by created_at, id
-  ) as numero
-  from public.reservas
-) n
-where n.id = r.id and r.numero is null;
-
-create or replace function private.numerar_reserva()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_dia date := (new.inicio at time zone 'America/Bogota')::date;
-begin
-  -- Uno a la vez por dia, para que dos reservas simultaneas no tomen el mismo numero.
-  perform pg_advisory_xact_lock(hashtext('reserva_numero'), (v_dia - date '2000-01-01'));
-  select coalesce(max(numero), 0) + 1 into new.numero
-  from public.reservas
-  where (inicio at time zone 'America/Bogota')::date = v_dia;
-  return new;
-end;
-$$;
-
-create or replace trigger reservas_numero
-before insert on public.reservas
-for each row execute function private.numerar_reserva();
-
-alter table public.reservas alter column numero set not null;
-
--- crear_reserva devuelve tambien el numero del dia (lo ve el cliente y va en el WhatsApp).
+-- El local numera las reservas por dia (dia de la reserva en Colombia), empezando en 1, en
+-- orden de creacion. Las canceladas no cuentan: al cancelar una, las de despues bajan un
+-- numero. No se guarda: el front lo calcula (numerarPorDia en reservas.service.ts) y
+-- crear_reserva lo devuelve para que el cliente lo vea al reservar. El id sigue siendo la llave.
 create or replace function public.crear_reserva(
   p_puesto_id bigint,
   p_cliente_nombre text,
@@ -5261,7 +5226,12 @@ begin
 
   return jsonb_build_object(
     'id', v_r.id,
-    'numero', v_r.numero,
+    'numero', (
+      select count(*) from public.reservas x
+      where x.estado <> 'cancelada'
+        and (x.inicio at time zone 'America/Bogota')::date = (v_r.inicio at time zone 'America/Bogota')::date
+        and (x.created_at, x.id) <= (v_r.created_at, v_r.id)
+    ),
     'consola', (select nombre from public.puestos where id = p_puesto_id),
     'inicio', v_r.inicio,
     'fin', v_fin,

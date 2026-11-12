@@ -11,7 +11,7 @@ import {
   enlaceWhatsapp,
   finReserva,
   libreDesdeMs,
-  numeroReserva,
+  numerarPorDia,
   reservaVigente,
 } from '../../core/reservas.service';
 import { SesionesService } from '../../core/sesiones.service';
@@ -362,7 +362,8 @@ export class ReservasPage implements OnInit, OnDestroy {
 
   readonly hora = hora;
   readonly dia = dia;
-  readonly num = numeroReserva;
+  /** Número del día de cada reserva (las canceladas no cuentan). */
+  private readonly numeros = computed(() => numerarPorDia(this.lista()));
 
   readonly rangos: { id: Rango; txt: string }[] = [
     { id: 'hoy', txt: 'Hoy' },
@@ -459,6 +460,12 @@ export class ReservasPage implements OnInit, OnDestroy {
     } catch (e) {
       this.toast.error(this.mensaje(e));
     }
+  }
+
+  /** Número del día; una cancelada no tiene (sale "–"). */
+  num(r: Reserva): string {
+    const n = this.numeros().get(r.id);
+    return n ? String(n) : '–';
   }
 
   nombrePuesto(id: number): string {

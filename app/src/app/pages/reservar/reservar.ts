@@ -8,7 +8,6 @@ import {
   ReservasService,
   enlaceWhatsapp,
   libreDesdeMs,
-  numeroReserva,
 } from '../../core/reservas.service';
 import { ZONA_HORARIA } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
@@ -276,14 +275,14 @@ export class Reservar implements OnInit, OnDestroy {
   readonly diaYHora = diaYHora;
   readonly inicioMs = computed(() => (this.inicio() ? deHoraLocal(this.inicio()) : Date.now()));
   readonly precioElegido = computed(() => this.estado()?.precios.find((p) => p.minutos === this.minutos())?.precio ?? 0);
-  readonly numeroCreada = computed(() => { const c = this.creada(); return c ? numeroReserva(c) : null; });
+  readonly numeroCreada = computed(() => this.creada()?.numero ?? this.creada()?.id);
   readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
     const c = this.creada();
     if (!c) return null;
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
-      `Hola, envío el comprobante de mi reserva #${numeroReserva(c)}: ${c.consola}, ${diaYHora(c.inicio)} a ${hora(c.fin)}, ` +
+      `Hola, envío el comprobante de mi reserva #${c.numero ?? c.id}: ${c.consola}, ${diaYHora(c.inicio)} a ${hora(c.fin)}, ` +
         `${c.precio.toLocaleString('es-CO')} COP. A nombre de ${this.nombre.trim()}.`,
     );
   });

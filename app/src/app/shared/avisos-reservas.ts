@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ReservasService, Reserva, numeroReserva } from '../core/reservas.service';
+import { ReservasService, Reserva, numerarPorDia } from '../core/reservas.service';
 import { ZONA_HORARIA, fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
 import { sonarCaja } from './sonido-caja';
 
@@ -27,7 +27,7 @@ import { sonarCaja } from './sonido-caja';
 })
 export class AvisosReservas implements OnInit, OnDestroy {
   readonly nueva = signal<Reserva | null>(null);
-  readonly num = numeroReserva;
+  private numeros = new Map<number, number>();
   /** Ids ya vistos; la primera carga no avisa. */
   private vistos: Set<number> | null = null;
   private unsubscribe?: () => void;
@@ -43,6 +43,10 @@ export class AvisosReservas implements OnInit, OnDestroy {
     this.unsubscribe?.();
   }
 
+  num(r: Reserva): number {
+    return this.numeros.get(r.id) ?? r.id;
+  }
+
   hora(iso: string): string {
     const d = new Date(iso);
     const dia = fechaColombia(d) === fechaColombia() ? 'hoy' : d.toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, day: 'numeric', month: 'short' });
@@ -52,6 +56,7 @@ export class AvisosReservas implements OnInit, OnDestroy {
   private async revisar(): Promise<void> {
     try {
       const lista = await this.reservas.listar(inicioDiaColombia(fechaColombia()));
+      this.numeros = numerarPorDia(lista);
       if (this.vistos) {
         const nueva = lista.filter((r) => r.estado === 'pendiente' && !this.vistos!.has(r.id)).pop();
         if (nueva) {

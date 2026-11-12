@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
 import { suscribirCambios } from './tiempo-real';
+import { fechaColombia } from './zona-horaria';
 
 const BUCKET_RESERVAS = 'reservas';
 
@@ -11,8 +12,6 @@ export type EstadoReserva = 'pendiente' | 'confirmada' | 'usada' | 'cancelada';
 
 export interface Reserva {
   id: number;
-  /** Número del día: empieza en 1 cada día (día de la reserva en Colombia). */
-  numero?: number | null;
   puesto_id: number;
   cliente_nombre: string;
   /** Opcional en las reservas hechas en el local. */
@@ -192,9 +191,24 @@ export function reservaVigente(r: Reserva, minutosParaPagar: number, ahora = Dat
   return r.estado === 'pendiente' && new Date(r.created_at).getTime() > ahora - minutosParaPagar * 60_000;
 }
 
-/** Número que ve la gente: el del día; si la base aún no lo tiene, el id. */
-export function numeroReserva(r: { id: number; numero?: number | null }): number {
-  return r.numero ?? r.id;
+/**
+ * Número de reserva del día: empieza en 1 cada día (día de la reserva en Colombia), en orden
+ * de creación. Las canceladas no cuentan y no tienen número: al cancelar una, las que se
+ * hicieron después bajan un número. La lista debe traer los días completos.
+ */
+export function numerarPorDia(lista: Reserva[]): Map<number, number> {
+  const orden = lista
+    .filter((r) => r.estado !== 'cancelada')
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+  const porDia = new Map<string, number>();
+  const numeros = new Map<number, number>();
+  for (const r of orden) {
+    const dia = fechaColombia(r.inicio);
+    const n = (porDia.get(dia) ?? 0) + 1;
+    porDia.set(dia, n);
+    numeros.set(r.id, n);
+  }
+  return numeros;
 }
 
 /** Fin de una reserva (ISO). */
