@@ -11,11 +11,12 @@ import {
   enlaceWhatsapp,
   finReserva,
   libreDesdeMs,
+  numeroReserva,
   reservaVigente,
 } from '../../core/reservas.service';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
-import { ZONA_HORARIA, fechaColombia, inicioDiaColombia, sumarDias } from '../../core/zona-horaria';
+import { ZONA_HORARIA, fechaColombia, inicioDiaColombia, inicioMes, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { sonarCaja } from '../../shared/sonido-caja';
 
@@ -31,6 +32,24 @@ function deHoraLocal(valor: string): number {
 
 function hora(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit' });
+}
+
+type Rango = 'hoy' | 'ayer' | 'semana' | 'mes' | 'proximas';
+
+/** Días (YYYY-MM-DD, Colombia) que muestra cada filtro. Semana = hoy y los 6 días anteriores. */
+export function diasDelRango(rango: Rango, hoy: string): { desde: string; hasta: string } {
+  switch (rango) {
+    case 'ayer':
+      return { desde: sumarDias(hoy, -1), hasta: sumarDias(hoy, -1) };
+    case 'semana':
+      return { desde: sumarDias(hoy, -6), hasta: hoy };
+    case 'mes':
+      return { desde: inicioMes(hoy), hasta: hoy };
+    case 'proximas':
+      return { desde: sumarDias(hoy, 1), hasta: '9999-12-31' };
+    default:
+      return { desde: hoy, hasta: hoy };
+  }
 }
 
 function dia(iso: string): string {
@@ -120,6 +139,18 @@ function dia(iso: string): string {
       }
     </section>
 
+    <!-- Filtro por día: siempre abre en Hoy y vuelve a Hoy al cambiar de día -->
+    <div class="mb-3 flex flex-wrap items-center gap-1.5">
+      @for (o of rangos; track o.id) {
+        <button type="button" (click)="rango.set(o.id)"
+          class="rounded-full px-3 py-1.5 text-sm font-medium ring-1"
+          [class.bg-indigo-600]="rango() === o.id" [class.text-white]="rango() === o.id" [class.ring-indigo-600]="rango() === o.id"
+          [class.bg-white]="rango() !== o.id" [class.text-slate-700]="rango() !== o.id" [class.ring-slate-200]="rango() !== o.id">
+          {{ o.txt }}{{ o.id === 'proximas' && proximasCount() ? ' (' + proximasCount() + ')' : '' }}
+        </button>
+      }
+    </div>
+
     <!-- Pendientes de pago -->
     <section class="mb-4">
       <h2 class="font-semibold text-slate-900 mb-2">💳 Pendientes de pago ({{ pendientes().length }})</h2>
@@ -129,7 +160,7 @@ function dia(iso: string): string {
             [class.ring-amber-300]="vigente(r)" [class.ring-slate-200]="!vigente(r)">
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p class="font-semibold text-slate-900">#{{ r.id }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
+                <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
                 <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
                 <p class="text-xs" [class.text-amber-700]="vigente(r)" [class.text-red-600]="!vigente(r)">
                   {{ vigente(r) ? 'Aparta la consola ' + minutosParaVencer(r) + ' min más' : 'Se venció el tiempo para pagar: ya no aparta la consola' }}
@@ -180,7 +211,7 @@ function dia(iso: string): string {
             }
           </article>
         } @empty {
-          <p class="text-sm text-slate-500">No hay reservas esperando pago.</p>
+          <p class="text-sm text-slate-500">No hay reservas esperando pago {{ textoRango() }}.</p>
         }
       </div>
     </section>
@@ -193,7 +224,7 @@ function dia(iso: string): string {
           <article class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-emerald-200">
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p class="font-semibold text-slate-900">#{{ r.id }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
+                <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
                 <p class="text-sm text-slate-600">
                   {{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
                 </p>
@@ -246,25 +277,25 @@ function dia(iso: string): string {
             }
           </article>
         } @empty {
-          <p class="text-sm text-slate-500">No hay reservas confirmadas por venir.</p>
+          <p class="text-sm text-slate-500">No hay reservas confirmadas por venir {{ textoRango() }}.</p>
         }
       </div>
     </section>
 
     <!-- Recientes -->
     <section class="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-      <h2 class="font-semibold text-slate-900 mb-2">Últimos 7 días</h2>
+      <h2 class="font-semibold text-slate-900 mb-2">Historial · {{ tituloRango() }} ({{ recientes().length }})</h2>
       <ul class="divide-y divide-slate-100 text-sm">
         @for (r of recientes(); track r.id) {
           <li class="flex items-center justify-between gap-2 py-2" [class.opacity-60]="r.estado === 'cancelada'">
-            <span>#{{ r.id }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} · {{ r.cliente_nombre }}</span>
+            <span>#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} · {{ r.cliente_nombre }}</span>
             <span class="shrink-0 text-xs font-medium"
               [class.text-indigo-600]="r.estado === 'usada'" [class.text-slate-500]="r.estado !== 'usada'">
               {{ r.estado === 'usada' ? 'Usada' : r.estado === 'cancelada' ? 'Cancelada' : 'Vencida' }} · {{ r.precio | number: '1.0-0' }}
             </span>
           </li>
         } @empty {
-          <li class="py-2 text-slate-500">Sin reservas.</li>
+          <li class="py-2 text-slate-500">Sin reservas {{ textoRango() }}.</li>
         }
       </ul>
     </section>
@@ -331,17 +362,45 @@ export class ReservasPage implements OnInit, OnDestroy {
 
   readonly hora = hora;
   readonly dia = dia;
+  readonly num = numeroReserva;
+
+  readonly rangos: { id: Rango; txt: string }[] = [
+    { id: 'hoy', txt: 'Hoy' },
+    { id: 'ayer', txt: 'Ayer' },
+    { id: 'semana', txt: 'Semana' },
+    { id: 'mes', txt: 'Este mes' },
+    { id: 'proximas', txt: 'Próximos días' },
+  ];
+  /** Siempre abre en las reservas de hoy. */
+  readonly rango = signal<Rango>('hoy');
+  /** Día en curso en Colombia; cambia solo a medianoche. */
+  private readonly hoy = computed(() => fechaColombia(new Date(this.ahora())));
+  private readonly dias = computed(() => diasDelRango(this.rango(), this.hoy()));
+  private readonly delRango = computed(() => {
+    const { desde, hasta } = this.dias();
+    return this.lista().filter((r) => {
+      const f = fechaColombia(r.inicio);
+      return f >= desde && f <= hasta;
+    });
+  });
+  readonly proximasCount = computed(
+    () => this.lista().filter((r) => fechaColombia(r.inicio) > this.hoy() && (r.estado === 'pendiente' || r.estado === 'confirmada')).length,
+  );
+  readonly tituloRango = computed(() => this.rangos.find((o) => o.id === this.rango())!.txt);
+  readonly textoRango = computed(
+    () => ({ hoy: 'hoy', ayer: 'ayer', semana: 'esta semana', mes: 'este mes', proximas: 'para los próximos días' })[this.rango()],
+  );
   readonly fin = finReserva;
 
   private readonly minutosParaPagar = computed(() => this.config()?.minutos_para_pagar ?? 30);
   readonly pendientes = computed(() =>
-    this.lista().filter((r) => r.estado === 'pendiente' && new Date(finReserva(r)).getTime() > this.ahora()),
+    this.delRango().filter((r) => r.estado === 'pendiente' && new Date(finReserva(r)).getTime() > this.ahora()),
   );
   readonly confirmadas = computed(() =>
-    this.lista().filter((r) => r.estado === 'confirmada' && new Date(finReserva(r)).getTime() > this.ahora()),
+    this.delRango().filter((r) => r.estado === 'confirmada' && new Date(finReserva(r)).getTime() > this.ahora()),
   );
   readonly recientes = computed(() =>
-    this.lista()
+    this.delRango()
       .filter((r) => !this.pendientes().includes(r) && !this.confirmadas().includes(r))
       .filter((r) => new Date(r.inicio).getTime() <= this.ahora())
       .reverse(),
@@ -362,7 +421,15 @@ export class ReservasPage implements OnInit, OnDestroy {
     this.sesiones.listarNombresPuestos().then((m) => this.nombres.set(m)).catch(() => undefined);
     this.cargar();
     this.unsubscribe = this.reservas.onCambios(() => this.cargar());
-    this.timer = setInterval(() => this.ahora.set(Date.now()), 30_000);
+    this.timer = setInterval(() => {
+      const diaAntes = this.hoy();
+      this.ahora.set(Date.now());
+      // Empieza un día nuevo: vuelve a Hoy (desde la reserva #1) y recarga.
+      if (this.hoy() !== diaAntes) {
+        this.rango.set('hoy');
+        this.cargar();
+      }
+    }, 30_000);
   }
 
   ngOnDestroy(): void {
@@ -373,7 +440,10 @@ export class ReservasPage implements OnInit, OnDestroy {
   async cargar(): Promise<void> {
     try {
       const [lista, config, estado] = await Promise.all([
-        this.reservas.listar(inicioDiaColombia(sumarDias(fechaColombia(), -7))),
+        // Lo que cubre cualquier filtro: desde el más antiguo entre la semana y el mes en curso.
+        this.reservas.listar(inicioDiaColombia(
+          [sumarDias(fechaColombia(), -6), inicioMes()].sort()[0],
+        )),
         this.reservas.config(),
         this.reservas.estadoPublico(),
       ]);
@@ -412,7 +482,7 @@ export class ReservasPage implements OnInit, OnDestroy {
   }
 
   whatsapp(r: Reserva): string | null {
-    return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${r.id}.`);
+    return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${this.num(r)}.`);
   }
 
   async copiar(): Promise<void> {
@@ -425,12 +495,12 @@ export class ReservasPage implements OnInit, OnDestroy {
   }
 
   async confirmar(r: Reserva): Promise<void> {
-    await this.accion(r, () => this.reservas.confirmar(r.id), `Reserva #${r.id} confirmada.`);
+    await this.accion(r, () => this.reservas.confirmar(r.id), `Reserva #${this.num(r)} confirmada.`);
   }
 
   async cancelar(r: Reserva): Promise<void> {
-    if (!confirm(`¿Cancelar la reserva #${r.id} de ${r.cliente_nombre}? La consola queda libre en ese horario.`)) return;
-    await this.accion(r, () => this.reservas.cancelar(r.id), `Reserva #${r.id} cancelada.`);
+    if (!confirm(`¿Cancelar la reserva #${this.num(r)} de ${r.cliente_nombre}? La consola queda libre en ese horario.`)) return;
+    await this.accion(r, () => this.reservas.cancelar(r.id), `Reserva #${this.num(r)} cancelada.`);
   }
 
   abrirMover(r: Reserva): void {
@@ -452,8 +522,8 @@ export class ReservasPage implements OnInit, OnDestroy {
       r,
       () => this.reservas.transferir(r.id, destino, this.iniciarYa),
       this.iniciarYa
-        ? `Reserva #${r.id} movida a ${this.nombrePuesto(destino)} y sesión iniciada. ${this.nombrePuesto(r.puesto_id)} queda libre.`
-        : `Reserva #${r.id} movida a ${this.nombrePuesto(destino)}. ${this.nombrePuesto(r.puesto_id)} queda libre.`,
+        ? `Reserva #${this.num(r)} movida a ${this.nombrePuesto(destino)} y sesión iniciada. ${this.nombrePuesto(r.puesto_id)} queda libre.`
+        : `Reserva #${this.num(r)} movida a ${this.nombrePuesto(destino)}. ${this.nombrePuesto(r.puesto_id)} queda libre.`,
     );
     if (ok) {
       this.moviendo.set(null);

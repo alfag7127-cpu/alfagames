@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ReservasService, Reserva } from '../core/reservas.service';
+import { ReservasService, Reserva, numeroReserva } from '../core/reservas.service';
 import { ZONA_HORARIA, fechaColombia, inicioDiaColombia } from '../core/zona-horaria';
 import { sonarCaja } from './sonido-caja';
 
@@ -14,7 +14,7 @@ import { sonarCaja } from './sonido-caja';
   template: `
     @if (nueva(); as r) {
       <div class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 rounded-2xl bg-white p-4 shadow-2xl ring-2 ring-amber-400">
-        <p class="font-bold text-slate-900">📅 Nueva reserva #{{ r.id }}</p>
+        <p class="font-bold text-slate-900">📅 Nueva reserva #{{ num(r) }}</p>
         <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ hora(r.inicio) }} · {{ r.minutos }} min · {{ r.precio.toLocaleString('es-CO') }} COP</p>
         <p class="text-xs text-amber-700">Revisa el comprobante y confirma el pago.</p>
         <div class="mt-3 flex gap-2">
@@ -27,6 +27,7 @@ import { sonarCaja } from './sonido-caja';
 })
 export class AvisosReservas implements OnInit, OnDestroy {
   readonly nueva = signal<Reserva | null>(null);
+  readonly num = numeroReserva;
   /** Ids ya vistos; la primera carga no avisa. */
   private vistos: Set<number> | null = null;
   private unsubscribe?: () => void;

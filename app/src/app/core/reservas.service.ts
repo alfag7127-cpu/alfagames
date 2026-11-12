@@ -11,6 +11,8 @@ export type EstadoReserva = 'pendiente' | 'confirmada' | 'usada' | 'cancelada';
 
 export interface Reserva {
   id: number;
+  /** Número del día: empieza en 1 cada día (día de la reserva en Colombia). */
+  numero?: number | null;
   puesto_id: number;
   cliente_nombre: string;
   /** Opcional en las reservas hechas en el local. */
@@ -61,6 +63,7 @@ export interface EstadoPublico {
 
 export interface ReservaCreada {
   id: number;
+  numero?: number | null;
   consola: string;
   inicio: string;
   fin: string;
@@ -187,6 +190,11 @@ export class ReservasService {
 export function reservaVigente(r: Reserva, minutosParaPagar: number, ahora = Date.now()): boolean {
   if (r.estado === 'confirmada') return true;
   return r.estado === 'pendiente' && new Date(r.created_at).getTime() > ahora - minutosParaPagar * 60_000;
+}
+
+/** Número que ve la gente: el del día; si la base aún no lo tiene, el id. */
+export function numeroReserva(r: { id: number; numero?: number | null }): number {
+  return r.numero ?? r.id;
 }
 
 /** Fin de una reserva (ISO). */

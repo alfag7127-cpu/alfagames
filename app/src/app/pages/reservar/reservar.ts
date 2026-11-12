@@ -8,6 +8,7 @@ import {
   ReservasService,
   enlaceWhatsapp,
   libreDesdeMs,
+  numeroReserva,
 } from '../../core/reservas.service';
 import { ZONA_HORARIA } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
@@ -209,7 +210,7 @@ function diaYHora(iso: string | number): string {
 
           @case ('pago') {
             <section class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-5 space-y-4 text-center">
-              <p class="text-sm text-slate-300">Paso 3 de 3 · Reserva #{{ creada()?.id }}</p>
+              <p class="text-sm text-slate-300">Paso 3 de 3 · Reserva #{{ numeroCreada() }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
               <p class="text-sm text-slate-300">{{ creada()?.consola }} · {{ diaYHora(creada()!.inicio) }} a {{ hora(creada()!.fin) }}</p>
               @if (urlQr()) {
@@ -275,13 +276,14 @@ export class Reservar implements OnInit, OnDestroy {
   readonly diaYHora = diaYHora;
   readonly inicioMs = computed(() => (this.inicio() ? deHoraLocal(this.inicio()) : Date.now()));
   readonly precioElegido = computed(() => this.estado()?.precios.find((p) => p.minutos === this.minutos())?.precio ?? 0);
+  readonly numeroCreada = computed(() => { const c = this.creada(); return c ? numeroReserva(c) : null; });
   readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
     const c = this.creada();
     if (!c) return null;
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
-      `Hola, envío el comprobante de mi reserva #${c.id}: ${c.consola}, ${diaYHora(c.inicio)} a ${hora(c.fin)}, ` +
+      `Hola, envío el comprobante de mi reserva #${numeroReserva(c)}: ${c.consola}, ${diaYHora(c.inicio)} a ${hora(c.fin)}, ` +
         `${c.precio.toLocaleString('es-CO')} COP. A nombre de ${this.nombre.trim()}.`,
     );
   });
