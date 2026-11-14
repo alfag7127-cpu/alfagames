@@ -13,6 +13,7 @@ import { PesosDirective } from '../../shared/pesos.directive';
 import { Contratos } from '../../shared/contratos';
 import { GraficaProducido } from './grafica-producido';
 import { Clientes } from './clientes';
+import { ReservasAlquilerTab } from './reservas-alquiler';
 import { LiquidacionPage } from './liquidacion';
 import { Potes } from './potes';
 import { prepararArchivo } from '../../shared/comprimir-imagen';
@@ -20,7 +21,7 @@ import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shar
 import { sonarCaja } from '../../shared/sonido-caja';
 import { PagoConAlquiler } from '../../core/alquiler.service';
 
-type Pestana = 'consolas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'clientes' | 'inventario';
+type Pestana = 'consolas' | 'reservas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'clientes' | 'inventario';
 
 interface ConsolaVM extends ConsolaConEstado {
   procesando: boolean;
@@ -156,7 +157,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes],
+  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes, ReservasAlquilerTab],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -164,6 +165,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   /** Menú de secciones: íconos grandes (el texto va en el title y aria-label). */
   readonly pestanas: { id: Pestana; icono: string; texto: string; soloAlquiler?: boolean }[] = [
     { id: 'consolas', icono: '🎮', texto: 'Consolas' },
+    { id: 'reservas', icono: '📅', texto: 'Reservas' },
     { id: 'historial', icono: '📖', texto: 'Historial' },
     { id: 'graficas', icono: '📊', texto: 'Gráficas' },
     { id: 'potes', icono: '💰', texto: 'Potes' },

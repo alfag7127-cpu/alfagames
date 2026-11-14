@@ -731,6 +731,10 @@
 }
 
 <!-- ═══ CLIENTES ═══ -->
+@if (pestana() === 'reservas') {
+  <app-reservas-alquiler />
+}
+
 @if (pestana() === 'clientes') {
   <app-clientes />
 }

@@ -55,6 +55,10 @@ export interface ReservaAlquiler {
   cliente_telefono: string;
   cliente_direccion: string;
   estado: EstadoReservaAlquiler;
+  /** 'gta6' = reserva GTA 6; null = alquiler normal (PS4) desde /alquilar. */
+  juego: 'gta6' | null;
+  /** qr = pagó con el QR (se confirma el pago); efectivo = paga al recibir. */
+  forma_pago: 'qr' | 'efectivo';
   alquiler_id: number | null;
   confirmada_en: string | null;
   created_at: string;
@@ -128,7 +132,7 @@ export class Gta6Service {
   }
 
   async reservasDomicilio(): Promise<ReservaAlquiler[]> {
-    const { data, error } = await this.db.from('reservas_alquiler').select('*, alquiler_consolas(nombre)').order('inicio');
+    const { data, error } = await this.db.from('reservas_alquiler').select('*, alquiler_consolas(nombre)').eq('juego', 'gta6').order('inicio');
     if (error) throw error;
     return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));
   }
