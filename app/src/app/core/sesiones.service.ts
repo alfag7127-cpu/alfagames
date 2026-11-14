@@ -94,6 +94,16 @@ export class SesionesService {
   }
 
   /** Pausa el tiempo de la sesión: mientras dure no se cobra. */
+  /** GTA 6 o normal: cambia la tarifa de la sesión (en regresivo el precio se recalcula ya). */
+  async marcarJuego(sesionId: number, juego: 'gta6' | null): Promise<Sesion> {
+    const { data, error } = await this.supabase.client.rpc('marcar_juego_sesion', {
+      p_sesion_id: sesionId,
+      p_juego: juego,
+    });
+    if (error) throw error;
+    return data as Sesion;
+  }
+
   /** Recordatorio de pago: guarda cuánto ya pagó el cliente (null = pendiente por cobrar). */
   async marcarPago(sesionId: number, monto: number | null): Promise<void> {
     const { error } = await this.supabase.client.rpc('marcar_pago_sesion', {

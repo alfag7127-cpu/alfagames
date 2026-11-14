@@ -81,6 +81,10 @@ export interface PuestoConEstado {
   /** Lo que el cliente ya pagó (tiempo + productos) al marcar "Ya pagó"; null = pendiente por cobrar. */
   pagado_monto: number | null;
   pagado_en: string | null;
+  /** La consola tiene GTA 6: al abrir hay que preguntar si juega GTA 6 o normal. */
+  gta6: boolean;
+  /** 'gta6' = la sesión se cobra con la tarifa GTA 6. */
+  juego: 'gta6' | null;
 }
 
 export interface ConsumoSesion {

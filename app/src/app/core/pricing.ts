@@ -59,3 +59,21 @@ export function calcularCobro(
     precioTotal: precioBase + PRECIO_CONTROL_ADICIONAL_POR_HORA * horasControles,
   };
 }
+
+/**
+ * Precio base GTA 6 (igual que `private.precio_gta6`): el de la tabla de la sala para ese tiempo;
+ * si no está, se interpola entre los dos tiempos vecinos, y por debajo del menor o por encima
+ * del mayor es proporcional a ese tiempo. Redondeado a 100. null = no hay precios GTA 6.
+ */
+export function precioGta6(horas: number, tabla: { minutos: number; precio: number }[]): number | null {
+  const filas = tabla.map((t) => ({ h: t.minutos / 60, p: t.precio })).sort((a, b) => a.h - b.h);
+  if (!filas.length) return null;
+  const lo = [...filas].reverse().find((f) => f.h <= horas);
+  const hi = filas.find((f) => f.h >= horas);
+  let p: number;
+  if (!lo) p = (hi!.p * horas) / hi!.h;
+  else if (!hi) p = (lo.p * horas) / lo.h;
+  else if (hi.h === lo.h) p = lo.p;
+  else p = lo.p + ((hi.p - lo.p) * (horas - lo.h)) / (hi.h - lo.h);
+  return Math.round(p / 100) * 100;
+}

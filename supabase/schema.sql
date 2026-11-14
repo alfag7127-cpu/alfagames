@@ -5992,3 +5992,198 @@ end;
 $$;
 revoke all on function public.marcar_gta6_consola(bigint, boolean) from public, anon;
 grant execute on function public.marcar_gta6_consola(bigint, boolean) to authenticated;
+
+-- ============================================================
+-- 48. SESIONES GTA 6 EN LA SALA: COBRO CON LA TARIFA GTA 6 (2026-11-13)
+-- ============================================================
+-- En una consola con GTA 6 el trabajador pregunta al cliente si juega GTA 6 o normal.
+-- sesiones.juego = 'gta6' cobra el tiempo con gta6_precios_sala (el mismo cobro de siempre,
+-- solo cambia el precio base; los controles adicionales suman igual). Si el tiempo no esta en
+-- la tabla se interpola entre los dos tiempos vecinos; por debajo del menor o por encima del
+-- mayor se cobra proporcional a ese tiempo. Redondeado a 100. Un precio manual sigue mandando.
+
+alter table public.sesiones add column if not exists juego text;
+alter table public.sesiones drop constraint if exists sesiones_juego_check;
+alter table public.sesiones add constraint sesiones_juego_check check (juego is null or juego = 'gta6');
+
+create or replace function private.precio_gta6(p_horas numeric)
+returns numeric
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_lo record;
+  v_hi record;
+  v_p numeric;
+begin
+  select minutos / 60.0 as h, precio as p into v_lo
+  from public.gta6_precios_sala where minutos / 60.0 <= p_horas order by minutos desc limit 1;
+  select minutos / 60.0 as h, precio as p into v_hi
+  from public.gta6_precios_sala where minutos / 60.0 >= p_horas order by minutos limit 1;
+  if v_lo.h is null and v_hi.h is null then
+    return null;
+  elsif v_lo.h is null then
+    v_p := v_hi.p * p_horas / v_hi.h;
+  elsif v_hi.h is null then
+    v_p := v_lo.p * p_horas / v_lo.h;
+  elsif v_hi.h = v_lo.h then
+    v_p := v_lo.p;
+  else
+    v_p := v_lo.p + (v_hi.p - v_lo.p) * (p_horas - v_lo.h) / (v_hi.h - v_lo.h);
+  end if;
+  return round(v_p, -2);
+end;
+$$;
+revoke all on function private.precio_gta6(numeric) from public, anon;
+grant execute on function private.precio_gta6(numeric) to authenticated;
+
+-- Igual que antes; si la sesion es GTA 6 y no hay precio manual, el base es la tarifa GTA 6.
+create or replace function private.cobro_sesion(
+  p_sesion_id bigint,
+  p_fin timestamptz,
+  p_precio_manual numeric,
+  out horas numeric,
+  out horas_controles numeric,
+  out precio_base numeric,
+  out precio_total numeric
+)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_inicio timestamptz;
+  v_juego text;
+  v_minutos numeric;
+  v_controles numeric[];
+  v_manual numeric := p_precio_manual;
+begin
+  select hora_inicio, juego into v_inicio, v_juego from public.sesiones where id = p_sesion_id;
+
+  select coalesce(
+    array_agg(private.minutos_efectivos(p_sesion_id, greatest(c.desde, v_inicio), least(coalesce(c.hasta, p_fin), p_fin))),
+    '{}'
+  )
+    into v_controles
+  from public.sesion_controles c
+  where c.sesion_id = p_sesion_id and c.desde < p_fin;
+
+  v_minutos := private.minutos_efectivos(p_sesion_id, v_inicio, p_fin);
+  if v_manual is null and v_juego = 'gta6' then
+    v_manual := private.precio_gta6(greatest(0.5, private.redondear_horas(v_minutos)));
+  end if;
+
+  select * into horas, horas_controles, precio_base, precio_total
+  from private.calcular_cobro(v_minutos, v_controles, v_manual);
+end;
+$$;
+
+-- El trabajador dice que juega (GTA 6 o normal). En conteo regresivo el precio se recalcula ya.
+create or replace function public.marcar_juego_sesion(p_sesion_id bigint, p_juego text)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  if p_juego is not null and p_juego <> 'gta6' then
+    raise exception 'Juego no válido';
+  end if;
+  if p_juego = 'gta6' and not exists (select 1 from public.gta6_precios_sala) then
+    raise exception 'Primero pon los precios GTA 6 de la sala (GTA 6 > Configuración)';
+  end if;
+  update public.sesiones set juego = p_juego
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'La sesion % ya no esta activa (o no tienes permiso)', p_sesion_id;
+  end if;
+  if v_s.modalidad = 'conteo_regresivo' then
+    perform private.recalcular_regresiva(p_sesion_id);
+    select * into v_s from public.sesiones where id = p_sesion_id;
+  end if;
+  return v_s;
+end;
+$$;
+revoke all on function public.marcar_juego_sesion(bigint, text) from public, anon;
+grant execute on function public.marcar_juego_sesion(bigint, text) to authenticated;
+
+-- Una reserva GTA 6 que se inicia abre una sesion GTA 6 (con el precio ya pagado).
+create or replace function private.reserva_gta6_sesion()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.juego = 'gta6' and new.sesion_id is not null then
+    update public.sesiones set juego = 'gta6' where id = new.sesion_id;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists reservas_gta6_sesion on public.reservas;
+create trigger reservas_gta6_sesion
+  after insert or update of sesion_id on public.reservas
+  for each row execute function private.reserva_gta6_sesion();
+
+-- vista_puestos: si la consola tiene GTA 6 y que se juega en la sesion (al final).
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles,
+  s.pausada,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', pa.desde, 'hasta', pa.hasta) order by pa.desde)
+      from public.sesion_pausas pa
+      where pa.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as pausas,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', pr.nombre, 'cantidad', v.cantidad, 'total', v.total) order by v.created_at)
+      from public.ventas_productos v
+      join public.productos pr on pr.id = v.producto_id
+      where v.sesion_id = s.id and v.estado = 'vendida'
+    ),
+    '[]'::jsonb
+  ) as consumos,
+  coalesce(
+    (select sum(v.total) from public.ventas_productos v where v.sesion_id = s.id and v.estado = 'vendida'),
+    0
+  ) as total_consumos,
+  p.fuera_servicio,
+  p.motivo_fuera,
+  s.pagado_monto,
+  s.pagado_en,
+  p.gta6,
+  s.juego
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;

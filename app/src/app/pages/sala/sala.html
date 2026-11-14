@@ -137,6 +137,26 @@
               </button>
             </div>
 
+            @if (p.gta6) {
+              <div class="rounded-xl bg-fuchsia-50 p-2 ring-1 ring-fuchsia-200">
+                <p class="mb-1.5 text-xs font-bold text-fuchsia-900">🔥 Pregúntale al cliente: ¿qué va a jugar?</p>
+                <div class="grid grid-cols-2 gap-1.5 text-xs font-semibold">
+                  <button type="button" (click)="p.juegoInput = 'normal'"
+                    class="rounded-lg border py-1.5"
+                    [class.bg-slate-800]="p.juegoInput === 'normal'" [class.text-white]="p.juegoInput === 'normal'" [class.border-slate-800]="p.juegoInput === 'normal'"
+                    [class.bg-white]="p.juegoInput !== 'normal'" [class.text-slate-700]="p.juegoInput !== 'normal'" [class.border-slate-300]="p.juegoInput !== 'normal'">
+                    🎮 Normal
+                  </button>
+                  <button type="button" (click)="p.juegoInput = 'gta6'"
+                    class="rounded-lg border py-1.5"
+                    [class.bg-fuchsia-600]="p.juegoInput === 'gta6'" [class.text-white]="p.juegoInput === 'gta6'" [class.border-fuchsia-600]="p.juegoInput === 'gta6'"
+                    [class.bg-white]="p.juegoInput !== 'gta6'" [class.text-fuchsia-700]="p.juegoInput !== 'gta6'" [class.border-fuchsia-300]="p.juegoInput !== 'gta6'">
+                    🔥 GTA 6
+                  </button>
+                </div>
+              </div>
+            }
+
             <label class="block">
               <span class="block text-xs font-medium text-slate-500 mb-1">Cliente</span>
               <input
@@ -250,6 +270,16 @@
             {{ p.modalidad === 'conteo_regresivo' ? '⏳ Regresivo · ' + (p.minutos_asignados | duracion) : '⏱ Cronometrado' }}
           </span>
         </div>
+
+        @if (p.gta6 || p.juego === 'gta6') {
+          <button type="button" (click)="cambiarJuego(p)" [disabled]="p.procesando"
+            title="Cambiar la tarifa entre GTA 6 y normal"
+            class="mb-2 w-full rounded-lg py-1 text-xs font-bold ring-1 disabled:opacity-50"
+            [class.bg-fuchsia-600]="p.juego === 'gta6'" [class.text-white]="p.juego === 'gta6'" [class.ring-fuchsia-600]="p.juego === 'gta6'"
+            [class.bg-white]="p.juego !== 'gta6'" [class.text-slate-600]="p.juego !== 'gta6'" [class.ring-slate-300]="p.juego !== 'gta6'">
+            {{ p.juego === 'gta6' ? '🔥 Tarifa GTA 6 · cambiar a normal' : '🎮 Tarifa normal · cambiar a GTA 6' }}
+          </button>
+        }
 
         <p
           class="text-center text-3xl font-mono font-bold tracking-tight mb-1 py-2 rounded-xl"

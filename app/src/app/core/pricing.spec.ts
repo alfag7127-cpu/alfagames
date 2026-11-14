@@ -1,4 +1,4 @@
-import { calcularCobro, redondearHoras } from './pricing';
+import { calcularCobro, precioGta6, redondearHoras } from './pricing';
 
 // Casos de la tabla de ejemplos del negocio (docs/PLAN.md "Estándar de cobro").
 // Deben coincidir con private.calcular_cobro en Supabase.
@@ -42,5 +42,25 @@ describe('redondearHoras', () => {
     expect(redondearHoras(75)).toBe(1.5);
     expect(redondearHoras(104)).toBe(1.5);
     expect(redondearHoras(105)).toBe(2);
+  });
+});
+
+describe('precioGta6', () => {
+  const tabla = [
+    { minutos: 60, precio: 6000 },
+    { minutos: 120, precio: 20000 },
+    { minutos: 360, precio: 30000 },
+  ];
+
+  it('usa el precio de la tabla, interpola entre tiempos y es proporcional fuera de la tabla (igual que el servidor)', () => {
+    expect(precioGta6(1, tabla)).toBe(6000);
+    expect(precioGta6(2, tabla)).toBe(20000);
+    expect(precioGta6(1.5, tabla)).toBe(13000);
+    expect(precioGta6(0.5, tabla)).toBe(3000);
+    expect(precioGta6(7, tabla)).toBe(35000);
+  });
+
+  it('sin precios GTA 6 devuelve null', () => {
+    expect(precioGta6(1, [])).toBeNull();
   });
 });

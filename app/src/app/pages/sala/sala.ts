@@ -10,7 +10,8 @@ import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { Modalidad, PuestoConEstado } from '../../core/models';
-import { MAX_CONTROLES_ADICIONALES, calcularCobro } from '../../core/pricing';
+import { MAX_CONTROLES_ADICIONALES, calcularCobro, precioGta6, redondearHoras } from '../../core/pricing';
+import { Gta6Service } from '../../core/gta6.service';
 import { SesionesService } from '../../core/sesiones.service';
 import { ToastService } from '../../core/toast.service';
 import { sonarCaja } from '../../shared/sonido-caja';
@@ -30,6 +31,8 @@ interface PuestoVM extends PuestoConEstado {
   modoSeleccionado: Modalidad;
   clienteInput: string;
   minutosInput: number;
+  // Consola con GTA 6: el trabajador pregunta al cliente qué va a jugar (obligatorio).
+  juegoInput: 'gta6' | 'normal' | null;
   controlesInput: number;
   // Precio especial pactado al abrir un conteo regresivo
   usarPrecioManual: boolean;
@@ -104,6 +107,8 @@ export class Sala implements OnInit, OnDestroy {
   private minutosParaPagar = 30;
   /** Productos a la venta (para cargarlos a la cuenta de una consola). */
   readonly productos = signal<Producto[]>([]);
+  /** Tarifa GTA 6 de la sala (por tiempo), para la vista previa de las sesiones GTA 6. */
+  readonly preciosGta6 = signal<{ minutos: number; precio: number }[]>([]);
   /** Qué umbrales ya se avisaron para cada sesión, para no repetir el aviso cada segundo. */
   private readonly avisosEnviados = new Map<number, Set<UmbralAvisado>>();
 
@@ -113,6 +118,7 @@ export class Sala implements OnInit, OnDestroy {
     private readonly toast: ToastService,
     private readonly productosService: ProductosService,
     private readonly reservasService: ReservasService,
+    private readonly gta6: Gta6Service,
   ) {}
 
   ngOnInit(): void {
@@ -129,6 +135,7 @@ export class Sala implements OnInit, OnDestroy {
     }, 1000);
     this.pedirPermisoNotificaciones();
     this.cargarReservas();
+    this.gta6.preciosSala().then((p) => this.preciosGta6.set(p), () => {});
     this.unsubscribeReservas = this.reservasService.onCambios(() => this.cargarReservas());
   }
 
@@ -279,6 +286,7 @@ export class Sala implements OnInit, OnDestroy {
             modoSeleccionado: 'cronometrado',
             clienteInput: '',
             minutosInput: 60,
+            juegoInput: null,
             controlesInput: 0,
             usarPrecioManual: false,
             precioManualInput: null,
@@ -338,6 +346,9 @@ export class Sala implements OnInit, OnDestroy {
     this.marcarProcesando(p.id, true);
     try {
       const regresivo = p.modoSeleccionado === 'conteo_regresivo';
+      if (p.gta6 && !p.juegoInput) {
+        throw new Error('Pregunta al cliente: ¿va a jugar GTA 6 o normal?');
+      }
       if (regresivo && (!p.minutosInput || p.minutosInput <= 0)) {
         throw new Error('Indica cuántos minutos de conteo regresivo.');
       }
@@ -358,7 +369,7 @@ export class Sala implements OnInit, OnDestroy {
           return;
         }
       }
-      await this.sesiones.abrirSesion({
+      const sesion = await this.sesiones.abrirSesion({
         puestoId: p.id,
         clienteNombre: p.clienteInput.trim() || null,
         modalidad: p.modoSeleccionado,
@@ -366,8 +377,10 @@ export class Sala implements OnInit, OnDestroy {
         controlesAdicionales: p.controlesInput,
         precioManual: regresivo && p.usarPrecioManual ? p.precioManualInput : null,
       });
+      const esGta6 = p.gta6 && p.juegoInput === 'gta6';
+      if (esGta6) await this.sesiones.marcarJuego(sesion.id, 'gta6');
       await this.cargar();
-      this.toast.exito(`${p.nombre}: sesión abierta.`);
+      this.toast.exito(`${p.nombre}: sesión abierta${esGta6 ? ' con tarifa GTA 6' : ''}.`);
     } catch (e) {
       this.toast.error(this.mensajeError(e));
       this.marcarProcesando(p.id, false);
@@ -674,8 +687,30 @@ Muévela a otra consola en Reservas (⇄ Mover). ¿Ponerla fuera de servicio de 
     return calcularCobro(
       minutos,
       Array(p.controlesInput).fill(minutos),
-      p.usarPrecioManual ? p.precioManualInput : null,
+      p.usarPrecioManual ? p.precioManualInput : this.baseGta6(minutos, p.gta6 && p.juegoInput === 'gta6'),
     ).precioTotal;
+  }
+
+  /** Precio base GTA 6 para esos minutos (null = sesión normal o sin tarifa GTA 6). */
+  private baseGta6(minutos: number, esGta6: boolean): number | null {
+    return esGta6 ? precioGta6(Math.max(0.5, redondearHoras(minutos)), this.preciosGta6()) : null;
+  }
+
+  /** Cambia la sesión abierta entre GTA 6 y normal (por si no se preguntó al abrir). */
+  async cambiarJuego(p: PuestoVM): Promise<void> {
+    if (!p.sesion_id) return;
+    const nuevo = p.juego === 'gta6' ? null : 'gta6';
+    if (!confirm(`¿Cobrar ${p.nombre} con tarifa ${nuevo ? 'GTA 6' : 'normal'}?`)) return;
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.marcarJuego(p.sesion_id, nuevo);
+      await this.cargar();
+      this.toast.exito(`${p.nombre}: tarifa ${nuevo ? 'GTA 6' : 'normal'}.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
   }
 
   /** "Cuánto va" en una sesión cronometrada activa: cada control cuenta mientras estuvo en uso. */
@@ -686,7 +721,8 @@ Muévela a otra consola en Reservas (⇄ Mover). ¿Ponerla fuera de servicio de 
       const fin = c.hasta ? new Date(c.hasta).getTime() : ahora;
       return this.msEfectivos(p, Math.max(new Date(c.desde).getTime(), inicio), fin) / 60000;
     });
-    return calcularCobro(this.segundosTranscurridos(p) / 60, minutosControles).precioTotal;
+    const minutos = this.segundosTranscurridos(p) / 60;
+    return calcularCobro(minutos, minutosControles, p.precio_manual ?? this.baseGta6(minutos, p.juego === 'gta6')).precioTotal;
   }
 
   /** Precio que sugiere el sistema al cobrar. En conteo regresivo es el pactado (ya recalculado por el servidor). */
