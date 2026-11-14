@@ -12,7 +12,7 @@ export const routes: Routes = [
   { path: 'login', component: Login },
   // Página pública (sin login): los clientes reservan su consola desde el enlace que se comparte por WhatsApp.
   { path: 'reservar', loadComponent: () => import('./pages/reservar/reservar').then((m) => m.Reservar) },
-  // Alquiler PS4 a domicilio (público): el cliente reserva y paga con QR o en efectivo al recibir.
+  // Alquiler PS4/PS5 a domicilio (público): el cliente reserva y paga con QR o en efectivo al recibir.
   { path: 'alquilar', loadComponent: () => import('./pages/alquilar/alquilar').then((m) => m.Alquilar) },
   // Reservas GTA 6 (públicas): jugar en la sala o alquilar la PS5 con el juego a domicilio.
   { path: 'gta6-sala', loadComponent: () => import('./pages/gta6/gta6-sala-publica').then((m) => m.Gta6SalaPublica) },

@@ -13,7 +13,7 @@ import { diaYHora, mensajeError } from '../gta6/gta6-util';
 type Filtro = 'atender' | 'todas';
 
 /**
- * Pestaña Reservas del alquiler: reservas de PS4 a domicilio hechas desde /alquilar.
+ * Pestaña Reservas del alquiler: reservas de PS4/PS5 a domicilio hechas desde /alquilar.
  * QR: se confirma el pago (entra a los potes) y luego se entrega.
  * Efectivo: se confirma la reserva y se cobra al entregar.
  */
@@ -22,7 +22,7 @@ type Filtro = 'atender' | 'todas';
   imports: [FormsModule, DecimalPipe, PagoPotes],
   template: `
     <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-      <p class="text-xs font-medium text-slate-500">Enlace para que los clientes reserven su PS4 (WhatsApp, redes)</p>
+      <p class="text-xs font-medium text-slate-500">Enlace para que los clientes reserven su PS4 o PS5 (WhatsApp, redes)</p>
       <div class="mt-1 flex items-center gap-2">
         <code class="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-sm text-slate-800">{{ enlace }}</code>
         <button type="button" (click)="copiar()" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Copiar</button>
@@ -47,7 +47,7 @@ type Filtro = 'atender' | 'todas';
           [class.opacity-60]="r.estado === 'cancelada' || vencida(r)">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="font-semibold text-slate-900">#{{ r.id }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}</p>
+              <p class="font-semibold text-slate-900">#{{ r.id }} · {{ r.alquiler_consolas?.tipo }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}</p>
               <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
               <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}</p>
               <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
@@ -90,7 +90,7 @@ type Filtro = 'atender' | 'todas';
                 <label class="block text-xs text-slate-600">Consola que se entrega
                   <select [ngModel]="consolaEntrega()[r.id] ?? r.consola_id" (ngModelChange)="elegirConsola(r.id, $event)" [name]="'consola-' + r.id"
                     class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
-                    @for (c of ps4(); track c.id) {
+                    @for (c of consolasTipo(r); track c.id) {
                       <option [ngValue]="c.id" [disabled]="!!c.alquiler_id">{{ c.nombre }}{{ c.alquiler_id ? ' (alquilada)' : '' }}</option>
                     }
                   </select>
@@ -149,7 +149,11 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   readonly enlace = `${location.origin}/alquilar`;
   readonly diaYHora = diaYHora;
 
-  readonly ps4 = computed(() => this.consolas().filter((c) => c.tipo === 'PS4' && c.activo));
+  /** Consolas activas del mismo tipo que la reservada (PS4 o PS5). */
+  consolasTipo(r: ReservaAlquiler): ConsolaConEstado[] {
+    const tipo = r.alquiler_consolas?.tipo ?? this.consolas().find((c) => c.id === r.consola_id)?.tipo ?? 'PS4';
+    return this.consolas().filter((c) => c.tipo === tipo && c.activo);
+  }
   readonly porConfirmar = computed(() => this.reservas().filter((r) => r.estado === 'pendiente' && !this.vencida(r)).length);
   readonly lista = computed(() =>
     this.filtro() === 'todas'
@@ -218,7 +222,7 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   }
 
   whatsapp(r: ReservaAlquiler): string | null {
-    return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${r.id} de PS4.`);
+    return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${r.id} de ${r.alquiler_consolas?.tipo ?? 'consola'} a domicilio.`);
   }
 
   abrir(r: ReservaAlquiler, modo: ModoPago | null = null): void {

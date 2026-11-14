@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
 import { suscribirCambios } from './tiempo-real';
 import { Reserva } from './reservas.service';
-import { AlquilerTarifa } from './models';
+import { AlquilerTarifa, TipoConsola } from './models';
 
 export interface Rango {
   inicio: string;
@@ -55,14 +55,14 @@ export interface ReservaAlquiler {
   cliente_telefono: string;
   cliente_direccion: string;
   estado: EstadoReservaAlquiler;
-  /** 'gta6' = reserva GTA 6; null = alquiler normal (PS4) desde /alquilar. */
+  /** 'gta6' = reserva GTA 6; null = alquiler normal (PS4 o PS5) desde /alquilar. */
   juego: 'gta6' | null;
   /** qr = pagó con el QR (se confirma el pago); efectivo = paga al recibir. */
   forma_pago: 'qr' | 'efectivo';
   alquiler_id: number | null;
   confirmada_en: string | null;
   created_at: string;
-  alquiler_consolas?: { nombre: string } | null;
+  alquiler_consolas?: { nombre: string; tipo?: TipoConsola } | null;
 }
 
 export interface ReservaGta6Creada {

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
 import { suscribirCambios } from './tiempo-real';
 import { PlanGta6, Rango, ReservaAlquiler } from './gta6.service';
+import { TipoConsola } from './models';
 
 export type FormaPagoReserva = 'qr' | 'efectivo';
 
@@ -14,13 +15,14 @@ export interface AlquilerPublico {
   minutos_para_pagar: number;
   noche_desde: string;
   noche_hasta: string;
-  planes: PlanGta6[];
-  /** Una entrada por PS4: rangos ocupados (ya con el margen de entrega). */
-  consolas: { ocupado: Rango[] }[];
+  planes: (PlanGta6 & { tipo: TipoConsola })[];
+  /** Una entrada por consola activa: rangos ocupados (ya con el margen de entrega). */
+  consolas: { tipo: TipoConsola; ocupado: Rango[] }[];
 }
 
 export interface ReservaAlquilerCreada {
   id: number;
+  tipo: TipoConsola;
   plan: string;
   inicio: string;
   fin: string;
@@ -29,7 +31,7 @@ export interface ReservaAlquilerCreada {
   minutos_para_pagar: number;
 }
 
-/** Reservas de alquiler PS4 a domicilio (enlace /alquilar), pago con QR o en efectivo al recibir. */
+/** Reservas de alquiler PS4/PS5 a domicilio (enlace /alquilar), pago con QR o en efectivo al recibir. */
 @Injectable({ providedIn: 'root' })
 export class ReservasAlquilerService {
   constructor(private readonly supabase: SupabaseService) {}
@@ -70,7 +72,7 @@ export class ReservasAlquilerService {
   async listar(): Promise<ReservaAlquiler[]> {
     const { data, error } = await this.db
       .from('reservas_alquiler')
-      .select('*, alquiler_consolas(nombre)')
+      .select('*, alquiler_consolas(nombre, tipo)')
       .is('juego', null)
       .order('inicio');
     if (error) throw error;

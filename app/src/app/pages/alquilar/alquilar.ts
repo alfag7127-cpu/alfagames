@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { PlanGta6 } from '../../core/gta6.service';
 import { AlquilerPublico, FormaPagoReserva, ReservaAlquilerCreada, ReservasAlquilerService } from '../../core/reservas-alquiler.service';
 import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
+import { TipoConsola } from '../../core/models';
 import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from '../gta6/gta6-util';
 
 type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
 
 /**
- * Página pública /alquilar: el cliente reserva una PS4 a domicilio con los planes del alquiler.
+ * Página pública /alquilar: el cliente reserva una PS4 o PS5 a domicilio con los planes del alquiler.
  * Paga con el QR (el local confirma el pago) o en efectivo al recibir la consola.
  */
 @Component({
@@ -22,7 +23,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
           <img src="img/alfa-frank-over.jpg" alt="Alfa Games & Frank Over"
             class="h-16 w-16 shrink-0 rounded-full shadow-[0_0_24px_rgba(163,230,53,0.4)] ring-2 ring-lime-400/70 sm:h-20 sm:w-20" />
           <div>
-            <h1 class="text-2xl font-extrabold tracking-tight">Alquila tu PS4 a domicilio</h1>
+            <h1 class="text-2xl font-extrabold tracking-tight">Alquila tu PS4 o PS5 a domicilio</h1>
             <p class="text-sm text-lime-100/80">Te la llevamos a tu casa · Alfa Games &amp; Frank Over</p>
           </div>
         </div>
@@ -37,14 +38,27 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
           @case ('plan') {
             @if (!estado()) {
               <p class="text-slate-400">Cargando…</p>
-            } @else if (!estado()!.planes.length || !estado()!.consolas.length) {
+            } @else if (!tiposDisponibles().length) {
               <p class="rounded-xl bg-white/5 p-4 text-sm text-slate-300">Por ahora no hay consolas para reservar. Escríbenos por WhatsApp.</p>
             } @else {
               <section class="space-y-4 rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
                 <div>
-                  <p class="mb-2 text-sm font-semibold text-lime-200">1. Elige el plan</p>
+                  <p class="mb-2 text-sm font-semibold text-lime-200">1. Elige la consola</p>
+                  <div class="grid grid-cols-2 gap-2">
+                    @for (t of tiposDisponibles(); track t) {
+                      <button type="button" (click)="elegirTipo(t)"
+                        class="rounded-xl px-2 py-3 text-lg font-black ring-1 transition-colors"
+                        [class.bg-lime-400]="tipo() === t" [class.text-slate-950]="tipo() === t" [class.ring-lime-400]="tipo() === t"
+                        [class.bg-white/5]="tipo() !== t" [class.ring-white/15]="tipo() !== t">
+                        🎮 {{ t }}
+                      </button>
+                    }
+                  </div>
+                </div>
+                <div>
+                  <p class="mb-2 text-sm font-semibold text-lime-200">2. Elige el plan</p>
                   <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    @for (p of estado()!.planes; track p.id) {
+                    @for (p of planesTipo(); track p.id) {
                       <button type="button" (click)="plan.set(p)"
                         class="rounded-xl px-2 py-3 text-sm font-semibold ring-1 transition-colors"
                         [class.bg-lime-400]="plan()?.id === p.id" [class.text-slate-950]="plan()?.id === p.id" [class.ring-lime-400]="plan()?.id === p.id"
@@ -59,7 +73,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                   }
                 </div>
                 <label class="block text-sm">
-                  <span class="font-semibold text-lime-200">2. Día y hora de entrega</span>
+                  <span class="font-semibold text-lime-200">3. Día y hora de entrega</span>
                   <input type="datetime-local" [ngModel]="inicio()" (ngModelChange)="inicio.set($event)" name="inicio"
                     [min]="minimo()" [max]="maximo()"
                     class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
@@ -70,9 +84,9 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                     [class.bg-red-500/15]="libres() === 0" [class.ring-red-400/40]="libres() === 0">
                     <p>Entrega {{ diaYHora(inicioMs()) }} · recogida {{ diaYHora(finMs()) }}</p>
                     @if (libres() > 0) {
-                      <p class="font-semibold text-emerald-200">✅ Hay {{ libres() }} PS4 disponible{{ libres() > 1 ? 's' : '' }} para ese horario</p>
+                      <p class="font-semibold text-emerald-200">✅ Hay {{ libres() }} {{ tipo() }} disponible{{ libres() > 1 ? 's' : '' }} para ese horario</p>
                     } @else {
-                      <p class="font-semibold text-red-200">No quedan PS4 para ese horario. Prueba otro día u hora.</p>
+                      <p class="font-semibold text-red-200">No quedan {{ tipo() }} para ese horario. Prueba otro día u hora.</p>
                     }
                     <p class="mt-1 text-lg font-black">Total: {{ plan()!.precio | number: '1.0-0' }} COP</p>
                   </div>
@@ -84,7 +98,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
 
           @case ('datos') {
             <section class="space-y-4 rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
-              <p class="text-sm text-slate-300">{{ plan()?.nombre }} · entrega {{ diaYHora(inicioMs()) }} · <b class="text-white">{{ plan()?.precio | number: '1.0-0' }} COP</b></p>
+              <p class="text-sm text-slate-300">{{ tipo() }} · {{ plan()?.nombre }} · entrega {{ diaYHora(inicioMs()) }} · <b class="text-white">{{ plan()?.precio | number: '1.0-0' }} COP</b></p>
               <label class="block text-sm">
                 Nombre completo
                 <input [(ngModel)]="nombre" name="nombre" autocomplete="name" maxlength="60"
@@ -133,7 +147,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
             <section class="space-y-4 rounded-2xl bg-white/5 p-5 text-center ring-1 ring-white/10">
               <p class="text-sm text-slate-300">Reserva #{{ creada()?.id }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
-              <p class="text-sm text-slate-300">{{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }}</p>
+              <p class="text-sm text-slate-300">{{ creada()?.tipo }} · {{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }}</p>
               @if (urlQr()) {
                 <img [src]="urlQr()" alt="QR para pagar" class="mx-auto w-64 max-w-full rounded-xl bg-white p-2" />
               } @else {
@@ -148,7 +162,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
             <section class="space-y-4 rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
               <h2 class="text-lg font-bold">✅ ¡Reserva registrada!</h2>
               <p class="text-sm text-slate-300">
-                #{{ creada()?.id }} · {{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }} · recogida {{ diaYHora(creada()!.fin) }} · {{ creada()?.precio | number: '1.0-0' }} COP
+                #{{ creada()?.id }} · {{ creada()?.tipo }} · {{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }} · recogida {{ diaYHora(creada()!.fin) }} · {{ creada()?.precio | number: '1.0-0' }} COP
               </p>
               <div class="space-y-2 rounded-xl bg-lime-500/10 p-4 text-sm text-lime-50 ring-1 ring-lime-400/40">
                 @if (creada()?.forma_pago === 'efectivo') {
@@ -177,6 +191,7 @@ export class Alquilar implements OnInit {
   readonly paso = signal<Paso>('plan');
   readonly estado = signal<AlquilerPublico | null>(null);
   readonly error = signal<string | null>(null);
+  readonly tipo = signal<TipoConsola>('PS4');
   readonly plan = signal<PlanGta6 | null>(null);
   readonly inicio = signal('');
   readonly formaPago = signal<FormaPagoReserva | null>(null);
@@ -193,7 +208,18 @@ export class Alquilar implements OnInit {
     const p = this.plan();
     return p ? finPlan(this.inicioMs(), p, this.estado()?.noche_hasta ?? '09:00:00') : this.inicioMs();
   });
-  readonly libres = computed(() => consolasLibres(this.estado()?.consolas ?? [], this.inicioMs(), this.finMs()));
+  /** PS4 y/o PS5, según haya consolas activas y planes de ese tipo. */
+  readonly tiposDisponibles = computed<TipoConsola[]>(() => {
+    const e = this.estado();
+    if (!e) return [];
+    return (['PS4', 'PS5'] as TipoConsola[]).filter(
+      (t) => e.planes.some((p) => p.tipo === t) && e.consolas.some((c) => c.tipo === t),
+    );
+  });
+  readonly planesTipo = computed(() => (this.estado()?.planes ?? []).filter((p) => p.tipo === this.tipo()));
+  readonly libres = computed(() =>
+    consolasLibres((this.estado()?.consolas ?? []).filter((c) => c.tipo === this.tipo()), this.inicioMs(), this.finMs()),
+  );
   readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceWhatsapp = computed(() => {
     const c = this.creada();
@@ -201,7 +227,7 @@ export class Alquilar implements OnInit {
     const pago = c.forma_pago === 'efectivo' ? 'Pago en efectivo al recibir' : 'Envío el comprobante del pago';
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
-      `Hola, hice la reserva #${c.id} de PS4 a domicilio: ${c.plan}, entrega ${diaYHora(c.inicio)}, ` +
+      `Hola, hice la reserva #${c.id} de ${c.tipo} a domicilio: ${c.plan}, entrega ${diaYHora(c.inicio)}, ` +
         `${c.precio.toLocaleString('es-CO')} COP. ${pago}. A nombre de ${this.nombre.trim()}. Dirección: ${this.direccion.trim()}.`,
     );
   });
@@ -217,7 +243,10 @@ export class Alquilar implements OnInit {
 
   async cargar(): Promise<void> {
     try {
-      this.estado.set(await this.servicio.publico());
+      const e = await this.servicio.publico();
+      this.estado.set(e);
+      const tipos = this.tiposDisponibles();
+      if (tipos.length && !tipos.includes(this.tipo())) this.tipo.set(tipos[0]);
       if (!this.inicio()) this.inicio.set(aHoraLocal(Math.ceil((Date.now() + 2 * 3_600_000) / 900_000) * 900_000));
     } catch {
       this.error.set('No pudimos cargar la información. Revisa tu conexión e intenta de nuevo.');
@@ -226,6 +255,13 @@ export class Alquilar implements OnInit {
 
   horaCorta(t: string): string {
     return hora(`2000-01-01T${t.slice(0, 5)}:00-05:00`);
+  }
+
+  elegirTipo(t: TipoConsola): void {
+    if (t === this.tipo()) return;
+    this.tipo.set(t);
+    this.plan.set(null);
+    this.error.set(null);
   }
 
   minimo(): string {
@@ -240,7 +276,7 @@ export class Alquilar implements OnInit {
     if (!this.plan()) return this.error.set('Elige un plan.');
     if (!this.inicio()) return this.error.set('Elige el día y la hora de entrega.');
     if (this.inicioMs() < Date.now() - 60_000) return this.error.set('Esa hora ya pasó. Elige una hora desde ahora.');
-    if (this.libres() === 0) return this.error.set('No quedan PS4 para ese horario. Prueba otro día u hora.');
+    if (this.libres() === 0) return this.error.set(`No quedan ${this.tipo()} para ese horario. Prueba otro día u hora.`);
     this.error.set(null);
     this.paso.set('datos');
     window.scrollTo({ top: 0 });
