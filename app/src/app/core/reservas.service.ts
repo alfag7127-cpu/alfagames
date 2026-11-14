@@ -26,6 +26,8 @@ export interface Reserva {
   created_at: string;
   /** web = desde el enlace público (paga con el QR); local = la hizo el trabajador (paga al cerrar). */
   origen: 'web' | 'local';
+  /** 'gta6' = reserva para jugar GTA 6 (precio propio). */
+  juego?: 'gta6' | null;
 }
 
 export interface ReservasConfig {

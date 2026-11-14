@@ -296,6 +296,8 @@ export class AlquilerService {
     let query = this.supabase.client
       .from('alquileres')
       .select('*, alquiler_extensiones(*), alquiler_pagos(*)')
+      // Las reservas GTA 6 pagadas y sin entregar se manejan en /gta6.
+      .neq('estado', 'reservado')
       .order('inicio', { ascending: false });
     if (desde) query = query.gte('inicio', desde);
     if (hasta) query = query.lte('inicio', hasta);

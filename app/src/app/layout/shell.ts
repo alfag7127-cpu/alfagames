@@ -10,7 +10,7 @@ interface EnlaceMenu {
   ruta: string;
   icono: string;
   texto: string;
-  modulo: 'sala' | 'alquiler';
+  modulo: 'sala' | 'alquiler' | 'todos';
 }
 
 @Component({
@@ -27,6 +27,7 @@ export class Shell {
     { ruta: '/sala', icono: '🎮', texto: 'Sala', modulo: 'sala' },
     { ruta: '/reservas', icono: '📅', texto: 'Reservas', modulo: 'sala' },
     { ruta: '/alquiler', icono: '🏠', texto: 'Alquiler', modulo: 'alquiler' },
+    { ruta: '/gta6', icono: '🔥', texto: 'GTA 6', modulo: 'todos' },
   ];
 
   constructor(
@@ -43,6 +44,7 @@ export class Shell {
 
   /** Cada rol ve solo sus módulos. */
   puedeVer(e: EnlaceMenu): boolean {
+    if (e.modulo === 'todos') return true;
     return e.modulo === 'sala' ? this.auth.puedeSala() : this.auth.puedeAlquiler();
   }
 

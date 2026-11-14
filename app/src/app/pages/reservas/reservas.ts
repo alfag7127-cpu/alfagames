@@ -161,7 +161,7 @@ function dia(iso: string): string {
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
-                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
+                <p class="text-sm text-slate-600">@if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
                 <p class="text-xs" [class.text-amber-700]="vigente(r)" [class.text-red-600]="!vigente(r)">
                   {{ vigente(r) ? 'Aparta la consola ' + minutosParaVencer(r) + ' min más' : 'Se venció el tiempo para pagar: ya no aparta la consola' }}
                 </p>
@@ -226,7 +226,7 @@ function dia(iso: string): string {
               <div>
                 <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
                 <p class="text-sm text-slate-600">
-                  {{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
+                  @if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
                 </p>
                 @if (yaEmpezo(r)) {
                   <p class="text-xs font-semibold text-red-600">Ya es la hora: su tiempo está corriendo desde las {{ hora(r.inicio) }}.</p>

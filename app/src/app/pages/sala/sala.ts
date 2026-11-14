@@ -170,7 +170,7 @@ export class Sala implements OnInit, OnDestroy {
     const d = new Date(r.inicio);
     const dia = fechaColombia(d) === fechaColombia() ? '' : 'mañana ';
     const h = d.toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit' });
-    return `${dia}${h} · ${r.cliente_nombre} · ${formatearDuracion(r.minutos)}${r.estado === 'pendiente' ? ' · falta confirmar pago' : ''}`;
+    return `${r.juego === 'gta6' ? 'GTA 6 · ' : ''}${dia}${h} · ${r.cliente_nombre} · ${formatearDuracion(r.minutos)}${r.estado === 'pendiente' ? ' · falta confirmar pago' : ''}`;
   }
 
   private async cargarProductos(): Promise<void> {

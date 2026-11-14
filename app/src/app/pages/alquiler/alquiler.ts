@@ -302,7 +302,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   // ── Alquilar ──
 
   tarifasDe(tipo: TipoConsola): AlquilerTarifa[] {
-    return this.tarifas().filter((t) => t.tipo === tipo && t.activo);
+    return this.tarifas().filter((t) => t.tipo === tipo && t.activo && !t.gta6);
   }
 
   private actualizar(id: number, cambios: Partial<ConsolaVM>): void {

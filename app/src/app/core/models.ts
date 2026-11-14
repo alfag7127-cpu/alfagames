@@ -110,7 +110,8 @@ export interface Gasto {
 // ── Alquiler de consolas ───────────────────────────────────────────────
 
 export type TipoConsola = 'PS4' | 'PS5';
-export type EstadoAlquiler = 'activo' | 'devuelto' | 'cancelado';
+/** reservado = reserva GTA 6 pagada, falta entregar la consola. */
+export type EstadoAlquiler = 'reservado' | 'activo' | 'devuelto' | 'cancelado';
 
 export interface AlquilerConsola {
   id: number;
@@ -135,6 +136,8 @@ export interface AlquilerTarifa {
   precio: number;
   orden: number;
   activo: boolean;
+  /** Plan de reservas GTA 6 a domicilio (no sale en el formulario normal). */
+  gta6?: boolean;
 }
 
 export interface AlquilerConfig {

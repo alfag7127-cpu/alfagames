@@ -12,6 +12,9 @@ export const routes: Routes = [
   { path: 'login', component: Login },
   // Página pública (sin login): los clientes reservan su consola desde el enlace que se comparte por WhatsApp.
   { path: 'reservar', loadComponent: () => import('./pages/reservar/reservar').then((m) => m.Reservar) },
+  // Reservas GTA 6 (públicas): jugar en la sala o alquilar la PS5 con el juego a domicilio.
+  { path: 'gta6-sala', loadComponent: () => import('./pages/gta6/gta6-sala-publica').then((m) => m.Gta6SalaPublica) },
+  { path: 'gta6-domicilio', loadComponent: () => import('./pages/gta6/gta6-domicilio-publica').then((m) => m.Gta6DomicilioPublica) },
   {
     path: '',
     component: Shell,
@@ -64,6 +67,8 @@ export const routes: Routes = [
         canActivate: [salaGuard],
         loadComponent: () => import('./pages/reservas/reservas').then((m) => m.ReservasPage),
       },
+      // GTA 6: cada rol ve su pestaña (sala: admin y trabajador; domicilio: admin y alquiler).
+      { path: 'gta6', loadComponent: () => import('./pages/gta6/gta6').then((m) => m.Gta6Page) },
       {
         path: 'alquiler',
         canActivate: [alquilerGuard],
