@@ -15,9 +15,12 @@ export interface AlquilerPublico {
   minutos_para_pagar: number;
   noche_desde: string;
   noche_hasta: string;
+  /** Desde esta hora las consolas con GTA 6 son solo para reservas GTA 6. */
+  lanzamiento_gta6: string;
+  margen_minutos: number;
   planes: (PlanGta6 & { tipo: TipoConsola })[];
   /** Una entrada por consola activa: rangos ocupados (ya con el margen de entrega). */
-  consolas: { tipo: TipoConsola; ocupado: Rango[] }[];
+  consolas: { tipo: TipoConsola; gta6: boolean; ocupado: Rango[] }[];
 }
 
 export interface ReservaAlquilerCreada {

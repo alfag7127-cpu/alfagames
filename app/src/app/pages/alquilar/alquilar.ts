@@ -83,7 +83,10 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                     [class.bg-emerald-500/15]="libres() > 0" [class.ring-emerald-400/40]="libres() > 0"
                     [class.bg-red-500/15]="libres() === 0" [class.ring-red-400/40]="libres() === 0">
                     <p>Entrega {{ diaYHora(inicioMs()) }} · recogida {{ diaYHora(finMs()) }}</p>
-                    @if (libres() > 0) {
+                    @if (soloGta6()) {
+                      <p class="font-semibold text-red-200">Desde el {{ fechaGta6() }} la {{ tipo() }} a domicilio es solo para GTA 6.</p>
+                      <a href="/gta6-domicilio" class="mt-1 inline-block rounded-lg bg-fuchsia-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-400">Reservar {{ tipo() }} con GTA 6</a>
+                    } @else if (libres() > 0) {
                       <p class="font-semibold text-emerald-200">✅ Hay {{ libres() }} {{ tipo() }} disponible{{ libres() > 1 ? 's' : '' }} para ese horario</p>
                     } @else {
                       <p class="font-semibold text-red-200">No quedan {{ tipo() }} para ese horario. Prueba otro día u hora.</p>
@@ -217,8 +220,17 @@ export class Alquilar implements OnInit {
     );
   });
   readonly planesTipo = computed(() => (this.estado()?.planes ?? []).filter((p) => p.tipo === this.tipo()));
-  readonly libres = computed(() =>
-    consolasLibres((this.estado()?.consolas ?? []).filter((c) => c.tipo === this.tipo()), this.inicioMs(), this.finMs()),
+  /** Consolas del tipo elegido que sirven para ese horario: desde el lanzamiento, las de GTA 6 no. */
+  private readonly consolasTipo = computed(() => {
+    const e = this.estado();
+    if (!e) return [];
+    const despuesGta6 = this.finMs() + e.margen_minutos * 60_000 > new Date(e.lanzamiento_gta6).getTime();
+    return e.consolas.filter((c) => c.tipo === this.tipo() && !(c.gta6 && despuesGta6));
+  });
+  readonly libres = computed(() => consolasLibres(this.consolasTipo(), this.inicioMs(), this.finMs()));
+  /** Todas las consolas del tipo tienen GTA 6 y el horario cae desde el lanzamiento. */
+  readonly soloGta6 = computed(
+    () => !!this.plan() && this.consolasTipo().length === 0 && (this.estado()?.consolas ?? []).some((c) => c.tipo === this.tipo()),
   );
   readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceWhatsapp = computed(() => {
@@ -257,6 +269,11 @@ export class Alquilar implements OnInit {
     return hora(`2000-01-01T${t.slice(0, 5)}:00-05:00`);
   }
 
+  fechaGta6(): string {
+    const l = this.estado()?.lanzamiento_gta6;
+    return l ? new Date(l).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', timeZone: 'America/Bogota' }) : 'lanzamiento de GTA 6';
+  }
+
   elegirTipo(t: TipoConsola): void {
     if (t === this.tipo()) return;
     this.tipo.set(t);
@@ -276,6 +293,7 @@ export class Alquilar implements OnInit {
     if (!this.plan()) return this.error.set('Elige un plan.');
     if (!this.inicio()) return this.error.set('Elige el día y la hora de entrega.');
     if (this.inicioMs() < Date.now() - 60_000) return this.error.set('Esa hora ya pasó. Elige una hora desde ahora.');
+    if (this.soloGta6()) return this.error.set(`Desde el ${this.fechaGta6()} la ${this.tipo()} a domicilio es solo para GTA 6. Usa el enlace de GTA 6.`);
     if (this.libres() === 0) return this.error.set(`No quedan ${this.tipo()} para ese horario. Prueba otro día u hora.`);
     this.error.set(null);
     this.paso.set('datos');

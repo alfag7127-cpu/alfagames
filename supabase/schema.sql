@@ -6626,3 +6626,170 @@ end;
 $$;
 revoke all on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) from public;
 grant execute on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) to anon, authenticated;
+
+-- ============================================================
+-- 51. /alquilar: DESDE EL LANZAMIENTO, LA PS5 CON GTA 6 ES SOLO PARA GTA 6 (2026-11-14)
+-- ============================================================
+-- Regla del dueño: desde gta6_config.lanzamiento las consolas con alquiler_consolas.gta6 no se
+-- reservan con los planes normales del enlace /alquilar (solo por /gta6-domicilio). Antes del
+-- lanzamiento si, si la reserva termina (mas el margen) antes de esa hora. Los planes normales de
+-- PS5 se mantienen. alquiler_publico() manda gta6 por consola, lanzamiento_gta6 y margen_minutos.
+
+create or replace function public.alquiler_publico()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.gta6_config;
+  v_res public.reservas_config;
+  v_alq public.alquiler_config;
+begin
+  select * into v_cfg from public.gta6_config where id = 1;
+  select * into v_res from public.reservas_config where id = 1;
+  select * into v_alq from public.alquiler_config where id = 1;
+  return jsonb_build_object(
+    'ahora', now(),
+    'dias_maximos', v_res.dias_maximos,
+    'qr_path', v_res.qr_path,
+    'whatsapp', v_res.whatsapp,
+    'minutos_para_pagar', v_res.minutos_para_pagar,
+    'noche_desde', v_alq.noche_desde,
+    'noche_hasta', v_alq.noche_hasta,
+    'lanzamiento_gta6', v_cfg.lanzamiento,
+    'margen_minutos', v_cfg.margen_minutos,
+    'planes', coalesce((
+      select jsonb_agg(jsonb_build_object('id', t.id, 'tipo', t.tipo, 'nombre', t.nombre, 'horas', t.horas, 'es_noche', t.es_noche, 'precio', t.precio) order by t.tipo, t.orden, t.id)
+      from public.alquiler_tarifas t
+      where t.activo and not t.gta6
+    ), '[]'::jsonb),
+    'consolas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'tipo', c.tipo,
+        'gta6', c.gta6,
+        'ocupado', coalesce((
+          select jsonb_agg(x order by x->>'inicio') from (
+            select jsonb_build_object(
+              'inicio', r.inicio - make_interval(mins => v_cfg.margen_minutos),
+              'fin', r.fin + make_interval(mins => v_cfg.margen_minutos)) as x
+            from public.reservas_alquiler r
+            where r.consola_id = c.id and private.reserva_vigente(r.estado, r.created_at) and r.fin > now()
+            union all
+            select jsonb_build_object(
+              'inicio', a.inicio,
+              'fin', greatest(a.fin_pactado, now()) + make_interval(mins => v_cfg.margen_minutos))
+            from public.alquileres a
+            where a.consola_id = c.id and a.estado = 'activo'
+          ) s
+        ), '[]'::jsonb)
+      ) order by c.id)
+      from public.alquiler_consolas c
+      where c.activo
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.alquiler_publico() from public;
+grant execute on function public.alquiler_publico() to anon, authenticated;
+
+create or replace function public.crear_reserva_alquiler(
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_cliente_direccion text,
+  p_inicio timestamptz,
+  p_forma_pago text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_res public.reservas_config;
+  v_cfg public.gta6_config;
+  v_tarifa public.alquiler_tarifas;
+  v_tel text := private.normalizar_telefono(p_cliente_telefono);
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_dir text := trim(coalesce(p_cliente_direccion, ''));
+  v_fin timestamptz;
+  v_consola bigint;
+  v_r public.reservas_alquiler;
+begin
+  select * into v_res from public.reservas_config where id = 1;
+  select * into v_cfg from public.gta6_config where id = 1;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe tu nombre';
+  end if;
+  if v_tel is null or char_length(v_tel) < 7 or char_length(v_tel) > 15 then
+    raise exception 'Escribe un número de celular válido';
+  end if;
+  if char_length(v_dir) < 5 or char_length(v_dir) > 200 then
+    raise exception 'Escribe la dirección de entrega (barrio, calle y número)';
+  end if;
+  if p_forma_pago is null or p_forma_pago not in ('qr', 'efectivo') then
+    raise exception 'Elige cómo vas a pagar';
+  end if;
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo and not gta6;
+  if v_tarifa.id is null then
+    raise exception 'Elige un plan válido';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '2 minutes' then
+    raise exception 'La hora de entrega ya pasó';
+  end if;
+  if p_inicio > now() + make_interval(days => v_res.dias_maximos) then
+    raise exception 'Solo se puede reservar hasta % días antes', v_res.dias_maximos;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('reserva_gta6_alquiler'), 0);
+
+  if (select count(*) from public.reservas_alquiler
+      where cliente_telefono = v_tel and estado = 'pendiente'
+        and private.reserva_vigente(estado, created_at)) >= 2 then
+    raise exception 'Ya tienes reservas pendientes. Escríbenos por WhatsApp para confirmarlas.';
+  end if;
+  if (select count(*) from public.reservas_alquiler
+      where estado = 'pendiente' and private.reserva_vigente(estado, created_at)) >= 30 then
+    raise exception 'Hay muchas reservas pendientes en este momento. Intenta en unos minutos.';
+  end if;
+
+  v_fin := private.fin_alquiler(p_inicio, v_tarifa);
+  select c.id into v_consola
+  from public.alquiler_consolas c
+  where c.activo and c.tipo = v_tarifa.tipo and private.consola_gta6_libre(c.id, p_inicio, v_fin)
+    -- Desde el lanzamiento, las consolas con GTA 6 son solo para reservas GTA 6.
+    and (not c.gta6 or v_fin + make_interval(mins => v_cfg.margen_minutos) <= v_cfg.lanzamiento)
+  order by c.id
+  limit 1;
+  if v_consola is null then
+    if v_fin + make_interval(mins => v_cfg.margen_minutos) > v_cfg.lanzamiento
+       and exists (select 1 from public.alquiler_consolas where activo and tipo = v_tarifa.tipo and gta6)
+       and not exists (select 1 from public.alquiler_consolas where activo and tipo = v_tarifa.tipo and not gta6) then
+      raise exception 'Desde el lanzamiento de GTA 6 la % a domicilio se reserva solo con GTA 6. Usa el enlace de GTA 6.', v_tarifa.tipo;
+    end if;
+    raise exception 'No hay % libres en ese horario. Elige otra fecha u hora.', v_tarifa.tipo;
+  end if;
+
+  insert into public.reservas_alquiler (
+    juego, forma_pago, consola_id, tarifa_id, plan_nombre, inicio, fin, precio, cliente_nombre, cliente_telefono, cliente_direccion
+  ) values (
+    null, p_forma_pago, v_consola, v_tarifa.id, v_tarifa.nombre, p_inicio, v_fin, v_tarifa.precio, v_nombre, v_tel, v_dir
+  )
+  returning * into v_r;
+
+  return jsonb_build_object(
+    'id', v_r.id,
+    'tipo', v_tarifa.tipo,
+    'plan', v_r.plan_nombre,
+    'inicio', v_r.inicio,
+    'fin', v_r.fin,
+    'precio', v_r.precio,
+    'forma_pago', v_r.forma_pago,
+    'minutos_para_pagar', v_res.minutos_para_pagar
+  );
+end;
+$$;
+revoke all on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) from public;
+grant execute on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) to anon, authenticated;
