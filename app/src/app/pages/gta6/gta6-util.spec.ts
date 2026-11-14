@@ -25,8 +25,8 @@ describe('consolasLibres', () => {
 });
 
 describe('cuentaRegresiva', () => {
-  it('días, horas y minutos hasta el lanzamiento; null si ya salió', () => {
-    expect(cuentaRegresiva('2026-11-19T00:00:00-05:00', ms('2026-11-17T22:30:00-05:00'))).toEqual({ dias: 1, horas: 1, minutos: 30 });
+  it('días, horas, minutos y segundos hasta el lanzamiento; null si ya salió', () => {
+    expect(cuentaRegresiva('2026-11-19T00:00:00-05:00', ms('2026-11-17T22:30:00-05:00'))).toEqual({ dias: 1, horas: 1, minutos: 30, segundos: 0 });
     expect(cuentaRegresiva('2026-11-19T00:00:00-05:00', ms('2026-11-19T00:00:01-05:00'))).toBeNull();
   });
 });

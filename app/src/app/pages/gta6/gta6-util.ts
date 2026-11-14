@@ -40,12 +40,20 @@ export function consolasLibres(consolas: { ocupado: Rango[] }[], inicioMs: numbe
   ).length;
 }
 
-/** Días, horas y minutos que faltan para el lanzamiento (null si ya salió). */
-export function cuentaRegresiva(lanzamiento: string, ahora: number): { dias: number; horas: number; minutos: number } | null {
+/** Días, horas, minutos y segundos que faltan para el lanzamiento (null si ya salió). */
+export function cuentaRegresiva(
+  lanzamiento: string,
+  ahora: number,
+): { dias: number; horas: number; minutos: number; segundos: number } | null {
   const ms = new Date(lanzamiento).getTime() - ahora;
   if (ms <= 0) return null;
-  const min = Math.floor(ms / 60_000);
-  return { dias: Math.floor(min / 1440), horas: Math.floor((min % 1440) / 60), minutos: min % 60 };
+  const seg = Math.floor(ms / 1000);
+  return {
+    dias: Math.floor(seg / 86_400),
+    horas: Math.floor((seg % 86_400) / 3600),
+    minutos: Math.floor((seg % 3600) / 60),
+    segundos: seg % 60,
+  };
 }
 
 export function mensajeError(e: unknown, porDefecto = 'No se pudo completar. Intenta de nuevo.'): string {
