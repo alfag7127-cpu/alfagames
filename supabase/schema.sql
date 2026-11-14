@@ -5345,3 +5345,104 @@ end;
 $$;
 revoke all on function public.crear_reserva(bigint, text, text, timestamptz, int) from public;
 grant execute on function public.crear_reserva(bigint, text, text, timestamptz, int) to anon, authenticated;
+
+-- ============================================================
+-- 46. SESION YA PAGADA / PENDIENTE POR COBRAR (2026-11-13)
+-- ============================================================
+-- Con el local lleno el trabajador olvida quien ya pago. Desde la tarjeta de la Sala marca
+-- la sesion como pagada (guarda cuanto pago en ese momento: tiempo + productos) o la vuelve
+-- a "pendiente por cobrar". Si despues suma tiempo o productos, la tarjeta muestra lo que
+-- falta (total actual - pagado_monto). Es solo un recordatorio: el cobro real y la forma de
+-- pago se siguen registrando al cerrar (cerrar_sesion).
+alter table public.sesiones
+  add column if not exists pagado_monto numeric(10, 0),
+  add column if not exists pagado_en timestamptz,
+  add column if not exists pagado_por uuid references public.profiles(id);
+
+alter table public.sesiones drop constraint if exists pagado_monto_no_negativo;
+alter table public.sesiones
+  add constraint pagado_monto_no_negativo check (pagado_monto is null or pagado_monto >= 0);
+
+-- p_monto null = pendiente por cobrar.
+create or replace function public.marcar_pago_sesion(p_sesion_id bigint, p_monto numeric)
+returns public.sesiones
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_s public.sesiones;
+begin
+  if p_monto is not null and p_monto < 0 then
+    raise exception 'El monto pagado no puede ser negativo';
+  end if;
+
+  update public.sesiones
+  set pagado_monto = p_monto,
+      pagado_en = case when p_monto is null then null else now() end,
+      pagado_por = case when p_monto is null then null else auth.uid() end
+  where id = p_sesion_id and estado = 'activa'
+  returning * into v_s;
+  if v_s.id is null then
+    raise exception 'La sesion % ya no esta activa (o no tienes permiso)', p_sesion_id;
+  end if;
+  return v_s;
+end;
+$$;
+
+revoke all on function public.marcar_pago_sesion(bigint, numeric) from public, anon;
+grant execute on function public.marcar_pago_sesion(bigint, numeric) to authenticated;
+
+create or replace view public.vista_puestos
+with (security_invoker = true) as
+select
+  p.id,
+  p.nombre,
+  p.activo,
+  s.id as sesion_id,
+  s.cliente_nombre,
+  s.hora_inicio,
+  s.empleado_id,
+  s.modalidad,
+  s.minutos_asignados,
+  s.controles_adicionales,
+  s.precio_total,
+  s.precio_base,
+  s.precio_manual,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', c.desde, 'hasta', c.hasta) order by c.desde)
+      from public.sesion_controles c
+      where c.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as controles,
+  s.pausada,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('desde', pa.desde, 'hasta', pa.hasta) order by pa.desde)
+      from public.sesion_pausas pa
+      where pa.sesion_id = s.id
+    ),
+    '[]'::jsonb
+  ) as pausas,
+  coalesce(
+    (
+      select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', pr.nombre, 'cantidad', v.cantidad, 'total', v.total) order by v.created_at)
+      from public.ventas_productos v
+      join public.productos pr on pr.id = v.producto_id
+      where v.sesion_id = s.id and v.estado = 'vendida'
+    ),
+    '[]'::jsonb
+  ) as consumos,
+  coalesce(
+    (select sum(v.total) from public.ventas_productos v where v.sesion_id = s.id and v.estado = 'vendida'),
+    0
+  ) as total_consumos,
+  p.fuera_servicio,
+  p.motivo_fuera,
+  s.pagado_monto,
+  s.pagado_en
+from public.puestos p
+left join public.sesiones s
+  on s.puesto_id = p.id and s.estado = 'activa'
+where p.activo;

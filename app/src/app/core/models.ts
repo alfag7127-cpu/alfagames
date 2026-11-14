@@ -78,6 +78,9 @@ export interface PuestoConEstado {
   /** Productos pedidos a la cuenta de esta sesión. */
   consumos: ConsumoSesion[];
   total_consumos: number | null;
+  /** Lo que el cliente ya pagó (tiempo + productos) al marcar "Ya pagó"; null = pendiente por cobrar. */
+  pagado_monto: number | null;
+  pagado_en: string | null;
 }
 
 export interface ConsumoSesion {

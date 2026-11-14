@@ -94,6 +94,15 @@ export class SesionesService {
   }
 
   /** Pausa el tiempo de la sesión: mientras dure no se cobra. */
+  /** Recordatorio de pago: guarda cuánto ya pagó el cliente (null = pendiente por cobrar). */
+  async marcarPago(sesionId: number, monto: number | null): Promise<void> {
+    const { error } = await this.supabase.client.rpc('marcar_pago_sesion', {
+      p_sesion_id: sesionId,
+      p_monto: monto,
+    });
+    if (error) throw error;
+  }
+
   async pausarSesion(sesionId: number): Promise<Sesion> {
     const { data, error } = await this.supabase.client.rpc('pausar_sesion', { p_sesion_id: sesionId });
     if (error) throw error;

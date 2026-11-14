@@ -266,6 +266,41 @@
           }
         </p>
 
+        <!-- Recordatorio de pago: ya pagó / pendiente por cobrar -->
+        @switch (estadoPago(p)) {
+          @case ('pagado') {
+            <button type="button" (click)="cambiarPago(p, false)" [disabled]="p.procesando"
+              title="Toca para volver a Pendiente por cobrar"
+              class="w-full my-2 rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50">
+              ✅ YA PAGÓ · {{ p.pagado_monto | number: '1.0-0' }}
+            </button>
+          }
+          @case ('falta') {
+            <div class="my-2 rounded-xl bg-orange-100 p-2 text-center ring-2 ring-orange-400">
+              <p class="text-sm font-bold text-orange-800">
+                ⚠ Pagó {{ p.pagado_monto | number: '1.0-0' }} · falta {{ faltaPorCobrar(p) | number: '1.0-0' }}
+              </p>
+              <div class="mt-1.5 grid grid-cols-2 gap-1.5">
+                <button type="button" (click)="cambiarPago(p, true)" [disabled]="p.procesando"
+                  class="rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  ✅ Ya pagó lo que falta
+                </button>
+                <button type="button" (click)="cambiarPago(p, false)" [disabled]="p.procesando"
+                  class="rounded-lg border border-orange-300 bg-white py-1.5 text-xs font-medium text-orange-800 hover:bg-orange-50 disabled:opacity-50">
+                  No ha pagado nada
+                </button>
+              </div>
+            </div>
+          }
+          @default {
+            <button type="button" (click)="cambiarPago(p, true)" [disabled]="p.procesando"
+              title="Toca cuando el cliente pague"
+              class="w-full my-2 rounded-xl border-2 border-dashed border-red-400 bg-red-50 py-2 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50">
+              💰 PENDIENTE POR COBRAR · tocar si ya pagó
+            </button>
+          }
+        }
+
         @if (nivelAlerta(p) === 'aviso') {
           <p class="text-xs font-medium text-amber-600 text-center mb-3">⚠ Quedan pocos minutos</p>
         } @else if (nivelAlerta(p) === 'critico') {
@@ -510,6 +545,18 @@
                 }
               </p>
             </div>
+
+            @if (p.pagado_monto != null) {
+              <p class="rounded-lg px-3 py-2 text-center text-xs font-semibold ring-1"
+                [class.bg-emerald-50]="estadoPago(p) === 'pagado'" [class.text-emerald-800]="estadoPago(p) === 'pagado'" [class.ring-emerald-200]="estadoPago(p) === 'pagado'"
+                [class.bg-orange-50]="estadoPago(p) === 'falta'" [class.text-orange-800]="estadoPago(p) === 'falta'" [class.ring-orange-300]="estadoPago(p) === 'falta'">
+                @if (estadoPago(p) === 'pagado') {
+                  ✅ Ya pagó {{ p.pagado_monto | number: '1.0-0' }}: no le cobres otra vez. Elige cómo pagó y cierra.
+                } @else {
+                  ⚠ Ya pagó {{ p.pagado_monto | number: '1.0-0' }}. Solo falta cobrarle {{ faltaPorCobrar(p) | number: '1.0-0' }}.
+                }
+              </p>
+            }
 
             <label class="flex items-center gap-2 text-xs text-slate-600">
               <input type="checkbox" [checked]="p.cambiarPrecio" (change)="toggleCambiarPrecio(p)" class="rounded" />

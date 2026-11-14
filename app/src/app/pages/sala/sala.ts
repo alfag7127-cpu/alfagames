@@ -219,6 +219,37 @@ export class Sala implements OnInit, OnDestroy {
     return this.precioSugerido(p) + (p.total_consumos ?? 0);
   }
 
+  // ── Recordatorio de pago (ya pagó / pendiente por cobrar) ──────────────
+
+  /** Lo que falta por cobrar si ya pagó una parte (sumó tiempo o productos después). */
+  faltaPorCobrar(p: PuestoVM): number {
+    if (p.pagado_monto == null) return this.totalConProductos(p);
+    return Math.max(0, this.totalConProductos(p) - p.pagado_monto);
+  }
+
+  estadoPago(p: PuestoVM): 'pendiente' | 'pagado' | 'falta' {
+    if (p.pagado_monto == null) return 'pendiente';
+    return this.faltaPorCobrar(p) > 0 ? 'falta' : 'pagado';
+  }
+
+  /** Marca que ya pagó todo lo que va (tiempo + productos), o lo devuelve a pendiente. */
+  async cambiarPago(p: PuestoVM, pagado: boolean): Promise<void> {
+    if (!p.sesion_id) return;
+    if (!pagado && !confirm(`¿${p.nombre} vuelve a "Pendiente por cobrar"?`)) return;
+    const monto = pagado ? this.totalConProductos(p) : null;
+    this.marcarProcesando(p.id, true);
+    try {
+      await this.sesiones.marcarPago(p.sesion_id, monto);
+      await this.cargar();
+      if (monto == null) this.toast.info(`${p.nombre}: pendiente por cobrar.`);
+      else this.toast.exito(`${p.nombre}: ya pagó ${monto.toLocaleString('es-CO')} COP.`);
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.marcarProcesando(p.id, false);
+    }
+  }
+
   private pedirPermisoNotificaciones(): void {
     if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
     Notification.requestPermission().catch(() => {
