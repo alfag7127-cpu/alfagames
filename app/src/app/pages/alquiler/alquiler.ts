@@ -167,6 +167,9 @@ function deHoraLocal(valor: string): string {
 })
 export class AlquilerPage implements OnInit, OnDestroy {
   readonly pestana = signal<Pestana>('consolas');
+  /** Vista con la que abre la pestaña Reservas (objeto nuevo en cada pedido para que se aplique otra vez). */
+  readonly reservasVer = signal<{ vista: 'lista' | 'atender' }>({ vista: 'lista' });
+  private querySub?: { unsubscribe(): void };
   /** Menú de secciones: íconos grandes (el texto va en el title y aria-label). */
   readonly pestanas: { id: Pestana; icono: string; texto: string; soloAlquiler?: boolean }[] = [
     { id: 'consolas', icono: '🎮', texto: 'Consolas' },
@@ -251,9 +254,13 @@ export class AlquilerPage implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // /alquiler?pestana=reservas abre directo la pestaña (enlace del aviso de reserva nueva).
-    const p = this.route.snapshot.queryParamMap.get('pestana') as Pestana | null;
-    if (p && this.pestanas.some((x) => x.id === p)) this.pestana.set(p);
+    // /alquiler?pestana=reservas&ver=atender abre directo la pestaña (enlace del aviso de reserva nueva),
+    // también si la página ya estaba abierta.
+    this.querySub = this.route.queryParamMap.subscribe((q) => {
+      const p = q.get('pestana') as Pestana | null;
+      if (p && this.pestanas.some((x) => x.id === p)) this.pestana.set(p);
+      if (q.get('ver') === 'atender') this.reservasVer.set({ vista: 'atender' });
+    });
     this.cargar();
     this.cargarHistorial();
     this.cargarReservas();
@@ -265,7 +272,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
     this.timer = setInterval(() => this.ahora.set(Date.now()), 30_000);
   }
 
+  /** Botón del aviso de reservas: abre la pestaña Reservas en "Por atender". */
+  verReservasPorAtender(): void {
+    this.reservasVer.set({ vista: 'atender' });
+    this.pestana.set('reservas');
+  }
+
   ngOnDestroy(): void {
+    this.querySub?.unsubscribe();
     clearInterval(this.timer);
     this.unsubscribe?.();
     this.unsubscribeReservas?.();

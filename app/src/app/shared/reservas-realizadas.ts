@@ -1,7 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ReservasAlquilerService } from '../core/reservas-alquiler.service';
+import { AlquilerService } from '../core/alquiler.service';
 import { ReservasService } from '../core/reservas.service';
 import { ToastService } from '../core/toast.service';
 import { ZONA_HORARIA, fechaColombia, finDiaColombia, inicioDiaColombia, inicioMes, rangoMesAnterior, sumarDias } from '../core/zona-horaria';
@@ -23,8 +23,9 @@ interface Fila {
 }
 
 /**
- * Lista numerada de las reservas confirmadas o realizadas (usadas en la sala, entregadas a
- * domicilio), por el día de la reserva. Siempre abre en Hoy; filtros Ayer, Semana, Este mes,
+ * Lista numerada: en la sala, las reservas confirmadas o usadas; a domicilio, todos los alquileres
+ * llevados al cliente (activos o devueltos, del formulario interno o de una reserva). Por el
+ * día de inicio. Siempre abre en Hoy; filtros Ayer, Semana, Este mes, un día,
  * Mes anterior y Desde–Hasta. Sala y domicilio son negocios aparte: cada uno ve solo lo suyo.
  */
 @Component({
@@ -43,6 +44,10 @@ interface Fila {
         </div>
       </div>
       <div class="mb-3 flex flex-wrap items-end gap-3">
+        <label class="text-xs font-medium text-slate-500">Un día
+          <input type="date" [ngModel]="unDia()" (ngModelChange)="elegirDia($event)" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+        </label>
+        <span class="pb-1.5 text-xs text-slate-400">o</span>
         <label class="text-xs font-medium text-slate-500">Desde
           <input type="date" [(ngModel)]="desde" class="block rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800" />
         </label>
@@ -51,7 +56,7 @@ interface Fila {
         </label>
         <button type="button" (click)="filtrarFechas()" class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white hover:bg-indigo-700">Filtrar</button>
         <span class="ml-auto text-sm text-slate-500">
-          {{ filas().length }} reserva{{ filas().length === 1 ? '' : 's' }} ·
+          {{ filas().length }} {{ negocio() === 'sala' ? 'reserva' : 'alquiler' }}{{ filas().length === 1 ? '' : negocio() === 'sala' ? 's' : 'es' }} ·
           <span class="font-bold tabular-nums text-slate-900">{{ total() | number: '1.0-0' }} COP</span>
         </span>
       </div>
@@ -78,12 +83,12 @@ interface Fila {
               <div class="shrink-0 text-right">
                 <p class="font-bold tabular-nums text-slate-900">{{ f.precio | number: '1.0-0' }}</p>
                 <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                  [class.bg-emerald-100]="f.estado === 'confirmada'" [class.text-emerald-800]="f.estado === 'confirmada'"
-                  [class.bg-sky-100]="f.estado !== 'confirmada'" [class.text-sky-800]="f.estado !== 'confirmada'">{{ f.estado }}</span>
+                  [class.bg-emerald-100]="f.estado === 'confirmada' || f.estado === 'activo'" [class.text-emerald-800]="f.estado === 'confirmada' || f.estado === 'activo'"
+                  [class.bg-sky-100]="f.estado === 'usada' || f.estado === 'devuelto'" [class.text-sky-800]="f.estado === 'usada' || f.estado === 'devuelto'">{{ f.estado === 'activo' ? 'donde el cliente' : f.estado }}</span>
               </div>
             </li>
           } @empty {
-            <li class="py-6 text-center text-slate-400">{{ rango() === 'hoy' ? 'No hay reservas confirmadas para hoy.' : 'No hay reservas confirmadas en estas fechas.' }}</li>
+            <li class="py-6 text-center text-slate-400">{{ negocio() === 'sala' ? 'No hay reservas confirmadas' : 'No hay alquileres entregados' }} {{ rango() === 'hoy' ? 'hoy.' : 'en estas fechas.' }}</li>
           }
         </ol>
       }
@@ -109,7 +114,7 @@ export class ReservasRealizadas implements OnInit, OnDestroy {
   readonly cargando = signal(true);
   readonly total = computed(() => this.filas().reduce((s, f) => s + f.precio, 0));
   readonly titulo = computed(() => {
-    const base = 'Reservas confirmadas';
+    const base = this.negocio() === 'sala' ? 'Reservas confirmadas' : 'Alquileres entregados';
     const r = this.rango();
     if (r === 'hoy') return `${base} de hoy`;
     if (r === 'ayer') return `${base} de ayer`;
@@ -123,7 +128,7 @@ export class ReservasRealizadas implements OnInit, OnDestroy {
 
   constructor(
     private readonly sala: ReservasService,
-    private readonly domicilio: ReservasAlquilerService,
+    private readonly domicilio: AlquilerService,
     private readonly toast: ToastService,
   ) {}
 
@@ -145,6 +150,19 @@ export class ReservasRealizadas implements OnInit, OnDestroy {
       this.hasta = r === 'ayer' ? sumarDias(hoy, -1) : hoy;
       this.desde = r === 'mes' ? inicioMes(hoy) : r === '7' ? sumarDias(hoy, -6) : this.hasta;
     }
+    this.cargar();
+  }
+
+  /** Fecha del campo "Un día": solo cuando el filtro es un único día. */
+  readonly unDia = computed(() => {
+    const { desde, hasta } = this.filtro();
+    return desde === hasta ? desde : '';
+  });
+
+  elegirDia(dia: string): void {
+    if (!dia) return;
+    this.desde = this.hasta = dia;
+    this.rango.set(dia === fechaColombia() ? 'hoy' : dia === sumarDias(fechaColombia(), -1) ? 'ayer' : null);
     this.cargar();
   }
 
@@ -190,20 +208,24 @@ export class ReservasRealizadas implements OnInit, OnDestroy {
           })),
         );
       } else {
-        const lista = await this.domicilio.realizadas(desde, hasta);
+        const lista = await this.domicilio.entregados(desde, hasta);
         this.filas.set(
-          lista.map((r) => ({
-            id: r.id,
-            inicio: r.inicio,
-            cliente: r.cliente_nombre,
-            telefono: r.cliente_telefono,
-            cedula: r.cliente_cedula ?? null,
-            consola: r.alquiler_consolas?.nombre ?? 'Consola',
-            detalle: r.plan_nombre,
-            precio: r.precio,
-            estado: r.estado,
-            gta6: r.juego === 'gta6',
-          })),
+          lista.map((a) => {
+            const ext = a.alquiler_extensiones ?? [];
+            return {
+              id: a.id,
+              inicio: a.inicio,
+              cliente: a.cliente_nombre,
+              telefono: a.cliente_telefono,
+              cedula: a.cliente_cedula ?? null,
+              consola: a.alquiler_consolas ? `${a.alquiler_consolas.tipo} ${a.alquiler_consolas.nombre}` : 'Consola',
+              detalle: a.plan_nombre + (ext.length ? ` · +${ext.length} extensión${ext.length === 1 ? '' : 'es'}` : ''),
+              // Lo cobrado: la entrega más el tiempo extra pagado después.
+              precio: Number(a.precio_total) + ext.reduce((s, e) => s + Number(e.precio), 0),
+              estado: a.estado,
+              gta6: !!a.alquiler_tarifas?.gta6,
+            };
+          }),
         );
       }
     } catch (e) {

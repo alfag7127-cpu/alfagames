@@ -64,7 +64,7 @@
 
 <!-- Aviso: reservas a domicilio por atender (hechas desde los enlaces públicos) -->
 @if (pestana() !== 'reservas' && reservasPorAtender().length > 0) {
-  <button type="button" (click)="pestana.set('reservas')"
+  <button type="button" (click)="verReservasPorAtender()"
     class="mb-4 flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-semibold ring-1"
     [class.bg-amber-50]="reservasPorConfirmar() > 0" [class.text-amber-900]="reservasPorConfirmar() > 0" [class.ring-amber-300]="reservasPorConfirmar() > 0"
     [class.bg-emerald-50]="reservasPorConfirmar() === 0" [class.text-emerald-900]="reservasPorConfirmar() === 0" [class.ring-emerald-300]="reservasPorConfirmar() === 0">
@@ -757,7 +757,7 @@
 
 <!-- ═══ CLIENTES ═══ -->
 @if (pestana() === 'reservas') {
-  <app-reservas-alquiler />
+  <app-reservas-alquiler [ver]="reservasVer()" />
 }
 
 @if (pestana() === 'clientes') {

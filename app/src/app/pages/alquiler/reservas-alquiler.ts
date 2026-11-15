@@ -1,6 +1,6 @@
 import { ReservasRealizadas } from '../../shared/reservas-realizadas';
 import { DecimalPipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
 import { ReservaAlquiler } from '../../core/gta6.service';
@@ -37,7 +37,7 @@ type Filtro = 'atender' | 'todas' | 'lista';
           [class.bg-white]="filtro() !== f.id" [class.text-slate-600]="filtro() !== f.id" [class.ring-slate-200]="filtro() !== f.id">{{ f.texto }}</button>
       }
       @if (porConfirmar() > 0) {
-        <span class="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800">{{ porConfirmar() }} por confirmar</span>
+        <button type="button" (click)="filtro.set('atender')" class="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800 hover:bg-amber-200">{{ porConfirmar() }} por confirmar</button>
       }
     </div>
 
@@ -142,11 +142,14 @@ type Filtro = 'atender' | 'todas' | 'lista';
 export class ReservasAlquilerTab implements OnInit, OnDestroy {
   readonly reservas = signal<ReservaAlquiler[]>([]);
   readonly consolas = signal<ConsolaConEstado[]>([]);
-  readonly filtro = signal<Filtro>('atender');
+  /** Vista pedida por la página (aviso de reserva nueva → Por atender). */
+  readonly ver = input<{ vista: 'lista' | 'atender' }>({ vista: 'lista' });
+  /** Abre en la lista numerada de alquileres entregados hoy. */
+  readonly filtro = signal<Filtro>('lista');
   readonly filtros: { id: Filtro; texto: string }[] = [
+    { id: 'lista', texto: '📋 Entregados' },
     { id: 'atender', texto: 'Por atender' },
     { id: 'todas', texto: 'Todas' },
-    { id: 'lista', texto: '📋 Confirmadas' },
   ];
   readonly abierta = signal<number | null>(null);
   readonly consolaEntrega = signal<Record<number, number>>({});
@@ -175,7 +178,9 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
     private readonly servicio: ReservasAlquilerService,
     private readonly alquiler: AlquilerService,
     private readonly toast: ToastService,
-  ) {}
+  ) {
+    effect(() => this.filtro.set(this.ver().vista));
+  }
 
   ngOnInit(): void {
     this.cargar();

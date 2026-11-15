@@ -1,6 +1,13 @@
 import { Injectable } from '@angular/core';
 import { SupabaseService } from './supabase.service';
 import { suscribirCambios } from './tiempo-real';
+
+/** Alquiler entregado con su consola, sus extensiones y si el plan es de GTA 6. */
+export type AlquilerEntregado = Omit<Alquiler, 'alquiler_extensiones'> & {
+  alquiler_extensiones: { precio: number | string }[];
+  alquiler_consolas: { nombre: string; tipo: string } | null;
+  alquiler_tarifas: { gta6: boolean } | null;
+};
 import {
   Alquiler,
   Cliente,
@@ -310,6 +317,22 @@ export class AlquilerService {
     const { data, error } = await query;
     if (error) throw error;
     return data as Alquiler[];
+  }
+
+  /**
+   * Alquileres llevados al cliente (activos o devueltos) con entrega entre `desde` y `hasta` (ISO),
+   * hechos desde el formulario interno o desde una reserva, del más antiguo al más nuevo.
+   */
+  async entregados(desde: string, hasta: string): Promise<AlquilerEntregado[]> {
+    const { data, error } = await this.supabase.client
+      .from('alquileres')
+      .select('*, alquiler_extensiones(precio), alquiler_consolas(nombre, tipo), alquiler_tarifas(gta6)')
+      .in('estado', ['activo', 'devuelto'])
+      .gte('inicio', desde)
+      .lte('inicio', hasta)
+      .order('inicio');
+    if (error) throw error;
+    return data as AlquilerEntregado[];
   }
 
   // ── Admin: inventario, precios y configuración ──
