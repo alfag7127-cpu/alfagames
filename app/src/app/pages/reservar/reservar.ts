@@ -161,6 +161,11 @@ function diaYHora(iso: string | number): string {
                 <input [(ngModel)]="telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="20"
                   class="mt-1 block w-full rounded-xl bg-white text-slate-900 px-3 py-2.5 text-base" />
               </label>
+              <label class="block text-sm">
+                Número de cédula
+                <input [(ngModel)]="cedula" name="cedula" inputmode="numeric" autocomplete="off" maxlength="20"
+                  class="mt-1 block w-full rounded-xl bg-white text-slate-900 px-3 py-2.5 text-base" />
+              </label>
               <div class="flex gap-2">
                 <button type="button" (click)="volver()" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
                 <button type="button" (click)="aTiempo()" class="flex-1 rounded-xl bg-sky-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-sky-400">Continuar</button>
@@ -270,6 +275,7 @@ export class Reservar implements OnInit, OnDestroy {
   private readonly ahora = signal(Date.now());
   nombre = '';
   telefono = '';
+  cedula = '';
 
   readonly hora = hora;
   readonly diaYHora = diaYHora;
@@ -370,6 +376,7 @@ export class Reservar implements OnInit, OnDestroy {
   aTiempo(): void {
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
+    if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
     this.error.set(null);
     // Por defecto: libre ya → en 15 minutos (redondeado al cuarto de hora); ocupada → cuando termina.
     const cuarto = 15 * 60_000;
@@ -403,6 +410,7 @@ export class Reservar implements OnInit, OnDestroy {
           puestoId: c.id,
           nombre: this.nombre.trim(),
           telefono: this.telefono,
+          cedula: this.cedula,
           inicio: new Date(inicio).toISOString(),
           minutos,
         }),

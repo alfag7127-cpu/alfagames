@@ -98,13 +98,14 @@ export class Gta6Service {
     };
   }
 
-  async crearSala(r: { puestoId: number; nombre: string; telefono: string; inicio: string; minutos: number }): Promise<ReservaGta6Creada> {
+  async crearSala(r: { puestoId: number; nombre: string; telefono: string; cedula: string; inicio: string; minutos: number }): Promise<ReservaGta6Creada> {
     const { data, error } = await this.db.rpc('crear_reserva_gta6', {
       p_puesto_id: r.puestoId,
       p_cliente_nombre: r.nombre,
       p_cliente_telefono: r.telefono,
       p_inicio: r.inicio,
       p_minutos: r.minutos,
+      p_cliente_cedula: r.cedula,
     });
     if (error) throw error;
     const c = data as ReservaGta6Creada;

@@ -7145,3 +7145,172 @@ end;
 $$;
 revoke all on function public.crear_reserva_gta6_alquiler(bigint, text, text, text, timestamptz, text) from public;
 grant execute on function public.crear_reserva_gta6_alquiler(bigint, text, text, text, timestamptz, text) to anon, authenticated;
+
+-- ============================================================
+-- 54. CEDULA TAMBIEN EN LAS RESERVAS DE LA SALA (2026-11-14)
+-- ============================================================
+-- Pedido del dueño: la cedula se pide en todo. Reservas de la sala (/reservar, /gta6-sala y
+-- "Reservar en el local"): reservas.cliente_cedula, obligatoria. Las funciones de antes pasan al
+-- esquema private con el sufijo _base (sin cambiar su logica) y las publicas nuevas validan la
+-- cedula, llaman la base y la guardan en la reserva creada. Las firmas publicas viejas (sin
+-- cedula) responden "actualiza la pagina".
+-- En el alquiler hecho por el personal la cedula va a la ficha del cliente (clientes.cedula),
+-- que la app actualiza al alquilar.
+
+alter table public.reservas add column if not exists cliente_cedula text;
+
+alter function public.crear_reserva(bigint, text, text, timestamptz, integer) rename to crear_reserva_base;
+alter function public.crear_reserva_base(bigint, text, text, timestamptz, integer) set schema private;
+alter function public.crear_reserva_gta6(bigint, text, text, timestamptz, integer) rename to crear_reserva_gta6_base;
+alter function public.crear_reserva_gta6_base(bigint, text, text, timestamptz, integer) set schema private;
+alter function public.reservar_local(bigint, text, text, timestamptz, integer) rename to reservar_local_base;
+alter function public.reservar_local_base(bigint, text, text, timestamptz, integer) set schema private;
+revoke all on function private.crear_reserva_base(bigint, text, text, timestamptz, integer) from public, anon, authenticated;
+revoke all on function private.crear_reserva_gta6_base(bigint, text, text, timestamptz, integer) from public, anon, authenticated;
+revoke all on function private.reservar_local_base(bigint, text, text, timestamptz, integer) from public, anon, authenticated;
+
+-- Firmas viejas: piden actualizar la pagina.
+create or replace function public.crear_reserva(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  raise exception 'Actualiza la página e intenta de nuevo (ahora pedimos tu número de cédula).';
+end;
+$$;
+create or replace function public.crear_reserva_gta6(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  raise exception 'Actualiza la página e intenta de nuevo (ahora pedimos tu número de cédula).';
+end;
+$$;
+create or replace function public.reservar_local(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer
+)
+returns public.reservas language plpgsql security definer set search_path = public as $$
+begin
+  raise exception 'Actualiza la página e intenta de nuevo (ahora se pide el número de cédula).';
+end;
+$$;
+grant execute on function public.crear_reserva(bigint, text, text, timestamptz, integer) to anon, authenticated;
+grant execute on function public.crear_reserva_gta6(bigint, text, text, timestamptz, integer) to anon, authenticated;
+revoke all on function public.reservar_local(bigint, text, text, timestamptz, integer) from public, anon;
+grant execute on function public.reservar_local(bigint, text, text, timestamptz, integer) to authenticated;
+
+create or replace function private.validar_cedula(p text)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  v text := private.normalizar_cedula(p);
+begin
+  if v is null or char_length(v) < 5 or char_length(v) > 15 then
+    raise exception 'Escribe el número de cédula';
+  end if;
+  return v;
+end;
+$$;
+grant execute on function private.validar_cedula(text) to anon, authenticated;
+
+create or replace function public.crear_reserva(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer,
+  p_cliente_cedula text
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_ced text := private.validar_cedula(p_cliente_cedula);
+  v jsonb;
+begin
+  v := private.crear_reserva_base(p_puesto_id, p_cliente_nombre, p_cliente_telefono, p_inicio, p_minutos);
+  update public.reservas set cliente_cedula = v_ced where id = (v->>'id')::bigint;
+  return v;
+end;
+$$;
+revoke all on function public.crear_reserva(bigint, text, text, timestamptz, integer, text) from public;
+grant execute on function public.crear_reserva(bigint, text, text, timestamptz, integer, text) to anon, authenticated;
+
+create or replace function public.crear_reserva_gta6(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer,
+  p_cliente_cedula text
+)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_ced text := private.validar_cedula(p_cliente_cedula);
+  v jsonb;
+begin
+  v := private.crear_reserva_gta6_base(p_puesto_id, p_cliente_nombre, p_cliente_telefono, p_inicio, p_minutos);
+  update public.reservas set cliente_cedula = v_ced where id = (v->>'id')::bigint;
+  return v;
+end;
+$$;
+revoke all on function public.crear_reserva_gta6(bigint, text, text, timestamptz, integer, text) from public;
+grant execute on function public.crear_reserva_gta6(bigint, text, text, timestamptz, integer, text) to anon, authenticated;
+
+create or replace function public.reservar_local(
+  p_puesto_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_inicio timestamptz, p_minutos integer,
+  p_cliente_cedula text
+)
+returns public.reservas language plpgsql security definer set search_path = public as $$
+declare
+  v_ced text := private.validar_cedula(p_cliente_cedula);
+  v public.reservas;
+begin
+  v := private.reservar_local_base(p_puesto_id, p_cliente_nombre, p_cliente_telefono, p_inicio, p_minutos);
+  update public.reservas set cliente_cedula = v_ced where id = v.id returning * into v;
+  return v;
+end;
+$$;
+revoke all on function public.reservar_local(bigint, text, text, timestamptz, integer, text) from public, anon;
+grant execute on function public.reservar_local(bigint, text, text, timestamptz, integer, text) to authenticated;
+
+-- ============================================================
+-- 55. CEDULA EN LOS ALQUILERES (2026-11-14)
+-- ============================================================
+-- alquileres.cliente_cedula: la escribe el personal al alquilar (la app la guarda justo despues de
+-- alquilar_consola) o llega de la reserva a domicilio. El trigger alquileres_cliente la pasa a la
+-- ficha del cliente (clientes.cedula) cuando el alquiler tiene celular.
+
+alter table public.alquileres add column if not exists cliente_cedula text;
+
+create or replace function private.alquiler_cliente()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.cliente_cedula := private.normalizar_cedula(new.cliente_cedula);
+  new.cliente_id := private.guardar_cliente(new.cliente_telefono, new.cliente_nombre, new.cliente_direccion);
+  if new.cliente_id is not null and new.cliente_cedula is not null then
+    update public.clientes set cedula = new.cliente_cedula, updated_at = now()
+    where id = new.cliente_id and cedula is distinct from new.cliente_cedula;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace trigger alquileres_cliente
+  before insert or update of cliente_telefono, cliente_nombre, cliente_direccion, cliente_cedula on public.alquileres
+  for each row execute function private.alquiler_cliente();
+
+-- Reserva a domicilio ligada a un alquiler: su cedula pasa al alquiler (y por el trigger, al cliente).
+create or replace function private.reserva_alquiler_cedula_cliente()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.alquiler_id is not null and new.cliente_cedula is not null then
+    update public.alquileres set cliente_cedula = new.cliente_cedula
+    where id = new.alquiler_id and cliente_cedula is distinct from new.cliente_cedula;
+  end if;
+  return new;
+end;
+$$;
+
+update public.alquileres a set cliente_cedula = r.cliente_cedula
+from public.reservas_alquiler r
+where r.alquiler_id = a.id and r.cliente_cedula is not null and a.cliente_cedula is null;

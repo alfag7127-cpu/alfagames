@@ -87,7 +87,7 @@ type Filtro = 'proximas' | 'todas';
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p class="font-semibold text-slate-900">#{{ r.id }} · {{ nombrePuesto(r.puesto_id) }} · {{ diaYHora(r.inicio) }} – {{ hora(finReserva(r)) }}</p>
-                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
+                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }} · {{ duracion(r.minutos) }}</p>
               </div>
               <div class="text-right">
                 <p class="font-bold tabular-nums text-slate-900">{{ r.precio | number: '1.0-0' }}</p>

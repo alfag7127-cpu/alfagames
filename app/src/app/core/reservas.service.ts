@@ -16,6 +16,7 @@ export interface Reserva {
   cliente_nombre: string;
   /** Opcional en las reservas hechas en el local. */
   cliente_telefono: string | null;
+  cliente_cedula?: string | null;
   inicio: string;
   minutos: number;
   precio: number;
@@ -86,13 +87,14 @@ export class ReservasService {
     return { ...e, precios: e.precios.map((p) => ({ minutos: Number(p.minutos), precio: Number(p.precio) })) };
   }
 
-  async crear(r: { puestoId: number; nombre: string; telefono: string; inicio: string; minutos: number }): Promise<ReservaCreada> {
+  async crear(r: { puestoId: number; nombre: string; telefono: string; cedula: string; inicio: string; minutos: number }): Promise<ReservaCreada> {
     const { data, error } = await this.supabase.client.rpc('crear_reserva', {
       p_puesto_id: r.puestoId,
       p_cliente_nombre: r.nombre,
       p_cliente_telefono: r.telefono,
       p_inicio: r.inicio,
       p_minutos: r.minutos,
+      p_cliente_cedula: r.cedula,
     });
     if (error) throw error;
     const c = data as ReservaCreada;
@@ -119,13 +121,14 @@ export class ReservasService {
   }
 
   /** El trabajador aparta una consola para un cliente del local: queda confirmada y paga al cerrar. */
-  async reservarLocal(r: { puestoId: number; nombre: string; telefono: string | null; inicio: string; minutos: number }): Promise<Reserva> {
+  async reservarLocal(r: { puestoId: number; nombre: string; telefono: string | null; cedula: string; inicio: string; minutos: number }): Promise<Reserva> {
     const { data, error } = await this.supabase.client.rpc('reservar_local', {
       p_puesto_id: r.puestoId,
       p_cliente_nombre: r.nombre,
       p_cliente_telefono: r.telefono,
       p_inicio: r.inicio,
       p_minutos: r.minutos,
+      p_cliente_cedula: r.cedula,
     });
     if (error) throw error;
     return data as Reserva;

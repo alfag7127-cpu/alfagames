@@ -114,6 +114,8 @@ function dia(iso: string): string {
               class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
             <input [(ngModel)]="localTelefono" name="l-tel" type="tel" placeholder="Celular (opcional)"
               class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+            <input [(ngModel)]="localCedula" name="l-cedula" inputmode="numeric" placeholder="Número de cédula" maxlength="20"
+              class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
           </div>
           <div class="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
             @for (p of precios(); track p.minutos) {
@@ -161,7 +163,7 @@ function dia(iso: string): string {
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
-                <p class="text-sm text-slate-600">@if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }} · {{ r.cliente_telefono }} · {{ duracion(r.minutos) }}</p>
+                <p class="text-sm text-slate-600">@if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }} · {{ duracion(r.minutos) }}</p>
                 <p class="text-xs" [class.text-amber-700]="vigente(r)" [class.text-red-600]="!vigente(r)">
                   {{ vigente(r) ? 'Aparta la consola ' + minutosParaVencer(r) + ' min más' : 'Se venció el tiempo para pagar: ya no aparta la consola' }}
                 </p>
@@ -226,7 +228,7 @@ function dia(iso: string): string {
               <div>
                 <p class="font-semibold text-slate-900">#{{ num(r) }} · {{ nombrePuesto(r.puesto_id) }} · {{ dia(r.inicio) }} {{ hora(r.inicio) }} – {{ hora(fin(r)) }}</p>
                 <p class="text-sm text-slate-600">
-                  @if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
+                  @if (r.juego === 'gta6') {<span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold text-white">GTA 6</span>}{{ r.cliente_nombre }}{{ r.cliente_telefono ? ' · ' + r.cliente_telefono : '' }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }} · {{ duracion(r.minutos) }}{{ r.origen === 'local' ? ' · 🏪 hecha en el local' : '' }}
                 </p>
                 @if (yaEmpezo(r)) {
                   <p class="text-xs font-semibold text-red-600">Ya es la hora: su tiempo está corriendo desde las {{ hora(r.inicio) }}.</p>
@@ -357,6 +359,7 @@ export class ReservasPage implements OnInit, OnDestroy {
   localPuesto: number | null = null;
   localNombre = '';
   localTelefono = '';
+  localCedula = '';
   localMinutos = 120;
   localInicio = aHoraLocal(Date.now());
 
@@ -604,6 +607,7 @@ export class ReservasPage implements OnInit, OnDestroy {
   async reservarLocal(): Promise<void> {
     if (!this.localPuesto) return this.toast.error('Elige la consola.');
     if (this.localNombre.trim().length < 2) return this.toast.error('Escribe el nombre del cliente.');
+    if (this.localCedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.toast.error('Escribe el número de cédula del cliente.');
     if (!this.localInicio) return this.toast.error('Elige la hora de inicio.');
     this.guardandoLocal.set(true);
     try {
@@ -611,12 +615,14 @@ export class ReservasPage implements OnInit, OnDestroy {
         puestoId: this.localPuesto,
         nombre: this.localNombre.trim(),
         telefono: this.localTelefono.trim() || null,
+        cedula: this.localCedula,
         inicio: new Date(deHoraLocal(this.localInicio)).toISOString(),
         minutos: this.localMinutos,
       });
       this.toast.exito(`${this.nombrePuesto(r.puesto_id)} apartada para ${r.cliente_nombre}: ${dia(r.inicio)} ${hora(r.inicio)} – ${hora(finReserva(r))}.`);
       this.localNombre = '';
       this.localTelefono = '';
+      this.localCedula = '';
       this.localPuesto = null;
       this.localInicio = aHoraLocal(Date.now());
       this.formLocal.set(false);

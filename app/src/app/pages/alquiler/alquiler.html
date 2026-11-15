@@ -183,6 +183,8 @@
               </div>
               <input [(ngModel)]="c.clienteNombre" name="cliente-{{ c.id }}" placeholder="Nombre del cliente *"
                 class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
+              <input [(ngModel)]="c.clienteCedula" name="ced-{{ c.id }}" inputmode="numeric" maxlength="20" placeholder="Número de cédula *"
+                class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
               <input [(ngModel)]="c.clienteDireccion" name="dir-{{ c.id }}" placeholder="Dirección"
                 class="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5" />
 
@@ -613,6 +615,9 @@
                 <p class="text-slate-800">{{ a.cliente_nombre }}</p>
                 @if (a.cliente_telefono) {
                   <p class="text-xs text-slate-400">{{ a.cliente_telefono }}</p>
+                }
+                @if (a.cliente_cedula) {
+                  <p class="text-xs text-slate-400">C.C. {{ a.cliente_cedula }}</p>
                 }
               </td>
               <td class="px-4 py-3 text-slate-700">

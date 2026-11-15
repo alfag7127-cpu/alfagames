@@ -164,6 +164,12 @@ export class AlquilerService {
     return data as Cliente[];
   }
 
+  /** Guarda la cédula en el alquiler; el trigger alquileres_cliente la pasa a la ficha del cliente. */
+  async guardarCedulaAlquiler(alquilerId: number, cedula: string): Promise<void> {
+    const { error } = await this.supabase.client.from('alquileres').update({ cliente_cedula: cedula }).eq('id', alquilerId);
+    if (error) throw error;
+  }
+
   async actualizarCliente(id: number, cambios: Partial<Pick<Cliente, 'nombre' | 'direccion' | 'notas'>>): Promise<void> {
     const { error } = await this.supabase.client.from('clientes').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;

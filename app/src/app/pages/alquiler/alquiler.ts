@@ -34,6 +34,7 @@ interface ConsolaVM extends ConsolaConEstado {
   clienteNombre: string;
   clienteTelefono: string;
   clienteDireccion: string;
+  clienteCedula: string;
   controlesExtra: number;
   cambiarPrecio: boolean;
   precioFinal: number | null;
@@ -109,6 +110,7 @@ const FORM_VACIO = {
   clienteNombre: '',
   clienteTelefono: '',
   clienteDireccion: '',
+  clienteCedula: '',
   controlesExtra: 0,
   cambiarPrecio: false,
   precioFinal: null,
@@ -436,6 +438,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
         clienteResumen: `${cliente.alquileres} alquiler${cliente.alquileres === 1 ? '' : 'es'}${ultimo ? ' · último ' + ultimo : ''}`,
         clienteNombre: cliente.nombre,
         clienteDireccion: cliente.direccion ?? actual.clienteDireccion,
+        clienteCedula: cliente.cedula ?? actual.clienteCedula,
       });
     } catch {
       /* sin búsqueda: se registra igual al alquilar */
@@ -453,6 +456,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
       return this.toast.error('La hora de entrega no puede estar en el futuro.');
     }
     if (!c.clienteNombre.trim()) return this.toast.error('Escribe el nombre del cliente.');
+    if (c.clienteCedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.toast.error('Escribe el número de cédula del cliente.');
     if (c.cambiarPrecio && (c.precioFinal == null || c.precioFinal < 0)) {
       return this.toast.error('Escribe el precio a cobrar (o desmarca "Cambiar precio").');
     }
@@ -474,6 +478,11 @@ export class AlquilerPage implements OnInit, OnDestroy {
         inicio: c.horaManual ? deHoraLocal(c.horaInicio) : null,
       });
       sonarCaja();
+      try {
+        await this.alquiler.guardarCedulaAlquiler(a.id, c.clienteCedula);
+      } catch {
+        this.toast.error('El alquiler quedó registrado, pero no se guardó la cédula. Agrégala en Clientes.');
+      }
       const devolver = new Date(a.fin_pactado).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' });
       this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP. Devolver: ${devolver}.`);
       await this.subirContratosNuevos(a.id, c.contratoArchivos);

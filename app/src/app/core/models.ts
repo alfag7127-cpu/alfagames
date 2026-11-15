@@ -161,6 +161,7 @@ export interface Alquiler {
   cliente_nombre: string;
   cliente_telefono: string | null;
   cliente_direccion: string | null;
+  cliente_cedula?: string | null;
   tarifa_id: number | null;
   plan_nombre: string;
   inicio: string;

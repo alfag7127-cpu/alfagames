@@ -82,6 +82,11 @@ type ConsolaGta6 = Gta6Publico['sala_consolas'][number];
                 <input [(ngModel)]="telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="20"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
               </label>
+              <label class="block text-sm">
+                Número de cédula
+                <input [(ngModel)]="cedula" name="cedula" inputmode="numeric" autocomplete="off" maxlength="20"
+                  class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+              </label>
               <div class="flex gap-2">
                 <button type="button" (click)="volver()" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
                 <button type="button" (click)="aTiempo()" class="flex-1 rounded-xl bg-pink-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-pink-400">Continuar</button>
@@ -177,6 +182,7 @@ export class Gta6SalaPublica implements OnInit {
   readonly creada = signal<ReservaGta6Creada | null>(null);
   nombre = '';
   telefono = '';
+  cedula = '';
 
   readonly hora = hora;
   readonly diaYHora = diaYHora;
@@ -244,6 +250,7 @@ export class Gta6SalaPublica implements OnInit {
   aTiempo(): void {
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
+    if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
     this.error.set(null);
     if (!this.inicio()) {
       // Por defecto: el día del lanzamiento a las 3:00 p. m. (o en una hora, si ya salió).
@@ -269,7 +276,7 @@ export class Gta6SalaPublica implements OnInit {
     this.error.set(null);
     try {
       this.creada.set(
-        await this.gta6.crearSala({ puestoId: c.id, nombre: this.nombre.trim(), telefono: this.telefono, inicio: new Date(inicio).toISOString(), minutos }),
+        await this.gta6.crearSala({ puestoId: c.id, nombre: this.nombre.trim(), telefono: this.telefono, cedula: this.cedula, inicio: new Date(inicio).toISOString(), minutos }),
       );
       this.paso.set('pago');
       window.scrollTo({ top: 0 });
