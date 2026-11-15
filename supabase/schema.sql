@@ -7314,3 +7314,44 @@ $$;
 update public.alquileres a set cliente_cedula = r.cliente_cedula
 from public.reservas_alquiler r
 where r.alquiler_id = a.id and r.cliente_cedula is not null and a.cliente_cedula is null;
+
+-- ============================================================
+-- 56. SALA: CAMBIOS ENTRE EFECTIVO Y TRANSFERENCIA (2026-11-14)
+-- ============================================================
+-- A veces un cliente pide efectivo y lo paga por QR (transferencia): sale efectivo de la caja y
+-- entra la misma plata por transferencia. Al reves tambien (entrega efectivo y se le transfiere).
+-- No es ingreso ni gasto: solo pasa dinero de un lado al otro. El Historial de la sala lo suma
+-- al efectivo y la transferencia del periodo. Admin y trabajador registran; cada uno puede
+-- borrar lo suyo durante el dia (el admin, cualquiera).
+--   tipo 'a_efectivo':      entra transferencia, sale efectivo (el cliente pidio efectivo).
+--   tipo 'a_transferencia': entra efectivo, sale transferencia.
+
+create table if not exists public.caja_cambios (
+  id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('a_efectivo', 'a_transferencia')),
+  monto numeric(12, 0) not null check (monto > 0),
+  nota text,
+  empleado_id uuid not null references public.profiles (id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists caja_cambios_created_at_idx on public.caja_cambios (created_at);
+create index if not exists caja_cambios_empleado_idx on public.caja_cambios (empleado_id);
+
+alter table public.caja_cambios enable row level security;
+
+create policy "caja_cambios_select_sala" on public.caja_cambios
+  for select to authenticated using (private.puede_sala());
+
+create policy "caja_cambios_insert_sala" on public.caja_cambios
+  for insert to authenticated
+  with check (private.puede_sala() and empleado_id = (select auth.uid()));
+
+create policy "caja_cambios_delete" on public.caja_cambios
+  for delete to authenticated
+  using (
+    private.is_admin()
+    or (private.puede_sala() and empleado_id = (select auth.uid()) and created_at > now() - interval '1 day')
+  );
+
+grant select, insert, delete on public.caja_cambios to authenticated;

@@ -4,6 +4,8 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Gasto, Sesion, VentaProducto } from '../../core/models';
 import { GastosService } from '../../core/gastos.service';
+import { CajaCambio, CajaCambiosService } from '../../core/caja-cambios.service';
+import { PesosDirective } from '../../shared/pesos.directive';
 import { AuthService } from '../../core/auth.service';
 import { ProductosService } from '../../core/productos.service';
 import { SesionesService } from '../../core/sesiones.service';
@@ -36,7 +38,7 @@ type Rango = 'hoy' | 'ayer' | '7' | 'mes' | 'mesAnterior';
 
 @Component({
   selector: 'app-historial',
-  imports: [DuracionPipe, FormsModule, DecimalPipe, DatePipe],
+  imports: [DuracionPipe, FormsModule, DecimalPipe, DatePipe, PesosDirective],
   templateUrl: './historial.html',
 })
 export class Historial implements OnInit {
@@ -44,6 +46,13 @@ export class Historial implements OnInit {
   readonly nombresPuestos = signal<Record<number, string>>({});
   readonly ventas = signal<VentaProducto[]>([]);
   readonly gastos = signal<Gasto[]>([]);
+  /** Cambios entre efectivo y transferencia del periodo (no son ingreso ni gasto). */
+  readonly cambios = signal<CajaCambio[]>([]);
+  readonly formCambio = signal(false);
+  readonly guardandoCambio = signal(false);
+  cambioTipo: CajaCambio['tipo'] = 'a_efectivo';
+  cambioMonto: number | null = null;
+  cambioNota = '';
   readonly nombresProductos = signal<Record<number, string>>({});
   readonly nombresUsuarios = signal<Record<string, string>>({});
   readonly cargando = signal(false);
@@ -64,9 +73,16 @@ export class Historial implements OnInit {
   /** Cómo pagaron las sesiones cobradas (tiempo + productos de la sesión). */
   readonly pagos = computed(() => {
     const conPago = this.finalizadas().filter((s) => s.pago_efectivo != null || s.pago_transferencia != null);
+    const efectivo = conPago.reduce((t, s) => t + (s.pago_efectivo ?? 0), 0);
+    const transferencia = conPago.reduce((t, s) => t + (s.pago_transferencia ?? 0), 0);
+    // Neto de los cambios: positivo = salió efectivo y entró transferencia.
+    const aTransferencia = this.cambios().reduce((t, c) => t + (c.tipo === 'a_efectivo' ? c.monto : -c.monto), 0);
     return {
-      efectivo: conPago.reduce((t, s) => t + (s.pago_efectivo ?? 0), 0),
-      transferencia: conPago.reduce((t, s) => t + (s.pago_transferencia ?? 0), 0),
+      cobradoEfectivo: efectivo,
+      cobradoTransferencia: transferencia,
+      efectivo: efectivo - aTransferencia,
+      transferencia: transferencia + aTransferencia,
+      cambiosNeto: aTransferencia,
       sinRegistrar: this.finalizadas().length - conPago.length,
     };
   });
@@ -114,6 +130,7 @@ export class Historial implements OnInit {
     private readonly productosService: ProductosService,
     private readonly toast: ToastService,
     private readonly gastosService: GastosService,
+    private readonly cajaCambios: CajaCambiosService,
     readonly auth: AuthService,
   ) {}
 
@@ -149,12 +166,14 @@ export class Historial implements OnInit {
       // Días completos en hora de Colombia (no en UTC del servidor ni del dispositivo).
       const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
       const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
-      const [sesiones, ventas, gastos] = await Promise.all([
+      const [sesiones, ventas, gastos, cambios] = await Promise.all([
         this.sesionesService.listarHistorial({ desde, hasta }),
         this.productosService.ventas(desde, hasta),
         // Los gastos tienen fecha (día de Colombia), no hora.
         this.gastosService.listar(this.desde || undefined, this.hasta || undefined),
+        this.cajaCambios.listar(desde, hasta),
       ]);
+      this.cambios.set(cambios);
       this.sesiones.set(sesiones);
       this.ventas.set(ventas);
       this.gastos.set(gastos);
@@ -162,6 +181,36 @@ export class Historial implements OnInit {
       this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo cargar el historial.');
     } finally {
       this.cargando.set(false);
+    }
+  }
+
+  /** Registra un cambio entre efectivo y transferencia (el cliente pidió efectivo y pagó por QR, o al revés). */
+  async guardarCambio(): Promise<void> {
+    const monto = Math.round(this.cambioMonto ?? 0);
+    if (monto <= 0) return this.toast.error('Escribe el monto.');
+    this.guardandoCambio.set(true);
+    try {
+      await this.cajaCambios.crear(this.cambioTipo, monto, this.cambioNota.trim() || null);
+      this.toast.exito(this.cambioTipo === 'a_efectivo' ? 'Cambio registrado: salió efectivo, entró transferencia.' : 'Cambio registrado: entró efectivo, salió transferencia.');
+      this.cambioMonto = null;
+      this.cambioNota = '';
+      this.formCambio.set(false);
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo registrar el cambio.');
+    } finally {
+      this.guardandoCambio.set(false);
+    }
+  }
+
+  async borrarCambio(c: CajaCambio): Promise<void> {
+    if (!confirm(`¿Borrar el cambio de ${c.monto.toLocaleString('es-CO')}?`)) return;
+    try {
+      await this.cajaCambios.eliminar(c.id);
+      this.toast.exito('Cambio borrado.');
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(e && typeof e === 'object' && 'message' in e ? String(e.message) : 'No se pudo borrar el cambio.');
     }
   }
 
