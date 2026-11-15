@@ -6793,3 +6793,65 @@ end;
 $$;
 revoke all on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) from public;
 grant execute on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text) to anon, authenticated;
+
+
+-- ============================================================
+-- 52. RESERVAS A DOMICILIO: LA CONSOLA QUEDA APARTADA HASTA CONFIRMAR O CANCELAR (2026-11-14)
+-- ============================================================
+-- Regla del dueño: una reserva a domicilio pendiente (de /alquilar o /gta6-domicilio) aparta la
+-- consola hasta que el local la confirme o la cancele; ya no se libera a los
+-- reservas_config.minutos_para_pagar. Solo cambia para reservas_alquiler; las reservas de la sala
+-- siguen con private.reserva_vigente. Los limites anti abuso de crear_reserva_alquiler y
+-- crear_reserva_gta6_alquiler (2 pendientes por celular, 30 en total) siguen contando solo las
+-- pendientes recientes.
+
+create or replace function private.reserva_alquiler_vigente(p_estado text)
+returns boolean
+language sql
+immutable
+as $$
+  select p_estado in ('pendiente', 'confirmada');
+$$;
+grant execute on function private.reserva_alquiler_vigente(text) to anon, authenticated;
+
+create or replace function private.consola_gta6_libre(
+  p_consola_id bigint, p_inicio timestamptz, p_fin timestamptz, p_excluir bigint default null
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with cfg as (select make_interval(mins => margen_minutos) as m from public.gta6_config where id = 1)
+  select not exists (
+    select 1 from public.reservas_alquiler r, cfg
+    where r.consola_id = p_consola_id
+      and r.id is distinct from p_excluir
+      and private.reserva_alquiler_vigente(r.estado)
+      and tstzrange(r.inicio - cfg.m, r.fin + cfg.m) && tstzrange(p_inicio, p_fin)
+  ) and not exists (
+    select 1 from public.alquileres a, cfg
+    where a.consola_id = p_consola_id and a.estado = 'activo'
+      and greatest(a.fin_pactado, now()) + cfg.m > p_inicio
+  );
+$$;
+
+-- alquiler_publico() y gta6_publico(): los rangos ocupados de reservas_alquiler usan la nueva regla.
+do $$
+declare
+  v_f text;
+  v_def text;
+  v_viejo text := 'from public.reservas_alquiler r
+            where r.consola_id = c.id and private.reserva_vigente(r.estado, r.created_at)';
+  v_nuevo text := 'from public.reservas_alquiler r
+            where r.consola_id = c.id and private.reserva_alquiler_vigente(r.estado)';
+begin
+  foreach v_f in array array['public.alquiler_publico()', 'public.gta6_publico()'] loop
+    v_def := pg_get_functiondef(v_f::regprocedure);
+    if position(v_viejo in v_def) = 0 then
+      raise exception 'No encontré el filtro de reservas_alquiler en %', v_f;
+    end if;
+    execute replace(v_def, v_viejo, v_nuevo);
+  end loop;
+end $$;

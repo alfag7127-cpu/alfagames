@@ -5,7 +5,7 @@ import { AlquilerService } from '../../core/alquiler.service';
 import { ReservaAlquiler } from '../../core/gta6.service';
 import { ConsolaConEstado } from '../../core/models';
 import { ReservasAlquilerService, porAtender } from '../../core/reservas-alquiler.service';
-import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
+import { enlaceWhatsapp } from '../../core/reservas.service';
 import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { diaYHora, mensajeError } from '../gta6/gta6-util';
@@ -44,7 +44,7 @@ type Filtro = 'atender' | 'todas';
       @for (r of lista(); track r.id) {
         <article class="rounded-xl bg-white p-3 shadow-sm ring-1"
           [class.ring-amber-300]="r.estado === 'pendiente' && porAtender(r)" [class.ring-emerald-300]="r.estado === 'confirmada'" [class.ring-slate-200]="!porAtender(r)"
-          [class.opacity-60]="r.estado === 'cancelada' || (vencida(r) && !porAtender(r))">
+          [class.opacity-60]="r.estado === 'cancelada' || vencida(r)">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
               <p class="font-semibold text-slate-900">
@@ -146,7 +146,6 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   readonly consolaEntrega = signal<Record<number, number>>({});
   readonly ocupado = signal(false);
   private readonly ahora = signal(Date.now());
-  private minutosParaPagar = 30;
   private timer?: ReturnType<typeof setInterval>;
   private desuscribir?: () => void;
   modoPago: ModoPago | null = null;
@@ -169,7 +168,6 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   constructor(
     private readonly servicio: ReservasAlquilerService,
     private readonly alquiler: AlquilerService,
-    private readonly reservasSala: ReservasService,
     private readonly toast: ToastService,
   ) {}
 
@@ -186,12 +184,7 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
 
   async cargar(): Promise<void> {
     try {
-      const [lista, consolas, cfg] = await Promise.all([
-        this.servicio.listar(),
-        this.alquiler.listarConsolasConEstado(),
-        this.reservasSala.config(),
-      ]);
-      this.minutosParaPagar = cfg.minutos_para_pagar;
+      const [lista, consolas] = await Promise.all([this.servicio.listar(), this.alquiler.listarConsolasConEstado()]);
       this.reservas.set(lista);
       this.consolas.set(consolas);
     } catch (e) {
@@ -209,13 +202,13 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   }
 
   vencida(r: ReservaAlquiler): boolean {
-    return r.estado === 'pendiente' && new Date(r.created_at).getTime() <= this.ahora() - this.minutosParaPagar * 60_000;
+    // La consola queda apartada hasta confirmar o cancelar: solo vence al pasar la hora final.
+    return r.estado === 'pendiente' && new Date(r.fin).getTime() <= this.ahora();
   }
 
   readonly porAtender = (r: ReservaAlquiler) => porAtender(r, this.ahora());
 
   textoEstado(r: ReservaAlquiler): string {
-    if (this.vencida(r) && this.porAtender(r)) return r.forma_pago === 'qr' ? 'sin pagar · aún puedes confirmar' : 'sin confirmar · aún puedes confirmar';
     if (this.vencida(r)) return r.forma_pago === 'qr' ? 'vencida sin pagar' : 'vencida sin confirmar';
     if (r.estado === 'pendiente') return r.forma_pago === 'qr' ? 'falta verificar pago' : 'falta confirmar';
     if (r.estado === 'confirmada') return r.alquiler_id ? 'pagada · por entregar' : 'confirmada · cobrar al entregar';

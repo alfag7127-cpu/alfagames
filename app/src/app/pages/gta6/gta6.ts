@@ -416,8 +416,9 @@ export class Gta6Page implements OnInit, OnDestroy {
     return r.estado === 'pendiente' && !reservaVigente(r, this.minutosParaPagar, this.ahora());
   }
 
+  /** Una reserva a domicilio pendiente aparta la consola hasta confirmarla o cancelarla; solo vence al pasar su hora final. */
   vencidaDomicilio(r: ReservaAlquiler): boolean {
-    return r.estado === 'pendiente' && new Date(r.created_at).getTime() <= this.ahora() - this.minutosParaPagar * 60_000;
+    return r.estado === 'pendiente' && new Date(r.fin).getTime() <= this.ahora();
   }
 
   textoEstadoSala(e: string): string {

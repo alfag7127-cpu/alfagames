@@ -156,7 +156,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
               } @else {
                 <p class="rounded-xl bg-amber-500/15 p-3 text-sm text-amber-100 ring-1 ring-amber-400/40">El QR de pago aún no está disponible. Escríbenos por WhatsApp para pagar.</p>
               }
-              <p class="text-xs text-slate-400">La consola queda apartada {{ creada()?.minutos_para_pagar }} minutos mientras confirmamos el pago.</p>
+              <p class="text-xs text-slate-400">La consola queda apartada para ti mientras confirmamos el pago.</p>
               <button type="button" (click)="paso.set('listo')" class="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">Ya pagué</button>
             </section>
           }
