@@ -120,6 +120,19 @@ export class ReservasService {
     return (data as Reserva[]).map((r) => ({ ...r, precio: Number(r.precio) }));
   }
 
+  /** Reservas confirmadas o usadas con hora de inicio entre `desde` y `hasta` (ISO), con el nombre de la consola. */
+  async realizadas(desde: string, hasta: string): Promise<(Reserva & { puestos: { nombre: string } | null })[]> {
+    const { data, error } = await this.supabase.client
+      .from('reservas')
+      .select('*, puestos(nombre)')
+      .in('estado', ['confirmada', 'usada'])
+      .gte('inicio', desde)
+      .lte('inicio', hasta)
+      .order('inicio');
+    if (error) throw error;
+    return (data as (Reserva & { puestos: { nombre: string } | null })[]).map((r) => ({ ...r, precio: Number(r.precio) }));
+  }
+
   /** El trabajador aparta una consola para un cliente del local: queda confirmada y paga al cerrar. */
   async reservarLocal(r: { puestoId: number; nombre: string; telefono: string | null; cedula: string; inicio: string; minutos: number }): Promise<Reserva> {
     const { data, error } = await this.supabase.client.rpc('reservar_local', {

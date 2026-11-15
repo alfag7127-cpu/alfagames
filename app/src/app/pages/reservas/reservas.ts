@@ -1,3 +1,4 @@
+import { ReservasRealizadas } from '../../shared/reservas-realizadas';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -67,7 +68,7 @@ function dia(iso: string): string {
  */
 @Component({
   selector: 'app-reservas',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, ReservasRealizadas],
   template: `
     <section class="banner-sala p-5 mb-4">
       <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">📅 Reservas</h1>
@@ -141,6 +142,17 @@ function dia(iso: string): string {
       }
     </section>
 
+    <!-- Vista: agenda (por atender) o lista numerada de las confirmadas/usadas -->
+    <div class="mb-3 flex rounded-xl bg-slate-200/70 p-1 text-sm font-semibold w-full sm:w-fit">
+      <button type="button" (click)="vista.set('agenda')" class="flex-1 rounded-lg px-4 py-1.5 sm:flex-none"
+        [class.bg-white]="vista() === 'agenda'" [class.shadow-sm]="vista() === 'agenda'" [class.text-indigo-700]="vista() === 'agenda'" [class.text-slate-600]="vista() !== 'agenda'">📅 Agenda</button>
+      <button type="button" (click)="vista.set('lista')" class="flex-1 rounded-lg px-4 py-1.5 sm:flex-none"
+        [class.bg-white]="vista() === 'lista'" [class.shadow-sm]="vista() === 'lista'" [class.text-indigo-700]="vista() === 'lista'" [class.text-slate-600]="vista() !== 'lista'">📋 Confirmadas</button>
+    </div>
+
+    @if (vista() === 'lista') {
+      <div class="mb-4"><app-reservas-realizadas negocio="sala" /></div>
+    } @else {
     <!-- Filtro por día: siempre abre en Hoy y vuelve a Hoy al cambiar de día -->
     <div class="mb-3 flex flex-wrap items-center gap-1.5">
       @for (o of rangos; track o.id) {
@@ -301,6 +313,7 @@ function dia(iso: string): string {
         }
       </ul>
     </section>
+    }
 
     <!-- Configuración (solo admin) -->
     @if (auth.isAdmin() && config()) {
@@ -375,6 +388,8 @@ export class ReservasPage implements OnInit, OnDestroy {
     { id: 'mes', txt: 'Este mes' },
     { id: 'proximas', txt: 'Próximos días' },
   ];
+  /** Agenda (por atender) o lista numerada de confirmadas y usadas. */
+  readonly vista = signal<'agenda' | 'lista'>('agenda');
   /** Siempre abre en las reservas de hoy. */
   readonly rango = signal<Rango>('hoy');
   /** Día en curso en Colombia; cambia solo a medianoche. */

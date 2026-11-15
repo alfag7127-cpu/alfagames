@@ -92,6 +92,19 @@ export class ReservasAlquilerService {
     return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));
   }
 
+  /** Reservas a domicilio confirmadas o entregadas con hora de entrega entre `desde` y `hasta` (ISO). */
+  async realizadas(desde: string, hasta: string): Promise<ReservaAlquiler[]> {
+    const { data, error } = await this.db
+      .from('reservas_alquiler')
+      .select('*, alquiler_consolas(nombre, tipo)')
+      .in('estado', ['confirmada', 'entregada'])
+      .gte('inicio', desde)
+      .lte('inicio', hasta)
+      .order('inicio');
+    if (error) throw error;
+    return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));
+  }
+
   /** QR: pago verificado (entra a los potes). Efectivo: reserva confirmada, sin dinero. */
   async confirmar(id: number, llave: number | null, efectivo: number | null): Promise<void> {
     const { error } = await this.db.rpc('confirmar_reserva_alquiler', {

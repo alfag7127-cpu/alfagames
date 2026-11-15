@@ -1,3 +1,4 @@
+import { ReservasRealizadas } from '../../shared/reservas-realizadas';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -10,7 +11,7 @@ import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { diaYHora, mensajeError } from '../gta6/gta6-util';
 
-type Filtro = 'atender' | 'todas';
+type Filtro = 'atender' | 'todas' | 'lista';
 
 /**
  * Pestaña Reservas del alquiler: reservas de PS4/PS5 a domicilio hechas desde /alquilar.
@@ -19,7 +20,7 @@ type Filtro = 'atender' | 'todas';
  */
 @Component({
   selector: 'app-reservas-alquiler',
-  imports: [FormsModule, DecimalPipe, PagoPotes],
+  imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas],
   template: `
     <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
       <p class="text-xs font-medium text-slate-500">Enlace para que los clientes reserven su PS4 o PS5 (WhatsApp, redes)</p>
@@ -40,6 +41,9 @@ type Filtro = 'atender' | 'todas';
       }
     </div>
 
+    @if (filtro() === 'lista') {
+      <app-reservas-realizadas negocio="domicilio" />
+    } @else {
     <div class="space-y-2">
       @for (r of lista(); track r.id) {
         <article class="rounded-xl bg-white p-3 shadow-sm ring-1"
@@ -132,6 +136,7 @@ type Filtro = 'atender' | 'todas';
         </p>
       }
     </div>
+    }
   `,
 })
 export class ReservasAlquilerTab implements OnInit, OnDestroy {
@@ -141,6 +146,7 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   readonly filtros: { id: Filtro; texto: string }[] = [
     { id: 'atender', texto: 'Por atender' },
     { id: 'todas', texto: 'Todas' },
+    { id: 'lista', texto: '📋 Confirmadas' },
   ];
   readonly abierta = signal<number | null>(null);
   readonly consolaEntrega = signal<Record<number, number>>({});
