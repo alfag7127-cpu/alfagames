@@ -41,7 +41,7 @@ import { ToastService } from '../../core/toast.service';
                 <div class="min-w-0">
                   <p class="font-medium text-slate-800">{{ c.nombre }}</p>
                   <p class="text-xs text-slate-500">
-                    📞 {{ c.telefono }}{{ c.direccion ? ' · 📍 ' + c.direccion : '' }}
+                    📞 {{ c.telefono }}{{ c.cedula ? ' · 🪪 C.C. ' + c.cedula : '' }}{{ c.direccion ? ' · 📍 ' + c.direccion : '' }}
                   </p>
                   @if (c.notas) {
                     <p class="text-xs italic text-slate-500">{{ c.notas }}</p>
@@ -81,7 +81,7 @@ export class Clientes implements OnInit {
     const t = this.texto().trim().toLowerCase();
     if (!t) return this.clientes();
     const tel = normalizarTelefono(t);
-    return this.clientes().filter((c) => c.nombre.toLowerCase().includes(t) || (tel && c.telefono.includes(tel)));
+    return this.clientes().filter((c) => c.nombre.toLowerCase().includes(t) || (tel && (c.telefono.includes(tel) || !!c.cedula?.includes(tel))));
   });
 
   constructor(

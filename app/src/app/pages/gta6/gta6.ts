@@ -126,7 +126,7 @@ type Filtro = 'proximas' | 'todas';
               <div class="min-w-0">
                 <p class="font-semibold text-slate-900">#{{ r.id }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}</p>
                 <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
-                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}</p>
+                <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }}</p>
                 <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
               </div>
               <div class="text-right">

@@ -88,6 +88,11 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
               </label>
               <label class="block text-sm">
+                Número de cédula
+                <input [(ngModel)]="cedula" name="cedula" inputmode="numeric" autocomplete="off" maxlength="20"
+                  class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+              </label>
+              <label class="block text-sm">
                 Dirección de entrega (barrio, calle y número)
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
@@ -149,6 +154,7 @@ export class Gta6DomicilioPublica implements OnInit {
   readonly creada = signal<ReservaGta6Creada | null>(null);
   nombre = '';
   telefono = '';
+  cedula = '';
   direccion = '';
 
   readonly hora = hora;
@@ -166,7 +172,7 @@ export class Gta6DomicilioPublica implements OnInit {
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
       `Hola, envío el comprobante de mi reserva de PS5 con GTA 6 a domicilio #${c.id}: ${c.plan}, entrega ${diaYHora(c.inicio)}, ` +
-        `${c.precio.toLocaleString('es-CO')} COP. A nombre de ${this.nombre.trim()}. Dirección: ${this.direccion.trim()}.`,
+        `${c.precio.toLocaleString('es-CO')} COP. A nombre de ${this.nombre.trim()}, C.C. ${this.cedula.trim()}. Dirección: ${this.direccion.trim()}.`,
     );
   });
 
@@ -228,6 +234,7 @@ export class Gta6DomicilioPublica implements OnInit {
     if (!p) return;
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
+    if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
     if (this.direccion.trim().length < 5) return this.error.set('Escribe la dirección de entrega.');
     this.enviando.set(true);
     this.error.set(null);
@@ -237,6 +244,7 @@ export class Gta6DomicilioPublica implements OnInit {
           tarifaId: p.id,
           nombre: this.nombre.trim(),
           telefono: this.telefono,
+          cedula: this.cedula,
           direccion: this.direccion.trim(),
           inicio: new Date(this.inicioMs()).toISOString(),
         }),

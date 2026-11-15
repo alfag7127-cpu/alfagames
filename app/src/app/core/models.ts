@@ -297,6 +297,8 @@ export interface Cliente {
   alquileres: number;
   ultimo_alquiler: string | null;
   total_pagado: number;
+  /** Cédula (llega de las reservas a domicilio). */
+  cedula: string | null;
 }
 
 /** Fila de `potes_rango`: un pote entre dos fechas (días de Colombia). */

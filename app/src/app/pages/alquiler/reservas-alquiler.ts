@@ -54,7 +54,7 @@ type Filtro = 'atender' | 'todas';
                 #{{ r.id }} · {{ r.alquiler_consolas?.tipo }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}
               </p>
               <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
-              <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}</p>
+              <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }}</p>
               <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
             </div>
             <div class="text-right">

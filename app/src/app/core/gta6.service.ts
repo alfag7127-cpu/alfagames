@@ -54,6 +54,7 @@ export interface ReservaAlquiler {
   cliente_nombre: string;
   cliente_telefono: string;
   cliente_direccion: string;
+  cliente_cedula?: string | null;
   estado: EstadoReservaAlquiler;
   /** 'gta6' = reserva GTA 6; null = alquiler normal (PS4 o PS5) desde /alquilar. */
   juego: 'gta6' | null;
@@ -110,13 +111,14 @@ export class Gta6Service {
     return { ...c, precio: Number(c.precio) };
   }
 
-  async crearDomicilio(r: { tarifaId: number; nombre: string; telefono: string; direccion: string; inicio: string }): Promise<ReservaGta6Creada> {
+  async crearDomicilio(r: { tarifaId: number; nombre: string; telefono: string; cedula: string; direccion: string; inicio: string }): Promise<ReservaGta6Creada> {
     const { data, error } = await this.db.rpc('crear_reserva_gta6_alquiler', {
       p_tarifa_id: r.tarifaId,
       p_cliente_nombre: r.nombre,
       p_cliente_telefono: r.telefono,
       p_cliente_direccion: r.direccion,
       p_inicio: r.inicio,
+      p_cliente_cedula: r.cedula,
     });
     if (error) throw error;
     const c = data as ReservaGta6Creada;

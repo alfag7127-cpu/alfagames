@@ -6855,3 +6855,293 @@ begin
     execute replace(v_def, v_viejo, v_nuevo);
   end loop;
 end $$;
+
+-- ============================================================
+-- 53. CEDULA DEL CLIENTE EN LAS RESERVAS A DOMICILIO (2026-11-14)
+-- ============================================================
+-- Pedido del dueño: los formularios publicos /alquilar y /gta6-domicilio piden el numero de
+-- cedula (obligatorio). Se guarda en reservas_alquiler.cliente_cedula (solo digitos y letras,
+-- de 5 a 15) y pasa a la ficha del cliente (clientes.cedula) cuando la reserva queda ligada a un
+-- alquiler (confirmar con QR o entregar). Las firmas viejas de crear_reserva_alquiler (6
+-- parametros) y crear_reserva_gta6_alquiler (5) quedan respondiendo "actualiza la pagina".
+
+alter table public.reservas_alquiler add column if not exists cliente_cedula text;
+alter table public.clientes add column if not exists cedula text;
+
+create or replace function private.normalizar_cedula(p text)
+returns text
+language sql
+immutable
+as $$
+  select nullif(upper(regexp_replace(coalesce(p, ''), '[^0-9A-Za-z]', '', 'g')), '');
+$$;
+grant execute on function private.normalizar_cedula(text) to anon, authenticated;
+
+create or replace view public.vista_clientes with (security_invoker = true) as
+select c.id,
+  c.telefono,
+  c.nombre,
+  c.direccion,
+  c.notas,
+  c.created_at,
+  count(a.id) filter (where a.estado <> 'cancelado') as alquileres,
+  max(a.inicio) filter (where a.estado <> 'cancelado') as ultimo_alquiler,
+  coalesce(sum(a.precio_total) filter (where a.estado <> 'cancelado'), 0::numeric) as total_pagado,
+  c.cedula
+from public.clientes c
+left join public.alquileres a on a.cliente_id = c.id
+group by c.id;
+
+-- La cedula de la reserva pasa al cliente del alquiler.
+create or replace function private.reserva_alquiler_cedula_cliente()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.alquiler_id is not null and new.cliente_cedula is not null then
+    update public.clientes c
+    set cedula = new.cliente_cedula, updated_at = now()
+    from public.alquileres a
+    where a.id = new.alquiler_id and c.id = a.cliente_id and c.cedula is distinct from new.cliente_cedula;
+  end if;
+  return new;
+end;
+$$;
+create or replace trigger reservas_alquiler_cedula
+  after insert or update of alquiler_id on public.reservas_alquiler
+  for each row execute function private.reserva_alquiler_cedula_cliente();
+
+-- Las firmas viejas ya no crean reservas (la pagina nueva manda la cedula).
+create or replace function public.crear_reserva_alquiler(
+  p_tarifa_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_cliente_direccion text,
+  p_inicio timestamptz, p_forma_pago text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'Actualiza la página e intenta de nuevo (ahora pedimos tu número de cédula).';
+end;
+$$;
+
+create or replace function public.crear_reserva_gta6_alquiler(
+  p_tarifa_id bigint, p_cliente_nombre text, p_cliente_telefono text, p_cliente_direccion text,
+  p_inicio timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  raise exception 'Actualiza la página e intenta de nuevo (ahora pedimos tu número de cédula).';
+end;
+$$;
+
+create or replace function public.crear_reserva_alquiler(
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_cliente_direccion text,
+  p_inicio timestamptz,
+  p_forma_pago text,
+  p_cliente_cedula text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_res public.reservas_config;
+  v_cfg public.gta6_config;
+  v_tarifa public.alquiler_tarifas;
+  v_tel text := private.normalizar_telefono(p_cliente_telefono);
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_dir text := trim(coalesce(p_cliente_direccion, ''));
+  v_ced text := private.normalizar_cedula(p_cliente_cedula);
+  v_fin timestamptz;
+  v_consola bigint;
+  v_r public.reservas_alquiler;
+begin
+  select * into v_res from public.reservas_config where id = 1;
+  select * into v_cfg from public.gta6_config where id = 1;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe tu nombre';
+  end if;
+  if v_tel is null or char_length(v_tel) < 7 or char_length(v_tel) > 15 then
+    raise exception 'Escribe un número de celular válido';
+  end if;
+  if v_ced is null or char_length(v_ced) < 5 or char_length(v_ced) > 15 then
+    raise exception 'Escribe tu número de cédula';
+  end if;
+  if char_length(v_dir) < 5 or char_length(v_dir) > 200 then
+    raise exception 'Escribe la dirección de entrega (barrio, calle y número)';
+  end if;
+  if p_forma_pago is null or p_forma_pago not in ('qr', 'efectivo') then
+    raise exception 'Elige cómo vas a pagar';
+  end if;
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and activo and not gta6;
+  if v_tarifa.id is null then
+    raise exception 'Elige un plan válido';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '2 minutes' then
+    raise exception 'La hora de entrega ya pasó';
+  end if;
+  if p_inicio > now() + make_interval(days => v_res.dias_maximos) then
+    raise exception 'Solo se puede reservar hasta % días antes', v_res.dias_maximos;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('reserva_gta6_alquiler'), 0);
+
+  if (select count(*) from public.reservas_alquiler
+      where cliente_telefono = v_tel and estado = 'pendiente'
+        and private.reserva_vigente(estado, created_at)) >= 2 then
+    raise exception 'Ya tienes reservas pendientes. Escríbenos por WhatsApp para confirmarlas.';
+  end if;
+  if (select count(*) from public.reservas_alquiler
+      where estado = 'pendiente' and private.reserva_vigente(estado, created_at)) >= 30 then
+    raise exception 'Hay muchas reservas pendientes en este momento. Intenta en unos minutos.';
+  end if;
+
+  v_fin := private.fin_alquiler(p_inicio, v_tarifa);
+  select c.id into v_consola
+  from public.alquiler_consolas c
+  where c.activo and c.tipo = v_tarifa.tipo and private.consola_gta6_libre(c.id, p_inicio, v_fin)
+    -- Desde el lanzamiento, las consolas con GTA 6 son solo para reservas GTA 6.
+    and (not c.gta6 or v_fin + make_interval(mins => v_cfg.margen_minutos) <= v_cfg.lanzamiento)
+  order by c.id
+  limit 1;
+  if v_consola is null then
+    if v_fin + make_interval(mins => v_cfg.margen_minutos) > v_cfg.lanzamiento
+       and exists (select 1 from public.alquiler_consolas where activo and tipo = v_tarifa.tipo and gta6)
+       and not exists (select 1 from public.alquiler_consolas where activo and tipo = v_tarifa.tipo and not gta6) then
+      raise exception 'Desde el lanzamiento de GTA 6 la % a domicilio se reserva solo con GTA 6. Usa el enlace de GTA 6.', v_tarifa.tipo;
+    end if;
+    raise exception 'No hay % libres en ese horario. Elige otra fecha u hora.', v_tarifa.tipo;
+  end if;
+
+  insert into public.reservas_alquiler (
+    juego, forma_pago, consola_id, tarifa_id, plan_nombre, inicio, fin, precio,
+    cliente_nombre, cliente_telefono, cliente_direccion, cliente_cedula
+  ) values (
+    null, p_forma_pago, v_consola, v_tarifa.id, v_tarifa.nombre, p_inicio, v_fin, v_tarifa.precio,
+    v_nombre, v_tel, v_dir, v_ced
+  )
+  returning * into v_r;
+
+  return jsonb_build_object(
+    'id', v_r.id,
+    'tipo', v_tarifa.tipo,
+    'plan', v_r.plan_nombre,
+    'inicio', v_r.inicio,
+    'fin', v_r.fin,
+    'precio', v_r.precio,
+    'forma_pago', v_r.forma_pago,
+    'minutos_para_pagar', v_res.minutos_para_pagar
+  );
+end;
+$$;
+revoke all on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text, text) from public;
+grant execute on function public.crear_reserva_alquiler(bigint, text, text, text, timestamptz, text, text) to anon, authenticated;
+
+create or replace function public.crear_reserva_gta6_alquiler(
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_cliente_direccion text,
+  p_inicio timestamptz,
+  p_cliente_cedula text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cfg public.gta6_config;
+  v_res public.reservas_config;
+  v_tarifa public.alquiler_tarifas;
+  v_tel text := private.normalizar_telefono(p_cliente_telefono);
+  v_nombre text := trim(coalesce(p_cliente_nombre, ''));
+  v_dir text := trim(coalesce(p_cliente_direccion, ''));
+  v_ced text := private.normalizar_cedula(p_cliente_cedula);
+  v_fin timestamptz;
+  v_consola bigint;
+  v_r public.reservas_alquiler;
+begin
+  select * into v_cfg from public.gta6_config where id = 1;
+  select * into v_res from public.reservas_config where id = 1;
+  if char_length(v_nombre) < 2 or char_length(v_nombre) > 60 then
+    raise exception 'Escribe tu nombre';
+  end if;
+  if v_tel is null or char_length(v_tel) < 7 or char_length(v_tel) > 15 then
+    raise exception 'Escribe un número de celular válido';
+  end if;
+  if v_ced is null or char_length(v_ced) < 5 or char_length(v_ced) > 15 then
+    raise exception 'Escribe tu número de cédula';
+  end if;
+  if char_length(v_dir) < 5 or char_length(v_dir) > 200 then
+    raise exception 'Escribe la dirección de entrega (barrio, calle y número)';
+  end if;
+  select * into v_tarifa from public.alquiler_tarifas where id = p_tarifa_id and gta6 and activo;
+  if v_tarifa.id is null then
+    raise exception 'Elige un plan válido';
+  end if;
+  if p_inicio is null or p_inicio < now() - interval '2 minutes' then
+    raise exception 'La hora de entrega ya pasó';
+  end if;
+  if p_inicio < v_cfg.lanzamiento then
+    raise exception 'GTA 6 se entrega desde el %', to_char(v_cfg.lanzamiento at time zone 'America/Bogota', 'DD/MM/YYYY HH12:MI AM');
+  end if;
+  if p_inicio > greatest(now(), v_cfg.lanzamiento) + make_interval(days => v_cfg.dias_maximos) then
+    raise exception 'Todavía no se puede reservar esa fecha';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('reserva_gta6_alquiler'), 0);
+
+  if (select count(*) from public.reservas_alquiler
+      where cliente_telefono = v_tel and estado = 'pendiente'
+        and private.reserva_vigente(estado, created_at)) >= 2 then
+    raise exception 'Ya tienes reservas pendientes de pago. Envía el comprobante por WhatsApp para confirmarlas.';
+  end if;
+  if (select count(*) from public.reservas_alquiler
+      where estado = 'pendiente' and private.reserva_vigente(estado, created_at)) >= 30 then
+    raise exception 'Hay muchas reservas pendientes en este momento. Intenta en unos minutos.';
+  end if;
+
+  v_fin := private.fin_alquiler(p_inicio, v_tarifa);
+  select c.id into v_consola
+  from public.alquiler_consolas c
+  where c.activo and c.gta6 and private.consola_gta6_libre(c.id, p_inicio, v_fin)
+  order by c.id
+  limit 1;
+  if v_consola is null then
+    raise exception 'No hay PS5 con GTA 6 libres en ese horario. Elige otra fecha u hora.';
+  end if;
+
+  insert into public.reservas_alquiler (
+    juego, consola_id, tarifa_id, plan_nombre, inicio, fin, precio,
+    cliente_nombre, cliente_telefono, cliente_direccion, cliente_cedula
+  ) values (
+    'gta6', v_consola, v_tarifa.id, v_tarifa.nombre, p_inicio, v_fin, v_tarifa.precio,
+    v_nombre, v_tel, v_dir, v_ced
+  )
+  returning * into v_r;
+
+  return jsonb_build_object(
+    'id', v_r.id,
+    'plan', v_r.plan_nombre,
+    'inicio', v_r.inicio,
+    'fin', v_r.fin,
+    'precio', v_r.precio,
+    'minutos_para_pagar', v_res.minutos_para_pagar
+  );
+end;
+$$;
+revoke all on function public.crear_reserva_gta6_alquiler(bigint, text, text, text, timestamptz, text) from public;
+grant execute on function public.crear_reserva_gta6_alquiler(bigint, text, text, text, timestamptz, text) to anon, authenticated;

@@ -66,6 +66,7 @@ export class ReservasAlquilerService {
     direccion: string;
     inicio: string;
     formaPago: FormaPagoReserva;
+    cedula: string;
   }): Promise<ReservaAlquilerCreada> {
     const { data, error } = await this.db.rpc('crear_reserva_alquiler', {
       p_tarifa_id: r.tarifaId,
@@ -74,6 +75,7 @@ export class ReservasAlquilerService {
       p_cliente_direccion: r.direccion,
       p_inicio: r.inicio,
       p_forma_pago: r.formaPago,
+      p_cliente_cedula: r.cedula,
     });
     if (error) throw error;
     const c = data as ReservaAlquilerCreada;

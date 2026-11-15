@@ -113,6 +113,11 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
               </label>
               <label class="block text-sm">
+                Número de cédula
+                <input [(ngModel)]="cedula" name="cedula" inputmode="numeric" autocomplete="off" maxlength="20"
+                  class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+              </label>
+              <label class="block text-sm">
                 Dirección de entrega (barrio, calle y número)
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
@@ -202,6 +207,7 @@ export class Alquilar implements OnInit {
   readonly creada = signal<ReservaAlquilerCreada | null>(null);
   nombre = '';
   telefono = '';
+  cedula = '';
   direccion = '';
 
   readonly hora = hora;
@@ -240,7 +246,7 @@ export class Alquilar implements OnInit {
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
       `Hola, hice la reserva #${c.id} de ${c.tipo} a domicilio: ${c.plan}, entrega ${diaYHora(c.inicio)}, ` +
-        `${c.precio.toLocaleString('es-CO')} COP. ${pago}. A nombre de ${this.nombre.trim()}. Dirección: ${this.direccion.trim()}.`,
+        `${c.precio.toLocaleString('es-CO')} COP. ${pago}. A nombre de ${this.nombre.trim()}, C.C. ${this.cedula.trim()}. Dirección: ${this.direccion.trim()}.`,
     );
   });
 
@@ -306,6 +312,7 @@ export class Alquilar implements OnInit {
     if (!p) return;
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
+    if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
     if (this.direccion.trim().length < 5) return this.error.set('Escribe la dirección de entrega.');
     if (!forma) return this.error.set('Elige cómo vas a pagar: QR o efectivo.');
     this.enviando.set(true);
@@ -315,6 +322,7 @@ export class Alquilar implements OnInit {
         tarifaId: p.id,
         nombre: this.nombre.trim(),
         telefono: this.telefono,
+        cedula: this.cedula,
         direccion: this.direccion.trim(),
         inicio: new Date(this.inicioMs()).toISOString(),
         formaPago: forma,
