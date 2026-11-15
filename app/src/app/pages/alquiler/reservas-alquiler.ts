@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
 import { ReservaAlquiler } from '../../core/gta6.service';
 import { ConsolaConEstado } from '../../core/models';
-import { ReservasAlquilerService } from '../../core/reservas-alquiler.service';
+import { ReservasAlquilerService, porAtender } from '../../core/reservas-alquiler.service';
 import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
 import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
@@ -43,11 +43,16 @@ type Filtro = 'atender' | 'todas';
     <div class="space-y-2">
       @for (r of lista(); track r.id) {
         <article class="rounded-xl bg-white p-3 shadow-sm ring-1"
-          [class.ring-amber-300]="r.estado === 'pendiente'" [class.ring-emerald-300]="r.estado === 'confirmada'" [class.ring-slate-200]="r.estado !== 'pendiente' && r.estado !== 'confirmada'"
-          [class.opacity-60]="r.estado === 'cancelada' || vencida(r)">
+          [class.ring-amber-300]="r.estado === 'pendiente' && porAtender(r)" [class.ring-emerald-300]="r.estado === 'confirmada'" [class.ring-slate-200]="!porAtender(r)"
+          [class.opacity-60]="r.estado === 'cancelada' || (vencida(r) && !porAtender(r))">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="font-semibold text-slate-900">#{{ r.id }} · {{ r.alquiler_consolas?.tipo }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}</p>
+              <p class="font-semibold text-slate-900">
+                @if (r.juego === 'gta6') {
+                  <span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-black text-white">GTA 6</span>
+                }
+                #{{ r.id }} · {{ r.alquiler_consolas?.tipo }} · {{ r.plan_nombre }} · {{ r.alquiler_consolas?.nombre }}
+              </p>
               <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
               <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}</p>
               <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
@@ -154,11 +159,11 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
     const tipo = r.alquiler_consolas?.tipo ?? this.consolas().find((c) => c.id === r.consola_id)?.tipo ?? 'PS4';
     return this.consolas().filter((c) => c.tipo === tipo && c.activo);
   }
-  readonly porConfirmar = computed(() => this.reservas().filter((r) => r.estado === 'pendiente' && !this.vencida(r)).length);
+  readonly porConfirmar = computed(() => this.reservas().filter((r) => r.estado === 'pendiente' && porAtender(r, this.ahora())).length);
   readonly lista = computed(() =>
     this.filtro() === 'todas'
       ? [...this.reservas()].reverse()
-      : this.reservas().filter((r) => r.estado === 'confirmada' || (r.estado === 'pendiente' && !this.vencida(r))),
+      : this.reservas().filter((r) => porAtender(r, this.ahora())),
   );
 
   constructor(
@@ -207,7 +212,10 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
     return r.estado === 'pendiente' && new Date(r.created_at).getTime() <= this.ahora() - this.minutosParaPagar * 60_000;
   }
 
+  readonly porAtender = (r: ReservaAlquiler) => porAtender(r, this.ahora());
+
   textoEstado(r: ReservaAlquiler): string {
+    if (this.vencida(r) && this.porAtender(r)) return r.forma_pago === 'qr' ? 'sin pagar · aún puedes confirmar' : 'sin confirmar · aún puedes confirmar';
     if (this.vencida(r)) return r.forma_pago === 'qr' ? 'vencida sin pagar' : 'vencida sin confirmar';
     if (r.estado === 'pendiente') return r.forma_pago === 'qr' ? 'falta verificar pago' : 'falta confirmar';
     if (r.estado === 'confirmada') return r.alquiler_id ? 'pagada · por entregar' : 'confirmada · cobrar al entregar';
@@ -215,7 +223,7 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   }
 
   claseEstado(r: ReservaAlquiler): string {
-    if (r.estado === 'pendiente' && !this.vencida(r)) return 'bg-amber-100 text-amber-800';
+    if (r.estado === 'pendiente' && this.porAtender(r)) return 'bg-amber-100 text-amber-800';
     if (r.estado === 'confirmada') return 'bg-emerald-100 text-emerald-800';
     if (r.estado === 'entregada') return 'bg-sky-100 text-sky-800';
     return 'bg-slate-100 text-slate-600';

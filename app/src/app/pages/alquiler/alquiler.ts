@@ -20,6 +20,9 @@ import { prepararArchivo } from '../../shared/comprimir-imagen';
 import { ModoPago, NOMBRE_POTE, PagoPotes, Pote, repartirPago } from '../../shared/pago-potes';
 import { sonarCaja } from '../../shared/sonido-caja';
 import { PagoConAlquiler } from '../../core/alquiler.service';
+import { ActivatedRoute } from '@angular/router';
+import { ReservaAlquiler } from '../../core/gta6.service';
+import { ReservasAlquilerService, porAtender } from '../../core/reservas-alquiler.service';
 
 type Pestana = 'consolas' | 'reservas' | 'historial' | 'graficas' | 'potes' | 'liquidacion' | 'clientes' | 'inventario';
 
@@ -230,26 +233,48 @@ export class AlquilerPage implements OnInit, OnDestroy {
   readonly inicioPotes = signal<{ llave: number; efectivo: number }>({ llave: 0, efectivo: 0 });
   readonly nombrePote = NOMBRE_POTE;
 
+  /** Reservas a domicilio (normales y GTA 6) para el contador de la pestaña Reservas. */
+  private readonly reservasDomicilio = signal<ReservaAlquiler[]>([]);
+  readonly reservasPorAtender = computed(() => this.reservasDomicilio().filter((r) => porAtender(r, this.ahora())));
+  readonly reservasPorConfirmar = computed(() => this.reservasPorAtender().filter((r) => r.estado === 'pendiente').length);
+  private unsubscribeReservas?: () => void;
+
   constructor(
     private readonly alquiler: AlquilerService,
     private readonly potesService: PotesService,
     readonly auth: AuthService,
     private readonly toast: ToastService,
+    private readonly reservasAlquiler: ReservasAlquilerService,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // /alquiler?pestana=reservas abre directo la pestaña (enlace del aviso de reserva nueva).
+    const p = this.route.snapshot.queryParamMap.get('pestana') as Pestana | null;
+    if (p && this.pestanas.some((x) => x.id === p)) this.pestana.set(p);
     this.cargar();
     this.cargarHistorial();
+    this.cargarReservas();
     this.unsubscribe = this.alquiler.onCambios(() => {
       this.cargar();
       this.cargarHistorial();
     });
+    this.unsubscribeReservas = this.reservasAlquiler.onCambios(() => this.cargarReservas());
     this.timer = setInterval(() => this.ahora.set(Date.now()), 30_000);
   }
 
   ngOnDestroy(): void {
     clearInterval(this.timer);
     this.unsubscribe?.();
+    this.unsubscribeReservas?.();
+  }
+
+  private async cargarReservas(): Promise<void> {
+    try {
+      this.reservasDomicilio.set(await this.reservasAlquiler.listar());
+    } catch {
+      /* sin conexión: se intenta en el próximo cambio */
+    }
   }
 
   async cargar(): Promise<void> {

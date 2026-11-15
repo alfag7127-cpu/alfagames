@@ -5,6 +5,7 @@ import { filter } from 'rxjs';
 import { AuthService } from '../core/auth.service';
 import { AvisosAlquiler } from '../shared/avisos-alquiler';
 import { AvisosReservas } from '../shared/avisos-reservas';
+import { AvisosReservasAlquiler } from '../shared/avisos-reservas-alquiler';
 
 interface EnlaceMenu {
   ruta: string;
@@ -15,7 +16,7 @@ interface EnlaceMenu {
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvisosAlquiler, AvisosReservas],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvisosAlquiler, AvisosReservas, AvisosReservasAlquiler],
   templateUrl: './shell.html',
 })
 export class Shell {

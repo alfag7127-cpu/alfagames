@@ -34,6 +34,15 @@ export interface ReservaAlquilerCreada {
   minutos_para_pagar: number;
 }
 
+/**
+ * Reserva que el personal debe atender: confirmada sin entregar, o pendiente que todavía no
+ * termina (aunque se haya vencido el tiempo para pagar: el local decide si la confirma).
+ */
+export function porAtender(r: ReservaAlquiler, ahoraMs = Date.now()): boolean {
+  if (r.estado === 'confirmada') return true;
+  return r.estado === 'pendiente' && new Date(r.fin).getTime() > ahoraMs;
+}
+
 /** Reservas de alquiler PS4/PS5 a domicilio (enlace /alquilar), pago con QR o en efectivo al recibir. */
 @Injectable({ providedIn: 'root' })
 export class ReservasAlquilerService {
@@ -71,12 +80,11 @@ export class ReservasAlquilerService {
     return { ...c, precio: Number(c.precio) };
   }
 
-  /** Reservas normales (no GTA 6). */
+  /** Todas las reservas a domicilio: normales (/alquilar) y GTA 6 (/gta6-domicilio). */
   async listar(): Promise<ReservaAlquiler[]> {
     const { data, error } = await this.db
       .from('reservas_alquiler')
       .select('*, alquiler_consolas(nombre, tipo)')
-      .is('juego', null)
       .order('inicio');
     if (error) throw error;
     return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));
