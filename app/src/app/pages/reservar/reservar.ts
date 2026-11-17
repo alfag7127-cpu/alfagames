@@ -1,3 +1,4 @@
+import { VolverServicios } from '../../shared/volver-servicios';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -45,10 +46,11 @@ function diaYHora(iso: string | number): string {
  */
 @Component({
   selector: 'app-reservar',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, VolverServicios],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 px-4 py-4 shadow-lg">
+        <div class="mx-auto max-w-3xl mb-3"><app-volver-servicios /></div>
         <div class="mx-auto max-w-3xl flex items-center gap-3">
           <span class="shrink-0 rounded-xl bg-white p-1.5 shadow-[0_0_18px_rgba(56,189,248,0.45)]">
             <img src="img/alfa-games.jpg" alt="Alfa Games" class="h-10 w-auto" />

@@ -1,3 +1,4 @@
+import { VolverServicios } from '../../shared/volver-servicios';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -15,10 +16,11 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
  */
 @Component({
   selector: 'app-alquilar',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, VolverServicios],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-br from-slate-950 via-slate-900 to-lime-900 px-4 py-5 shadow-lg">
+        <div class="mx-auto max-w-3xl mb-3"><app-volver-servicios /></div>
         <div class="mx-auto flex max-w-3xl items-center gap-4">
           <img src="img/alfa-frank-over.jpg" alt="Alfa Games & Frank Over"
             class="h-16 w-16 shrink-0 rounded-full shadow-[0_0_24px_rgba(163,230,53,0.4)] ring-2 ring-lime-400/70 sm:h-20 sm:w-20" />

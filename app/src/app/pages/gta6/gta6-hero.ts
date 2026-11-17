@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, input, signal } from '@angular/core';
 import { ZONA_HORARIA } from '../../core/zona-horaria';
 import { cuentaRegresiva } from './gta6-util';
+import { VolverServicios } from '../../shared/volver-servicios';
 
 /**
  * Encabezado de las páginas públicas GTA 6: atardecer neón con una cuenta regresiva grande
@@ -8,6 +9,7 @@ import { cuentaRegresiva } from './gta6-util';
  */
 @Component({
   selector: 'app-gta6-hero',
+  imports: [VolverServicios],
   styles: `
     .cielo {
       background: linear-gradient(180deg, #1e0b3a 0%, #5b1a7a 35%, #d62f7f 65%, #ff8a3d 100%);
@@ -59,6 +61,7 @@ import { cuentaRegresiva } from './gta6-util';
       <div class="piso pointer-events-none absolute inset-x-[-50%] bottom-0 h-28 opacity-60"></div>
 
       <div class="relative mx-auto max-w-3xl">
+        <div class="mb-3"><app-volver-servicios /></div>
         <div class="flex items-center gap-3">
           <span class="shrink-0 rounded-xl bg-white p-1.5 shadow-lg">
             <img src="img/alfa-games.jpg" alt="Alfa Games" class="h-10 w-auto" />
