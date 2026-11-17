@@ -12,10 +12,12 @@ function whenReady(auth: AuthService) {
   );
 }
 
-export const authGuard: CanActivateFn = () => {
+/** Sin sesión: la dirección principal ("/") muestra la página de servicios para clientes; lo demás pide login. */
+export const authGuard: CanActivateFn = (_route, state) => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  return whenReady(auth).pipe(map(() => auth.isLoggedIn() || router.createUrlTree(['/login'])));
+  const destino = state.url === '/' ? '/servicios' : '/login';
+  return whenReady(auth).pipe(map(() => auth.isLoggedIn() || router.createUrlTree([destino])));
 };
 
 export const adminGuard: CanActivateFn = () => {

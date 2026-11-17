@@ -10,6 +10,8 @@ import { Sala } from './pages/sala/sala';
 // (es la pantalla de trabajo); el resto se descarga al entrar.
 export const routes: Routes = [
   { path: 'login', component: Login },
+  // Página principal para clientes (sin login): un solo enlace con los tres servicios.
+  { path: 'servicios', loadComponent: () => import('./pages/servicios/servicios').then((m) => m.Servicios) },
   // Página pública (sin login): los clientes reservan su consola desde el enlace que se comparte por WhatsApp.
   { path: 'reservar', loadComponent: () => import('./pages/reservar/reservar').then((m) => m.Reservar) },
   // Alquiler PS4/PS5 a domicilio (público): el cliente reserva y paga con QR o en efectivo al recibir.
