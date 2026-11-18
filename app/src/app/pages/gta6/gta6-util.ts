@@ -59,3 +59,15 @@ export function cuentaRegresiva(
 export function mensajeError(e: unknown, porDefecto = 'No se pudo completar. Intenta de nuevo.'): string {
   return e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : porDefecto;
 }
+
+/**
+ * Por logística no se recogen consolas de noche: un plan por horas no puede terminar
+ * después de `nocheDesde` ni antes de `nocheHasta` ("HH:MM:SS", hora de Colombia).
+ * Igual que el trigger reservas_alquiler_sin_recogida_nocturna.
+ */
+export function recogidaNocturna(finMs: number, nocheDesde: string, nocheHasta: string): boolean {
+  const [h, m] = new Date(finMs).toLocaleTimeString('en-GB', { timeZone: ZONA_HORARIA, hour: '2-digit', minute: '2-digit' }).split(':').map(Number);
+  const minutos = h * 60 + m;
+  const aMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  return minutos > aMin(nocheDesde || '19:00') || minutos < aMin(nocheHasta || '09:00');
+}

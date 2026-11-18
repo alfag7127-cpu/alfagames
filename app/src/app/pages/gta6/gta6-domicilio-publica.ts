@@ -6,7 +6,7 @@ import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
 import { Gta6Hero } from './gta6-hero';
 import { NotaTransferencia } from '../../shared/nota-transferencia';
 import { sumarDias } from '../../core/zona-horaria';
-import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from './gta6-util';
+import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError, recogidaNocturna } from './gta6-util';
 
 type Paso = 'plan' | 'datos' | 'pago' | 'listo';
 
@@ -77,6 +77,15 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                       <p class="font-semibold text-emerald-200">✅ Hay {{ libres() }} PS5 con GTA 6 disponible{{ libres() > 1 ? 's' : '' }} para ese horario</p>
                     } @else {
                       <p class="font-semibold text-red-200">No quedan PS5 con GTA 6 para ese horario. Prueba otro día u hora.</p>
+                    }
+                    @if (nocturna()) {
+                      <div class="mt-2 rounded-lg bg-amber-400/15 p-2 text-amber-50 ring-1 ring-amber-400/60">
+                        <p class="font-bold text-amber-300">🌙 Este plan terminaría a las {{ hora(finMs()) }}</p>
+                        <p class="text-xs">Por logística de entrega y recogida no recogemos consolas después de las {{ horaCorta(estado()!.noche_desde) }} ni antes de las {{ horaCorta(estado()!.noche_hasta) }}. Para jugar en la noche te sugerimos el plan <b>La noche</b> ({{ horaCorta(estado()!.noche_desde) }} a {{ horaCorta(estado()!.noche_hasta) }}).</p>
+                        @if (planNoche(); as pn) {
+                          <button type="button" (click)="elegirPlan(pn)" class="mt-2 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-black text-slate-950 hover:bg-amber-300">Cambiar a La noche · {{ pn.precio | number: '1.0-0' }}</button>
+                        }
+                      </div>
                     }
                     <p class="mt-1 text-lg font-black">Total: {{ plan()!.precio | number: '1.0-0' }} COP</p>
                   </div>
@@ -178,6 +187,13 @@ export class Gta6DomicilioPublica implements OnInit {
     const p = this.plan();
     return p ? finPlan(this.inicioMs(), p, this.estado()?.noche_hasta ?? '09:00:00') : this.inicioMs();
   });
+  /** Plan por horas que terminaría de noche (no se recoge entre noche_desde y noche_hasta). */
+  readonly nocturna = computed(() => {
+    const p = this.plan();
+    const e = this.estado();
+    return !!p && !!e && !p.es_noche && !!this.inicio() && recogidaNocturna(this.finMs(), e.noche_desde, e.noche_hasta);
+  });
+  readonly planNoche = computed(() => this.estado()?.alquiler_planes.find((p) => p.es_noche) ?? null);
   readonly libres = computed(() => consolasLibres(this.estado()?.alquiler_consolas ?? [], this.inicioMs(), this.finMs()));
   readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
@@ -252,6 +268,7 @@ export class Gta6DomicilioPublica implements OnInit {
     if (!this.plan()) return this.error.set('Elige un plan.');
     if (!this.inicio()) return this.error.set('Elige el día y la hora de entrega.');
     if (this.inicioMs() < this.desdeMs() - 60_000) return this.error.set(`GTA 6 se entrega desde ${diaYHora(this.desdeMs())}.`);
+    if (this.nocturna()) return this.error.set(`Por logística no recogemos consolas de noche: este plan terminaría a las ${hora(this.finMs())}. Elige el plan La noche u otra hora de entrega.`);
     if (this.libres() === 0) return this.error.set('No quedan PS5 con GTA 6 para ese horario. Prueba otro día u hora.');
     this.error.set(null);
     this.paso.set('datos');

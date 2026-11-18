@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consolasLibres, cuentaRegresiva, finPlan } from './gta6-util';
+import { consolasLibres, cuentaRegresiva, finPlan, recogidaNocturna } from './gta6-util';
 
 const ms = (iso: string) => new Date(iso).getTime();
 
@@ -28,5 +28,16 @@ describe('cuentaRegresiva', () => {
   it('días, horas, minutos y segundos hasta el lanzamiento; null si ya salió', () => {
     expect(cuentaRegresiva('2026-11-19T00:00:00-05:00', ms('2026-11-17T22:30:00-05:00'))).toEqual({ dias: 1, horas: 1, minutos: 30, segundos: 0 });
     expect(cuentaRegresiva('2026-11-19T00:00:00-05:00', ms('2026-11-19T00:00:01-05:00'))).toBeNull();
+  });
+});
+
+describe('recogidaNocturna', () => {
+  const fin = (hhmm: string) => Date.parse(`2026-11-20T${hhmm}:00-05:00`);
+  it('no se recoge después de las 7 p. m. ni antes de las 9 a. m.', () => {
+    expect(recogidaNocturna(fin('19:00'), '19:00:00', '09:00:00')).toBe(false);
+    expect(recogidaNocturna(fin('19:01'), '19:00:00', '09:00:00')).toBe(true);
+    expect(recogidaNocturna(fin('01:00'), '19:00:00', '09:00:00')).toBe(true);
+    expect(recogidaNocturna(fin('09:00'), '19:00:00', '09:00:00')).toBe(false);
+    expect(recogidaNocturna(fin('14:30'), '19:00:00', '09:00:00')).toBe(false);
   });
 });

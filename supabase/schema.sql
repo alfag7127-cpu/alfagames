@@ -7379,3 +7379,40 @@ drop trigger if exists reservas_alquiler_solo_transferencia on public.reservas_a
 create trigger reservas_alquiler_solo_transferencia
   before insert on public.reservas_alquiler
   for each row execute function private.reserva_alquiler_solo_transferencia();
+
+-- ============================================================
+-- 45. SIN RECOGIDAS NOCTURNAS EN EL ALQUILER A DOMICILIO (2026-11-17)
+-- ============================================================
+-- Regla del dueño (logística): un plan por horas no puede terminar entre noche_desde (7 p. m.)
+-- y noche_hasta (9 a. m.); para eso esta el plan La noche. El front lo avisa y sugiere La noche
+-- (recogidaNocturna() en gta6-util.ts).
+
+create or replace function private.reserva_alquiler_sin_recogida_nocturna()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_noche boolean;
+  v_desde time;
+  v_hasta time;
+  v_hora time := (new.fin at time zone 'America/Bogota')::time;
+begin
+  select es_noche into v_noche from public.alquiler_tarifas where id = new.tarifa_id;
+  if coalesce(v_noche, false) then
+    return new;
+  end if;
+  select noche_desde, noche_hasta into v_desde, v_hasta from public.alquiler_config where id = 1;
+  if v_hora > coalesce(v_desde, '19:00') or v_hora < coalesce(v_hasta, '09:00') then
+    raise exception 'Por logística de entrega y recogida no recogemos consolas entre las % y las % (este plan terminaría a las %). Elige el plan La noche u otra hora de entrega.',
+      to_char(coalesce(v_desde, '19:00'), 'HH12:MI AM'), to_char(coalesce(v_hasta, '09:00'), 'HH12:MI AM'), to_char(v_hora, 'HH12:MI AM');
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists reservas_alquiler_sin_recogida_nocturna on public.reservas_alquiler;
+create trigger reservas_alquiler_sin_recogida_nocturna
+  before insert on public.reservas_alquiler
+  for each row execute function private.reserva_alquiler_sin_recogida_nocturna();
