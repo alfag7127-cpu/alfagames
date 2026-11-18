@@ -24,7 +24,7 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
   imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas, CalendarioAlquiler],
   template: `
     <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-      <p class="text-xs font-medium text-slate-500">Enlace para que los clientes reserven su PS4 o PS5 (WhatsApp, redes)</p>
+      <p class="text-xs font-medium text-slate-500">Enlace para clientes con todos los servicios (WhatsApp, redes)</p>
       <div class="mt-1 flex items-center gap-2">
         <code class="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-sm text-slate-800">{{ enlace }}</code>
         <button type="button" (click)="copiar()" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Copiar</button>
@@ -163,7 +163,8 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   private desuscribir?: () => void;
   modoPago: ModoPago | null = null;
   montoLlave: number | null = null;
-  readonly enlace = `${location.origin}/alquilar`;
+  // Un solo enlace para clientes: abre la pantalla con todos los servicios.
+  readonly enlace = `${location.origin}/servicios`;
   readonly diaYHora = diaYHora;
 
   /** Consolas activas del mismo tipo que la reservada (PS4 o PS5). */

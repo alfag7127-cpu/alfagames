@@ -358,9 +358,10 @@ export class ReservasPage implements OnInit, OnDestroy {
   destino: number | null = null;
   iniciarYa = false;
   private readonly ahora = signal(Date.now());
-  readonly enlace = `${location.origin}/reservar`;
+  // Un solo enlace para clientes: abre la pantalla con todos los servicios.
+  readonly enlace = `${location.origin}/servicios`;
   readonly enlaceCompartir = `https://wa.me/?text=${encodeURIComponent(
-    `¡Reserva tu consola en Alfa Games! Mira cuáles están libres y aparta la tuya aquí: ${location.origin}/reservar`,
+    `¡Reserva tu consola en Alfa Games! Escoge tu servicio aquí: ${location.origin}/servicios`,
   )}`;
   whatsappLocal = '';
   minutosPagar = 30;

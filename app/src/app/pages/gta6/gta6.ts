@@ -64,8 +64,8 @@ type Filtro = 'proximas' | 'todas';
       <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
         <p class="text-xs font-medium text-slate-500">Enlace para compartir (WhatsApp, redes)</p>
         <div class="mt-1 flex items-center gap-2">
-          <code class="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-sm text-slate-800">{{ enlace(pestana()) }}</code>
-          <button type="button" (click)="copiar(enlace(pestana()))" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Copiar</button>
+          <code class="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-sm text-slate-800">{{ enlace }}</code>
+          <button type="button" (click)="copiar(enlace)" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Copiar</button>
         </div>
       </div>
       <div class="mb-3 flex gap-2 text-xs">
@@ -391,9 +391,8 @@ export class Gta6Page implements OnInit, OnDestroy {
     }
   }
 
-  enlace(p: Pestana): string {
-    return `${location.origin}/${p === 'domicilio' ? 'gta6-domicilio' : 'gta6-sala'}`;
-  }
+  // Un solo enlace para clientes: abre la pantalla con todos los servicios.
+  readonly enlace = `${location.origin}/servicios`;
 
   async copiar(texto: string): Promise<void> {
     try {
