@@ -11,6 +11,7 @@ import { enlaceWhatsapp } from '../../core/reservas.service';
 import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { diaYHora, mensajeError } from '../gta6/gta6-util';
+import { conWhatsappAlTerminar, whatsappReservaDomicilioConfirmada } from '../../shared/whatsapp-confirmacion';
 
 type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
 
@@ -264,15 +265,17 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
     this.consolaEntrega.update((m) => ({ ...m, [reservaId]: consolaId }));
   }
 
-  private async accion(fn: () => Promise<void>, ok: string): Promise<void> {
+  private async accion(fn: () => Promise<void>, ok: string): Promise<boolean> {
     this.ocupado.set(true);
     try {
       await fn();
       this.toast.exito(ok);
       this.abierta.set(null);
       await this.cargar();
+      return true;
     } catch (e) {
       this.toast.error(mensajeError(e));
+      return false;
     } finally {
       this.ocupado.set(false);
     }
@@ -281,7 +284,9 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   confirmar(r: ReservaAlquiler): void {
     if (r.forma_pago === 'efectivo') {
       if (!confirm(`¿Confirmar la reserva #${r.id} de ${r.cliente_nombre}? Paga ${r.precio.toLocaleString('es-CO')} en efectivo al recibir.`)) return;
-      this.accion(() => this.servicio.confirmar(r.id, null, null), `Reserva #${r.id} confirmada.`);
+      void conWhatsappAlTerminar(this.whatsappConfirmada(r), () =>
+        this.accion(() => this.servicio.confirmar(r.id, null, null), `Reserva #${r.id} confirmada.`),
+      );
       return;
     }
     const reparto = repartirPago(r.precio, this.modoPago, this.montoLlave);
@@ -289,10 +294,17 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
       this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
       return;
     }
-    this.accion(
-      () => this.servicio.confirmar(r.id, reparto.llave, reparto.efectivo),
-      `Pago de la reserva #${r.id} confirmado: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,
+    void conWhatsappAlTerminar(this.whatsappConfirmada(r), () =>
+      this.accion(
+        () => this.servicio.confirmar(r.id, reparto.llave, reparto.efectivo),
+        `Pago de la reserva #${r.id} confirmado: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,
+      ),
     );
+  }
+
+  /** Mensaje de reserva confirmada que se abre en WhatsApp al confirmar. */
+  private whatsappConfirmada(r: ReservaAlquiler): string | null {
+    return whatsappReservaDomicilioConfirmada(r, r.alquiler_consolas?.tipo ?? null);
   }
 
   entregar(r: ReservaAlquiler): void {

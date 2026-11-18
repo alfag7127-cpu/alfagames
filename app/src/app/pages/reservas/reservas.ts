@@ -20,6 +20,7 @@ import { ToastService } from '../../core/toast.service';
 import { ZONA_HORARIA, fechaColombia, inicioDiaColombia, inicioMes, sumarDias } from '../../core/zona-horaria';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { sonarCaja } from '../../shared/sonido-caja';
+import { conWhatsappAlTerminar, whatsappReservaSalaConfirmada } from '../../shared/whatsapp-confirmacion';
 
 /** "YYYY-MM-DDTHH:mm" en hora de Colombia, para un input datetime-local. */
 function aHoraLocal(ms: number): string {
@@ -534,7 +535,9 @@ export class ReservasPage implements OnInit, OnDestroy {
   }
 
   async confirmar(r: Reserva): Promise<void> {
-    await this.accion(r, () => this.reservas.confirmar(r.id), `Reserva #${this.num(r)} confirmada.`);
+    // Al confirmar se abre WhatsApp con el mensaje de reserva confirmada para el cliente.
+    const wa = whatsappReservaSalaConfirmada({ ...r, numero: this.num(r), consola: this.nombrePuesto(r.puesto_id) });
+    await conWhatsappAlTerminar(wa, () => this.accion(r, () => this.reservas.confirmar(r.id), `Reserva #${this.num(r)} confirmada.`));
   }
 
   async cancelar(r: Reserva): Promise<void> {

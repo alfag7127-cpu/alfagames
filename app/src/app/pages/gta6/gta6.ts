@@ -9,6 +9,7 @@ import { ToastService } from '../../core/toast.service';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { PesosDirective } from '../../shared/pesos.directive';
+import { conWhatsappAlTerminar, whatsappReservaDomicilioConfirmada, whatsappReservaSalaConfirmada } from '../../shared/whatsapp-confirmacion';
 import { aHoraLocal, cuentaRegresiva, deHoraLocal, diaYHora, hora, mensajeError } from './gta6-util';
 
 type Pestana = 'sala' | 'domicilio' | 'config';
@@ -471,7 +472,9 @@ export class Gta6Page implements OnInit, OnDestroy {
   // ── Sala ──
 
   confirmarSala(r: Reserva): void {
-    this.accion(() => this.reservas.confirmar(r.id), `Reserva #${r.id} confirmada.`);
+    // Al confirmar se abre WhatsApp con el mensaje de reserva confirmada para el cliente.
+    const wa = whatsappReservaSalaConfirmada({ ...r, numero: r.id, consola: this.nombrePuesto(r.puesto_id) });
+    void conWhatsappAlTerminar(wa, () => this.accion(() => this.reservas.confirmar(r.id), `Reserva #${r.id} confirmada.`));
   }
 
   cancelarSala(r: Reserva): void {
@@ -494,9 +497,11 @@ export class Gta6Page implements OnInit, OnDestroy {
       this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
       return;
     }
-    const ok = await this.accion(
-      () => this.gta6.confirmarDomicilio(r.id, reparto.llave, reparto.efectivo),
-      `Reserva #${r.id} confirmada: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,
+    const ok = await conWhatsappAlTerminar(whatsappReservaDomicilioConfirmada(r, 'PS5'), () =>
+      this.accion(
+        () => this.gta6.confirmarDomicilio(r.id, reparto.llave, reparto.efectivo),
+        `Reserva #${r.id} confirmada: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,
+      ),
     );
     if (ok) this.confirmando.set(null);
   }
