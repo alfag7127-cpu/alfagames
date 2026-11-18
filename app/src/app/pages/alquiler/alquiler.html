@@ -593,7 +593,7 @@
       @if (inicioPotes().llave + inicioPotes().efectivo) {
         <p class="text-xs text-slate-500 tabular-nums">Incluye {{ inicioPotes().llave + inicioPotes().efectivo | number: '1.0-0' }} del inicio de potes (antes de la app)</p>
       }
-      <p class="text-xs text-slate-500">{{ historial().length }} alquiler{{ historial().length === 1 ? '' : 'es' }} entregado{{ historial().length === 1 ? '' : 's' }} en el período</p>
+      <p class="text-xs text-slate-500">{{ historial().length }} alquiler{{ historial().length === 1 ? '' : 'es' }} en el período (entregados y reservas pagadas)</p>
     </div>
   </div>
 
@@ -616,7 +616,12 @@
         <tbody class="divide-y divide-slate-100">
           @for (a of historial(); track a.id) {
             <tr class="hover:bg-indigo-50/40 transition-colors align-top" [class.opacity-50]="a.estado === 'cancelado'">
-              <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ nombreConsola(a.consola_id) }}</td>
+              <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">
+                {{ nombreConsola(a.consola_id) }}
+                @if (reservaDe(a); as rv) {
+                  <span class="mt-1 block w-fit rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">{{ rv }}</span>
+                }
+              </td>
               <td class="px-4 py-3">
                 <p class="text-slate-800">{{ a.cliente_nombre }}</p>
                 @if (a.cliente_telefono) {
@@ -659,12 +664,13 @@
                 <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize"
                   [class.bg-sky-100]="a.estado === 'activo'" [class.text-sky-700]="a.estado === 'activo'"
                   [class.bg-emerald-100]="a.estado === 'devuelto'" [class.text-emerald-700]="a.estado === 'devuelto'"
-                  [class.bg-slate-100]="a.estado === 'cancelado'" [class.text-slate-500]="a.estado === 'cancelado'">
-                  {{ a.estado === 'cancelado' ? 'anulado' : a.estado }}
+                  [class.bg-slate-100]="a.estado === 'cancelado'" [class.text-slate-500]="a.estado === 'cancelado'"
+                  [class.bg-amber-100]="a.estado === 'reservado'" [class.text-amber-800]="a.estado === 'reservado'">
+                  {{ textoEstado(a) }}
                 </span>
               </td>
               <td class="px-4 py-3 whitespace-nowrap">
-                @if (a.estado !== 'cancelado') {
+                @if (a.estado !== 'cancelado' && a.estado !== 'reservado') {
                   <button type="button" (click)="abrirEdicionHistorial(a)" class="text-amber-700 hover:underline mr-3">
                     ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
                   </button>
@@ -707,13 +713,17 @@
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="font-semibold text-slate-800">{{ nombreConsola(a.consola_id) }} <span class="font-normal text-slate-500">· {{ a.cliente_nombre }}</span></p>
+            @if (reservaDe(a); as rv) {
+              <span class="mt-0.5 inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">{{ rv }}</span>
+            }
             <p class="text-xs text-slate-500">{{ a.plan_nombre }}{{ (a.alquiler_extensiones ?? []).length ? ' + ' + (a.alquiler_extensiones ?? []).length + ' ext.' : '' }} · {{ a.inicio | date }}</p>
           </div>
           <div class="text-right shrink-0">
             <p class="font-bold text-slate-900 tabular-nums">{{ totalPagado(a) | number: '1.0-0' }}</p>
             <p class="text-[11px] capitalize"
-              [class.text-sky-600]="a.estado === 'activo'" [class.text-emerald-600]="a.estado === 'devuelto'" [class.text-slate-400]="a.estado === 'cancelado'">
-              {{ a.estado === 'cancelado' ? 'anulado' : a.estado }}
+              [class.text-sky-600]="a.estado === 'activo'" [class.text-emerald-600]="a.estado === 'devuelto'" [class.text-slate-400]="a.estado === 'cancelado'"
+              [class.text-amber-700]="a.estado === 'reservado'">
+              {{ textoEstado(a) }}
             </p>
           </div>
         </div>
@@ -727,7 +737,7 @@
             }
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            @if (a.estado !== 'cancelado') {
+            @if (a.estado !== 'cancelado' && a.estado !== 'reservado') {
               <button type="button" (click)="abrirEdicionHistorial(a)" class="text-xs text-amber-700 hover:underline">
                 ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
               </button>

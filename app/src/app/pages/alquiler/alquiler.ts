@@ -331,12 +331,14 @@ export class AlquilerPage implements OnInit, OnDestroy {
     try {
       const desde = this.desde ? inicioDiaColombia(this.desde) : undefined;
       const hasta = this.hasta ? finDiaColombia(this.hasta) : undefined;
-      const [historial, pagos, rango] = await Promise.all([
+      const [historial, reservadas, pagos, rango] = await Promise.all([
         this.alquiler.historial(desde, hasta),
+        this.alquiler.reservadasPagadas(desde, hasta),
         this.alquiler.pagosPotes(desde, hasta),
         this.potesService.rango(this.desde || null, this.hasta || null),
       ]);
-      this.historial.set(historial);
+      // Las reservas pagadas sin entregar van arriba: su dinero ya está en los potes del período.
+      this.historial.set([...reservadas, ...historial]);
       this.pagosPeriodo.set(pagos);
       const inicio = (pote: Pote) => rango.find((r) => r.pote === pote)?.inicio_potes ?? 0;
       this.inicioPotes.set({ llave: inicio('llave'), efectivo: inicio('efectivo') });
@@ -639,6 +641,18 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   /** Lo que pagó el cliente: entrega + extensiones. */
+  /** Etiqueta "Reserva #N" (y GTA 6) si el alquiler salió de una reserva de la página. */
+  reservaDe(a: Alquiler): string | null {
+    const r = a.reservas_alquiler?.[0];
+    return r ? `📅 Reserva #${r.id}${r.juego === 'gta6' ? ' · GTA 6' : ''}` : null;
+  }
+
+  textoEstado(a: Alquiler): string {
+    if (a.estado === 'cancelado') return 'anulado';
+    if (a.estado === 'reservado') return 'pagada, por entregar';
+    return a.estado;
+  }
+
   totalPagado(a: Alquiler): number {
     return a.precio_total + (a.alquiler_extensiones ?? []).reduce((s, e) => s + e.precio, 0);
   }

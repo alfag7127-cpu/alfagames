@@ -318,10 +318,30 @@ export class AlquilerService {
     if (error) throw error;
   }
 
+  /**
+   * Reservas de la página ya pagadas y aún sin entregar (alquiler 'reservado') cuyo pago entró a los potes
+   * entre `desde` y `hasta`: el Historial las muestra para que cuadre con los potes.
+   */
+  async reservadasPagadas(desde?: string, hasta?: string): Promise<Alquiler[]> {
+    const { data, error } = await this.supabase.client
+      .from('alquileres')
+      .select('*, alquiler_extensiones(*), alquiler_pagos(*), reservas_alquiler(id, juego)')
+      .eq('estado', 'reservado');
+    if (error) throw error;
+    const desdeMs = desde ? new Date(desde).getTime() : -Infinity;
+    const hastaMs = hasta ? new Date(hasta).getTime() : Infinity;
+    return (data as Alquiler[]).filter((a) =>
+      (a.alquiler_pagos ?? []).some((p) => {
+        const t = new Date(p.created_at).getTime();
+        return t >= desdeMs && t <= hastaMs;
+      }),
+    );
+  }
+
   async historial(desde?: string, hasta?: string): Promise<Alquiler[]> {
     let query = this.supabase.client
       .from('alquileres')
-      .select('*, alquiler_extensiones(*), alquiler_pagos(*)')
+      .select('*, alquiler_extensiones(*), alquiler_pagos(*), reservas_alquiler(id, juego)')
       // Las reservas GTA 6 pagadas y sin entregar se manejan en /gta6.
       .neq('estado', 'reservado')
       .order('inicio', { ascending: false });

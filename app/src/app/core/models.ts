@@ -181,6 +181,8 @@ export interface Alquiler {
   alquiler_extensiones?: AlquilerExtension[];
   /** Cómo entró el dinero, por pote (viene embebido en el historial). */
   alquiler_pagos?: AlquilerPago[];
+  /** Reserva de la página (/alquilar o /gta6-domicilio) de la que salió este alquiler, si la hay (viene embebido en el historial). */
+  reservas_alquiler?: { id: number; juego: 'gta6' | null }[];
 }
 
 export interface AlquilerPago {
