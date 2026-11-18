@@ -10,6 +10,7 @@ import { ReservasAlquilerService, porAtender } from '../../core/reservas-alquile
 import { enlaceWhatsapp } from '../../core/reservas.service';
 import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
+import { PesosDirective } from '../../shared/pesos.directive';
 import { diaYHora, mensajeError } from '../gta6/gta6-util';
 import { conWhatsappAlTerminar, whatsappReservaDomicilioConfirmada } from '../../shared/whatsapp-confirmacion';
 
@@ -22,7 +23,7 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
  */
 @Component({
   selector: 'app-reservas-alquiler',
-  imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas, CalendarioAlquiler],
+  imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas, CalendarioAlquiler, PesosDirective],
   template: `
     <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
       <p class="text-xs font-medium text-slate-500">Enlace para clientes con todos los servicios (WhatsApp, redes)</p>
@@ -102,7 +103,21 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
           }
 
           @if (r.estado === 'confirmada') {
-            @if (abierta() === r.id) {
+            @if (editandoPago() === r.id) {
+              <!-- Corregir precio y pote de una reserva ya pagada (p. ej. pagó en efectivo y se confirmó como Llave). -->
+              <div class="mt-2 space-y-2 rounded-lg bg-slate-50 p-2">
+                <label class="block text-xs text-slate-600">Precio
+                  <input appPesos [(ngModel)]="precioEdit" [name]="'precio-edit-' + r.id"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm tabular-nums" />
+                </label>
+                <app-pago-potes [total]="precioEdit ?? 0" [nombre]="'edit-' + r.id" [(modo)]="modoPago" [(montoLlave)]="montoLlave" />
+                <p class="text-[11px] text-slate-500">El dinero sigue contando el día en que se confirmó la reserva.</p>
+                <div class="flex gap-2">
+                  <button type="button" (click)="guardarPago(r)" [disabled]="ocupado()" class="flex-1 rounded-lg bg-slate-900 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50">Guardar</button>
+                  <button type="button" (click)="editandoPago.set(null)" class="rounded-lg bg-slate-200 px-3 text-xs">Cancelar</button>
+                </div>
+              </div>
+            } @else if (abierta() === r.id) {
               <div class="mt-2 space-y-2 rounded-lg bg-slate-50 p-2">
                 <label class="block text-xs text-slate-600">Consola que se entrega
                   <select [ngModel]="consolaEntrega()[r.id] ?? r.consola_id" (ngModelChange)="elegirConsola(r.id, $event)" [name]="'consola-' + r.id"
@@ -129,6 +144,7 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
                   <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">WhatsApp</a>
                 }
                 @if (r.alquiler_id) {
+                  <button type="button" (click)="abrirEditarPago(r)" [disabled]="ocupado()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">✏️ Editar pago</button>
                   <button type="button" (click)="cancelar(r, true)" [disabled]="ocupado()" class="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">Cancelar y devolver</button>
                   <button type="button" (click)="cancelar(r, false)" [disabled]="ocupado()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">No la usó (sin devolución)</button>
                 } @else {
@@ -168,6 +184,9 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   private desuscribir?: () => void;
   modoPago: ModoPago | null = null;
   montoLlave: number | null = null;
+  /** Reserva confirmada con el panel "Editar pago" abierto. */
+  readonly editandoPago = signal<number | null>(null);
+  precioEdit: number | null = null;
   // Un solo enlace para clientes: abre la pantalla con todos los servicios.
   readonly enlace = `${location.origin}/servicios`;
   readonly diaYHora = diaYHora;
@@ -279,6 +298,33 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
     } finally {
       this.ocupado.set(false);
     }
+  }
+
+  /** Abre "Editar pago" con el precio y el pote que hay ahora. */
+  async abrirEditarPago(r: ReservaAlquiler): Promise<void> {
+    if (!r.alquiler_id) return;
+    try {
+      const pago = await this.alquiler.pagoEntrega(r.alquiler_id);
+      this.abierta.set(null);
+      this.precioEdit = r.precio;
+      this.modoPago = pago.llave && pago.efectivo ? 'mixto' : pago.efectivo ? 'efectivo' : 'llave';
+      this.montoLlave = pago.llave;
+      this.editandoPago.set(r.id);
+    } catch (e) {
+      this.toast.error(mensajeError(e));
+    }
+  }
+
+  async guardarPago(r: ReservaAlquiler): Promise<void> {
+    const precio = this.precioEdit;
+    if (precio == null || precio < 0) return this.toast.error('Escribe el precio.');
+    const reparto = precio === 0 ? { llave: 0, efectivo: 0 } : repartirPago(precio, this.modoPago, this.montoLlave);
+    if (!reparto) return this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
+    const ok = await this.accion(
+      () => this.servicio.editarPago(r.id, precio, reparto.llave, reparto.efectivo),
+      `Pago de la reserva #${r.id} corregido.`,
+    );
+    if (ok) this.editandoPago.set(null);
   }
 
   confirmar(r: ReservaAlquiler): void {

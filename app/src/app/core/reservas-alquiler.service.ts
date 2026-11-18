@@ -113,6 +113,17 @@ export class ReservasAlquilerService {
     if (error) throw error;
   }
 
+  /** Corrige precio y pote de una reserva confirmada que ya pagó (aún sin entregar). El dinero sigue en el día en que se confirmó. */
+  async editarPago(id: number, precio: number, llave: number, efectivo: number): Promise<void> {
+    const { error } = await this.db.rpc('editar_pago_reserva_alquiler', {
+      p_reserva_id: id,
+      p_precio: precio,
+      p_pago_llave: llave,
+      p_pago_efectivo: efectivo,
+    });
+    if (error) throw error;
+  }
+
   async cancelar(id: number, devolver: boolean): Promise<void> {
     const { error } = await this.db.rpc('cancelar_reserva_alquiler', { p_reserva_id: id, p_devolver: devolver });
     if (error) throw error;

@@ -7452,3 +7452,64 @@ drop trigger if exists alquileres_sin_recogida_nocturna on public.alquileres;
 create trigger alquileres_sin_recogida_nocturna
   before insert or update of fin_pactado on public.alquileres
   for each row execute function private.alquiler_sin_recogida_nocturna();
+
+-- ============================================================
+-- 57. CORREGIR EL PAGO DE UNA RESERVA A DOMICILIO CONFIRMADA (2026-11-18)
+-- Pedido del dueño: una reserva confirmada (alquiler 'reservado') se puede corregir de precio
+-- y de pote (Llave / Efectivo / Mixto) antes de entregarla. El dinero sigue contando el día
+-- en que se confirmó. Las ya entregadas se corrigen con editar_alquiler desde el Historial.
+-- ============================================================
+
+create or replace function public.editar_pago_reserva_alquiler(
+  p_reserva_id bigint, p_precio numeric, p_pago_llave numeric, p_pago_efectivo numeric
+) returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_r public.reservas_alquiler;
+  v_a public.alquileres;
+  v_fecha timestamptz;
+  v_corte date;
+begin
+  if not private.puede_alquiler() then
+    raise exception 'No tienes permiso para editar reservas de alquiler';
+  end if;
+  select * into v_r from public.reservas_alquiler where id = p_reserva_id for update;
+  if v_r.id is null then
+    raise exception 'La reserva % no existe', p_reserva_id;
+  end if;
+  if v_r.estado <> 'confirmada' or v_r.alquiler_id is null then
+    raise exception 'Solo se corrige el pago de una reserva confirmada que ya pagó (las entregadas se corrigen en el Historial)';
+  end if;
+  select * into v_a from public.alquileres where id = v_r.alquiler_id for update;
+  if v_a.estado <> 'reservado' then
+    raise exception 'Esta reserva ya se entregó: corrígela desde el Historial';
+  end if;
+  if p_precio is null or p_precio < 0 then
+    raise exception 'El precio no puede ser negativo';
+  end if;
+  if coalesce(p_pago_llave, 0) < 0 or coalesce(p_pago_efectivo, 0) < 0
+     or coalesce(p_pago_llave, 0) + coalesce(p_pago_efectivo, 0) <> p_precio then
+    raise exception 'Lo que entró a Llave y Efectivo debe sumar el precio';
+  end if;
+
+  -- El dinero sigue contando el día en que se confirmó la reserva.
+  select min(created_at) into v_fecha from public.alquiler_pagos
+  where alquiler_id = v_a.id and concepto = 'entrega';
+  v_fecha := coalesce(v_fecha, now());
+  select max(corte) into v_corte from public.liquidaciones;
+  if v_corte is not null and (v_fecha at time zone 'America/Bogota')::date <= v_corte then
+    raise exception 'El pago de esta reserva cae en un mes ya liquidado (hasta %)', v_corte;
+  end if;
+
+  update public.alquileres set precio_total = p_precio where id = v_a.id;
+  update public.reservas_alquiler set precio = p_precio where id = v_r.id;
+  delete from public.alquiler_pagos where alquiler_id = v_a.id and concepto = 'entrega';
+  perform private.registrar_pagos(v_a.id, null, 'entrega', p_precio, p_pago_llave, p_pago_efectivo);
+  update public.alquiler_pagos set created_at = v_fecha
+  where alquiler_id = v_a.id and concepto = 'entrega';
+end;
+$$;
+
+revoke all on function public.editar_pago_reserva_alquiler(bigint, numeric, numeric, numeric) from public, anon;
+grant execute on function public.editar_pago_reserva_alquiler(bigint, numeric, numeric, numeric) to authenticated;
