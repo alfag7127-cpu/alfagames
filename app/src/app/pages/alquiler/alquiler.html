@@ -500,6 +500,22 @@
 
 <!-- ═══ HISTORIAL ═══ -->
 <!-- Formulario para corregir un alquiler del historial (se usa en la tabla y en las tarjetas). -->
+<!-- Editar pago de una reserva pagada y sin entregar (precio y pote; el dinero sigue en el día en que se confirmó). -->
+<ng-template #formPagoReserva let-a>
+  <div class="space-y-2 rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200">
+    <label class="block text-xs font-medium text-slate-600">Precio
+      <input appPesos [(ngModel)]="pagoResPrecio" [name]="'pago-res-' + a.id"
+        class="mt-1 block w-full max-w-xs rounded-lg border border-slate-300 px-2 py-1.5 text-sm tabular-nums" />
+    </label>
+    <app-pago-potes [total]="pagoResPrecio ?? 0" [nombre]="'pres-' + a.id" [(modo)]="pagoResModo" [(montoLlave)]="pagoResLlave" />
+    <p class="text-[11px] text-slate-500">El dinero sigue contando el día en que se confirmó la reserva.</p>
+    <div class="flex gap-2">
+      <button type="button" (click)="guardarPagoReservaHist(a)" [disabled]="guardandoPagoRes" class="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50">Guardar</button>
+      <button type="button" (click)="pagoReservaHist.set(null)" class="rounded-lg bg-slate-200 px-3 py-1.5 text-xs">Cancelar</button>
+    </div>
+  </div>
+</ng-template>
+
 <ng-template #formEdicionHist let-e>
   <div class="space-y-2 rounded-lg bg-amber-50/70 ring-1 ring-amber-200 p-3 max-w-2xl">
     <p class="text-xs font-semibold text-amber-800">✏️ Corregir el registro (las extensiones no cambian)</p>
@@ -567,6 +583,16 @@
     </label>
     <button (click)="cargarHistorial()" class="rounded-lg bg-indigo-600 text-white text-sm px-4 py-1.5 hover:bg-indigo-700">Filtrar</button>
     <button (click)="mesAnterior()" class="rounded-lg bg-slate-100 text-slate-700 text-sm px-4 py-1.5 hover:bg-slate-200">Mes anterior</button>
+    <label class="text-xs font-medium text-slate-500">
+      Consola
+      <select [ngModel]="consolaHistorial()" (ngModelChange)="consolaHistorial.set($event)" name="consola-historial"
+        class="block rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800">
+        <option [ngValue]="null">Todas</option>
+        @for (c of consolas(); track c.id) {
+          <option [ngValue]="c.id">{{ c.nombre }}{{ c.activo ? '' : ' (quitada)' }}</option>
+        }
+      </select>
+    </label>
   </div>
 
   <!-- Potes del período -->
@@ -597,6 +623,16 @@
     </div>
   </div>
 
+  @if (consolaHistorial() != null) {
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-indigo-50 px-4 py-3 ring-1 ring-indigo-100">
+      <p class="text-sm text-indigo-900">
+        <span class="font-semibold">{{ nombreConsola(consolaHistorial()!) }}</span>:
+        {{ historialFiltrado().length }} alquiler{{ historialFiltrado().length === 1 ? '' : 'es' }} en el período
+      </p>
+      <p class="text-lg font-bold text-indigo-900 tabular-nums">{{ totalConsolaHistorial() | number: '1.0-0' }}</p>
+    </div>
+  }
+
   <!-- Escritorio: tabla -->
   <div class="hidden md:block overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
     <div class="overflow-x-auto">
@@ -614,7 +650,7 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-          @for (a of historial(); track a.id) {
+          @for (a of historialFiltrado(); track a.id) {
             <tr class="hover:bg-indigo-50/40 transition-colors align-top" [class.opacity-50]="a.estado === 'cancelado'">
               <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">
                 {{ nombreConsola(a.consola_id) }}
@@ -670,6 +706,11 @@
                 </span>
               </td>
               <td class="px-4 py-3 whitespace-nowrap">
+                @if (a.estado === 'reservado' && reservaDe(a)) {
+                  <button type="button" (click)="abrirPagoReservaHist(a)" class="text-amber-700 hover:underline mr-3">
+                    ✏️ {{ pagoReservaHist() === a.id ? 'Cerrar' : 'Editar pago' }}
+                  </button>
+                }
                 @if (a.estado !== 'cancelado' && a.estado !== 'reservado') {
                   <button type="button" (click)="abrirEdicionHistorial(a)" class="text-amber-700 hover:underline mr-3">
                     ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
@@ -688,6 +729,13 @@
                   </td>
                 </tr>
               }
+            }
+            @if (pagoReservaHist() === a.id) {
+              <tr class="bg-amber-50/40">
+                <td colspan="8" class="px-4 py-3">
+                  <ng-container *ngTemplateOutlet="formPagoReserva; context: { $implicit: a }" />
+                </td>
+              </tr>
             }
             @if (contratoAbierto() === a.id) {
               <tr class="bg-slate-50/60">
@@ -708,7 +756,7 @@
 
   <!-- Celular: tarjetas -->
   <ul class="md:hidden space-y-3">
-    @for (a of historial(); track a.id) {
+    @for (a of historialFiltrado(); track a.id) {
       <li class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100" [class.opacity-50]="a.estado === 'cancelado'">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -737,6 +785,11 @@
             }
           </div>
           <div class="flex items-center gap-3 shrink-0">
+                @if (a.estado === 'reservado' && reservaDe(a)) {
+                  <button type="button" (click)="abrirPagoReservaHist(a)" class="text-xs text-amber-700 hover:underline">
+                    ✏️ {{ pagoReservaHist() === a.id ? 'Cerrar' : 'Editar pago' }}
+                  </button>
+                }
             @if (a.estado !== 'cancelado' && a.estado !== 'reservado') {
               <button type="button" (click)="abrirEdicionHistorial(a)" class="text-xs text-amber-700 hover:underline">
                 ✏️ {{ edicionHist()?.id === a.id ? 'Cerrar' : 'Editar' }}
@@ -753,6 +806,11 @@
               <ng-container *ngTemplateOutlet="formEdicionHist; context: { $implicit: e }" />
             </div>
           }
+        }
+        @if (pagoReservaHist() === a.id) {
+          <div class="mt-3">
+            <ng-container *ngTemplateOutlet="formPagoReserva; context: { $implicit: a }" />
+          </div>
         }
         @if (contratoAbierto() === a.id) {
           <div class="mt-3">

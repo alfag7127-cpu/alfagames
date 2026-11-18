@@ -189,6 +189,17 @@ export class AlquilerPage implements OnInit, OnDestroy {
   readonly controlesLibres = signal<Record<TipoConsola, number>>({ PS4: 0, PS5: 0 });
   readonly tipos: TipoConsola[] = ['PS4', 'PS5'];
   readonly historial = signal<Alquiler[]>([]);
+  /** Filtro del Historial por consola (null = todas). Se filtra en el navegador sobre el período cargado. */
+  readonly consolaHistorial = signal<number | null>(null);
+  readonly historialFiltrado = computed(() => {
+    const id = this.consolaHistorial();
+    return id == null ? this.historial() : this.historial().filter((a) => a.consola_id === id);
+  });
+  readonly totalConsolaHistorial = computed(() =>
+    this.historialFiltrado()
+      .filter((a) => a.estado !== 'cancelado')
+      .reduce((s, a) => s + this.totalPagado(a), 0),
+  );
   private readonly ahora = signal(Date.now());
   private timer?: ReturnType<typeof setInterval>;
   private unsubscribe?: () => void;
@@ -645,6 +656,48 @@ export class AlquilerPage implements OnInit, OnDestroy {
   reservaDe(a: Alquiler): string | null {
     const r = a.reservas_alquiler?.[0];
     return r ? `📅 Reserva #${r.id}${r.juego === 'gta6' ? ' · GTA 6' : ''}` : null;
+  }
+
+  // ── Corregir el pago de una reserva pagada y sin entregar, desde el Historial ──
+
+  /** Alquiler 'reservado' con el panel "Editar pago" abierto. */
+  readonly pagoReservaHist = signal<number | null>(null);
+  pagoResPrecio: number | null = null;
+  pagoResModo: ModoPago | null = null;
+  pagoResLlave: number | null = null;
+  guardandoPagoRes = false;
+
+  abrirPagoReservaHist(a: Alquiler): void {
+    if (this.pagoReservaHist() === a.id) return this.pagoReservaHist.set(null);
+    const entrega = (pote: Pote) =>
+      (a.alquiler_pagos ?? []).filter((p) => p.concepto === 'entrega' && p.pote === pote).reduce((s, p) => s + p.monto, 0);
+    const llave = entrega('llave');
+    const efectivo = entrega('efectivo');
+    this.edicionHist.set(null);
+    this.pagoResPrecio = a.precio_total;
+    this.pagoResModo = llave && efectivo ? 'mixto' : efectivo ? 'efectivo' : 'llave';
+    this.pagoResLlave = llave;
+    this.pagoReservaHist.set(a.id);
+  }
+
+  async guardarPagoReservaHist(a: Alquiler): Promise<void> {
+    const reservaId = a.reservas_alquiler?.[0]?.id;
+    if (!reservaId) return this.toast.error('No se encontró la reserva de este alquiler.');
+    const precio = this.pagoResPrecio;
+    if (precio == null || precio < 0) return this.toast.error('Escribe el precio.');
+    const reparto = precio === 0 ? { llave: 0, efectivo: 0 } : repartirPago(precio, this.pagoResModo, this.pagoResLlave);
+    if (!reparto) return this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
+    this.guardandoPagoRes = true;
+    try {
+      await this.reservasAlquiler.editarPago(reservaId, precio, reparto.llave, reparto.efectivo);
+      this.toast.exito(`Pago de la reserva #${reservaId} corregido.`);
+      this.pagoReservaHist.set(null);
+      await this.cargarHistorial();
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    } finally {
+      this.guardandoPagoRes = false;
+    }
   }
 
   textoEstado(a: Alquiler): string {
