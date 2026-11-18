@@ -296,13 +296,15 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   async cargar(): Promise<void> {
     try {
-      const [consolas, tarifas, config, libresPs4, libresPs5] = await Promise.all([
+      const [consolas, tarifas, config, libresPs4, libresPs5, gta6] = await Promise.all([
         this.alquiler.listarConsolasConEstado(),
         this.alquiler.listarTarifas(),
         this.alquiler.obtenerConfig(),
         this.alquiler.controlesLibres('PS4'),
         this.alquiler.controlesLibres('PS5'),
+        this.alquiler.consolasGta6(),
       ]);
+      this.gta6Ids.set(new Set(gta6));
       // Conserva lo que el empleado está escribiendo si llega una actualización.
       const previas = new Map(this.consolas().map((c) => [c.id, c]));
       this.consolas.set(
@@ -825,6 +827,20 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.nuevaNombre = '';
       this.nuevaDescripcion = '';
       this.nuevaControles = 2;
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mensajeError(e));
+    }
+  }
+
+  /** PS5 del alquiler marcadas con GTA 6 (se reservan por /gta6-domicilio). */
+  readonly gta6Ids = signal<Set<number>>(new Set());
+
+  async cambiarGta6(c: ConsolaVM): Promise<void> {
+    const marcar = !this.gta6Ids().has(c.id);
+    try {
+      await this.alquiler.marcarGta6(c.id, marcar);
+      this.toast.exito(marcar ? `${c.nombre}: con GTA 6.` : `${c.nombre}: sin GTA 6.`);
       await this.cargar();
     } catch (e) {
       this.toast.error(this.mensajeError(e));

@@ -816,7 +816,15 @@
                   🎮 {{ c.juegos.length }} juego{{ c.juegos.length === 1 ? '' : 's' }}{{ c.capacidad ? ' · 💾 ' + c.capacidad : '' }}{{ c.serial ? ' · S/N ' + c.serial : '' }}
                 </span>
               </span>
-              <span class="flex gap-3 shrink-0">
+              <span class="flex gap-3 shrink-0 items-center">
+                @if (c.tipo === 'PS5' && c.activo) {
+                  <!-- Marca GTA 6 (pedido del dueño): la misma de GTA 6 → Configuración. -->
+                  <button (click)="cambiarGta6(c)" class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1"
+                    [class.bg-fuchsia-600]="gta6Ids().has(c.id)" [class.text-white]="gta6Ids().has(c.id)" [class.ring-fuchsia-600]="gta6Ids().has(c.id)"
+                    [class.text-fuchsia-700]="!gta6Ids().has(c.id)" [class.ring-fuchsia-300]="!gta6Ids().has(c.id)">
+                    {{ gta6Ids().has(c.id) ? '✓ GTA 6' : '+ GTA 6' }}
+                  </button>
+                }
                 <button (click)="abrirFicha(c)" class="text-indigo-600 hover:underline">{{ fichaAbierta() === c.id ? 'Cerrar' : 'Editar' }}</button>
                 <button (click)="cambiarActivo(c)" class="hover:underline" [class.text-red-600]="c.activo" [class.text-emerald-600]="!c.activo">
                   {{ c.activo ? 'Quitar' : 'Reactivar' }}

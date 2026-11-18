@@ -115,6 +115,19 @@ export class AlquilerService {
     return data as ConsolaConEstado[];
   }
 
+  /** Ids de las consolas marcadas con GTA 6 (la vista de consolas no trae la marca). */
+  async consolasGta6(): Promise<number[]> {
+    const { data, error } = await this.supabase.client.from('alquiler_consolas').select('id').eq('gta6', true);
+    if (error) throw error;
+    return (data ?? []).map((c) => c.id as number);
+  }
+
+  /** Marca o quita GTA 6 en una PS5 del alquiler (la misma marca de GTA 6 → Configuración). */
+  async marcarGta6(id: number, gta6: boolean): Promise<void> {
+    const { error } = await this.supabase.client.rpc('marcar_gta6_consola', { p_consola_id: id, p_gta6: gta6 });
+    if (error) throw error;
+  }
+
   async listarTarifas(): Promise<AlquilerTarifa[]> {
     const { data, error } = await this.supabase.client
       .from('alquiler_tarifas')
