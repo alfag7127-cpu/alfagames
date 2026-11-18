@@ -188,6 +188,10 @@ function dia(iso: string): string {
               @if (whatsapp(r); as wa) {
                 <a [href]="wa" target="_blank" rel="noopener" class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200">WhatsApp</a>
               }
+              @if (whatsappSinPago(r); as wa) {
+                <!-- Aviso al cliente que dijo que pagaba y no llegó la transferencia; luego se cancela con "Cancelar". -->
+                <a [href]="wa" target="_blank" rel="noopener" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200 hover:bg-red-100">📵 Avisar: pago no verificado</a>
+              }
               <button type="button" (click)="abrirMover(r)" [disabled]="procesando() === r.id"
                 class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50">⇄ Mover</button>
               <button type="button" (click)="cancelar(r)" [disabled]="procesando() === r.id"
@@ -509,6 +513,15 @@ export class ReservasPage implements OnInit, OnDestroy {
 
   whatsapp(r: Reserva): string | null {
     return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${this.num(r)}.`);
+  }
+
+  /** Mensaje para el cliente cuya transferencia nunca llegó; después se cancela con "Cancelar" para liberar el horario. */
+  whatsappSinPago(r: Reserva): string | null {
+    const cuando = `${dia(r.inicio).toLowerCase()} a las ${hora(r.inicio)}`;
+    return enlaceWhatsapp(
+      r.cliente_telefono,
+      `Hola ${r.cliente_nombre}, te escribimos de Alfa Games. Tu reserva #${this.num(r)} de ${this.nombrePuesto(r.puesto_id)} para ${cuando} ha sido cancelada porque no se pudo verificar el pago. Si ya pagaste, envíanos el comprobante por aquí.`,
+    );
   }
 
   async copiar(): Promise<void> {
