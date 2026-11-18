@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ReservaAlquiler } from '../../core/gta6.service';
 import { Alquiler } from '../../core/models';
-import { eventosCalendario } from './calendario-alquiler';
+import { bloquesDelDia, eventosCalendario, horaCompacta, lunesDe } from './calendario-alquiler';
 
 const alquiler = (x: Partial<Alquiler>): Alquiler =>
   ({
@@ -58,5 +58,43 @@ describe('eventosCalendario', () => {
 
   it('no muestra alquileres cancelados', () => {
     expect(eventosCalendario([alquiler({ estado: 'cancelado' })], [])).toEqual([]);
+  });
+});
+
+describe('vista semanal', () => {
+  it('el lunes de la semana (martes 17-nov-2026 → lunes 16)', () => {
+    expect(lunesDe('2026-11-17')).toBe('2026-11-16');
+    expect(lunesDe('2026-11-22')).toBe('2026-11-16'); // domingo
+    expect(lunesDe('2026-11-16')).toBe('2026-11-16');
+  });
+
+  it('dos consolas a la misma hora van lado a lado; la que no se cruza usa todo el ancho', () => {
+    const desde = Date.parse('2026-11-18T00:00:00-05:00');
+    const base = eventosCalendario([], [reserva({ id: 1, consola_id: 1 })])[0];
+    const ev = (clave: string, h1: number, h2: number) => ({ ...base, clave, inicio: desde + h1 * 3_600_000, fin: desde + h2 * 3_600_000 });
+    const b = bloquesDelDia([ev('a', 10, 14), ev('b', 12, 16), ev('c', 18, 20)], desde);
+    const por = Object.fromEntries(b.map((x) => [x.clave, x]));
+    expect([por['a'].carril, por['a'].carriles]).toEqual([0, 2]);
+    expect([por['b'].carril, por['b'].carriles]).toEqual([1, 2]);
+    expect([por['c'].carril, por['c'].carriles]).toEqual([0, 1]);
+  });
+
+  it('un alquiler de la noche se parte en dos días', () => {
+    const desde = Date.parse('2026-11-18T00:00:00-05:00');
+    const [e] = eventosCalendario([], [reserva({ inicio: '2026-11-18T19:00:00-05:00', fin: '2026-11-19T09:00:00-05:00' })]);
+    const hoy = bloquesDelDia([e], desde);
+    const manana = bloquesDelDia([e], desde + 24 * 3_600_000);
+    expect(hoy[0].terminaDespues).toBe(true);
+    expect(manana[0].empiezaAntes).toBe(true);
+    expect(manana[0].top).toBe(0);
+  });
+});
+
+describe('horaCompacta', () => {
+  it('formato corto para bloques angostos', () => {
+    expect(horaCompacta(Date.parse('2026-11-18T19:00:00-05:00'))).toBe('7p');
+    expect(horaCompacta(Date.parse('2026-11-18T13:30:00-05:00'))).toBe('1:30p');
+    expect(horaCompacta(Date.parse('2026-11-18T00:00:00-05:00'))).toBe('12a');
+    expect(horaCompacta(Date.parse('2026-11-18T12:00:00-05:00'))).toBe('12p');
   });
 });

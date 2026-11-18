@@ -1,6 +1,5 @@
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, computed, effect, input, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
 import { ReservaAlquiler } from '../../core/gta6.service';
 import { Alquiler, ConsolaConEstado } from '../../core/models';
@@ -8,11 +7,12 @@ import { ZONA_HORARIA, fechaColombia, finDiaColombia, inicioDiaColombia, sumarDi
 import { enlaceWhatsapp } from '../../core/reservas.service';
 
 /** Alto de una hora en el calendario (px). */
-const PX_HORA = 56;
+const PX_HORA = 48;
+const MS_HORA = 3_600_000;
 
 type TipoEvento = 'activo' | 'devuelto' | 'confirmada' | 'pendiente';
 
-/** Un bloque del calendario: un alquiler o una reserva a domicilio en una consola. */
+/** Un alquiler o una reserva a domicilio en una consola, de la entrega a la recogida. */
 export interface EventoCalendario {
   clave: string;
   consolaId: number;
@@ -27,16 +27,30 @@ export interface EventoCalendario {
   precio: number | null;
 }
 
-/** Bloque ya ubicado dentro del día (top y alto en px). */
-interface Bloque extends EventoCalendario {
+/** Pedazo de un evento dentro de un día, ya ubicado (top, alto y carril si se cruza con otros). */
+export interface Bloque extends EventoCalendario {
   top: number;
   alto: number;
+  carril: number;
+  carriles: number;
   empiezaAntes: boolean;
   terminaDespues: boolean;
 }
 
+/** Hora compacta para los bloques angostos: "7p", "1:30p", "9a". */
+export function horaCompacta(ms: number): string {
+  const [h, m] = new Date(ms).toLocaleTimeString('en-GB', { timeZone: ZONA_HORARIA, hour: '2-digit', minute: '2-digit' }).split(':').map(Number);
+  return `${h % 12 === 0 ? 12 : h % 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'a' : 'p'}`;
+}
+
 function hora(ms: number): string {
   return new Date(ms).toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit' });
+}
+
+/** Lunes de la semana de una fecha YYYY-MM-DD. */
+export function lunesDe(fecha: string): string {
+  const dia = new Date(`${fecha}T12:00:00Z`).getUTCDay(); // 0 = domingo
+  return sumarDias(fecha, -((dia + 6) % 7));
 }
 
 /** Junta alquileres (activos y devueltos) y reservas (pendientes y confirmadas sin entregar). */
@@ -79,22 +93,75 @@ export function eventosCalendario(alquileres: Alquiler[], reservas: ReservaAlqui
 }
 
 /**
- * Calendario del día tipo Teams/Meet: una columna por consola y las horas hacia abajo.
- * Cada alquiler o reserva a domicilio es un bloque desde la entrega hasta la recogida.
+ * Ubica los eventos de un día: los que se cruzan en el tiempo van lado a lado (carriles),
+ * como en Teams. `desde` es la medianoche del día (ms).
+ */
+export function bloquesDelDia(eventos: EventoCalendario[], desde: number): Bloque[] {
+  const hasta = desde + 24 * MS_HORA;
+  const del = eventos
+    .filter((e) => e.inicio < hasta && e.fin > desde)
+    .map((e) => ({ e, ini: Math.max(e.inicio, desde), fin: Math.min(e.fin, hasta) }))
+    .sort((a, b) => a.ini - b.ini || b.fin - a.fin);
+
+  const bloques: Bloque[] = [];
+  let grupo: { b: Bloque; fin: number }[] = [];
+  let finGrupo = -Infinity;
+  const cerrarGrupo = () => {
+    const carriles = Math.max(1, ...grupo.map((g) => g.b.carril + 1));
+    for (const g of grupo) g.b.carriles = carriles;
+    grupo = [];
+  };
+  for (const { e, ini, fin } of del) {
+    if (ini >= finGrupo) {
+      cerrarGrupo();
+      finGrupo = -Infinity;
+    }
+    // Primer carril libre del grupo.
+    const ocupados = new Set(grupo.filter((g) => g.fin > ini).map((g) => g.b.carril));
+    let carril = 0;
+    while (ocupados.has(carril)) carril++;
+    const b: Bloque = {
+      ...e,
+      top: ((ini - desde) / MS_HORA) * PX_HORA,
+      alto: Math.max(22, ((fin - ini) / MS_HORA) * PX_HORA - 2),
+      carril,
+      carriles: 1,
+      empiezaAntes: e.inicio < desde,
+      terminaDespues: e.fin > hasta,
+    };
+    grupo.push({ b, fin });
+    bloques.push(b);
+    finGrupo = Math.max(finGrupo, fin);
+  }
+  cerrarGrupo();
+  return bloques;
+}
+
+interface DiaSemana {
+  fecha: string;
+  numero: number;
+  nombre: string;
+  esHoy: boolean;
+  desde: number;
+  bloques: Bloque[];
+}
+
+/**
+ * Calendario semanal tipo Teams (lunes a domingo): arriba el día de la semana y su número,
+ * las horas hacia abajo y cada alquiler o reserva como un bloque con el nombre de la consola.
+ * Si varias consolas están alquiladas a la misma hora, los bloques van lado a lado.
  */
 @Component({
   selector: 'app-calendario-alquiler',
-  imports: [FormsModule, DecimalPipe],
+  imports: [DecimalPipe, NgTemplateOutlet],
   template: `
     <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-      <!-- Barra: día -->
+      <!-- Barra: semana -->
       <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 p-3">
-        <button type="button" (click)="irA(fechaColombia())" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Hoy</button>
-        <button type="button" (click)="mover(-1)" class="rounded-lg px-2 py-1.5 text-lg leading-none text-slate-600 hover:bg-slate-100" aria-label="Día anterior">‹</button>
-        <button type="button" (click)="mover(1)" class="rounded-lg px-2 py-1.5 text-lg leading-none text-slate-600 hover:bg-slate-100" aria-label="Día siguiente">›</button>
-        <h3 class="text-base font-bold capitalize text-slate-900">{{ titulo() }}</h3>
-        <input type="date" [ngModel]="dia()" (ngModelChange)="irA($event)" name="dia-calendario"
-          class="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700" />
+        <button type="button" (click)="irAHoy()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Hoy</button>
+        <button type="button" (click)="mover(-7)" class="rounded-lg px-2 py-1 text-xl leading-none text-slate-600 hover:bg-slate-100" aria-label="Semana anterior">‹</button>
+        <button type="button" (click)="mover(7)" class="rounded-lg px-2 py-1 text-xl leading-none text-slate-600 hover:bg-slate-100" aria-label="Semana siguiente">›</button>
+        <h3 class="text-base font-bold text-slate-900">{{ tituloSemana() }}</h3>
       </div>
 
       <!-- Leyenda -->
@@ -106,19 +173,12 @@ export function eventosCalendario(alquileres: Alquiler[], reservas: ReservaAlqui
         <span class="flex items-center gap-1"><span class="rounded bg-fuchsia-600 px-1 text-[9px] font-black text-white">GTA 6</span>con GTA 6</span>
       </div>
 
-      <!-- Detalle del bloque elegido -->
+      <!-- Detalle del bloque tocado (celular) -->
       @if (elegido(); as e) {
         <div class="mx-3 mt-2 rounded-xl p-3 text-sm ring-1" [class]="claseDetalle(e)">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="font-bold text-slate-900">
-                @if (e.gta6) { <span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-black text-white">GTA 6</span> }
-                {{ nombreConsola(e.consolaId) }} · {{ e.cliente }}
-              </p>
-              <p class="text-slate-700">{{ textoTipo(e.tipo) }} · {{ e.plan }}</p>
-              <p class="text-slate-700">Entrega {{ diaHora(e.inicio) }} → recoge {{ diaHora(e.fin) }}</p>
-              @if (e.direccion) { <p class="text-slate-600">📍 {{ e.direccion }}</p> }
-              @if (e.precio != null) { <p class="font-semibold text-slate-900">{{ e.precio | number: '1.0-0' }} COP</p> }
+              <ng-container *ngTemplateOutlet="ficha; context: { $implicit: e }" />
             </div>
             <div class="flex shrink-0 flex-col items-end gap-1">
               <button type="button" (click)="elegido.set(null)" class="rounded-lg px-2 text-lg leading-none text-slate-500 hover:bg-white/60" aria-label="Cerrar">×</button>
@@ -130,71 +190,85 @@ export function eventosCalendario(alquileres: Alquiler[], reservas: ReservaAlqui
         </div>
       }
 
-      <!-- Rejilla: horas x consolas -->
-      <div #scroll class="mt-2 max-h-[70vh] overflow-auto">
-        <div class="relative" [style.min-width.px]="56 + columnas().length * 132">
-          <!-- Encabezado de consolas (fijo arriba) -->
+      <!-- Semana: días arriba, horas hacia abajo -->
+      <div #scroll class="mt-2 max-h-[72vh] overflow-auto">
+        <div class="relative min-w-[760px]">
           <div class="sticky top-0 z-20 flex border-b border-slate-200 bg-white">
-            <div class="sticky left-0 z-30 w-14 shrink-0 bg-white"></div>
-            @for (c of columnas(); track c.id) {
-              <div class="min-w-[132px] flex-1 border-l border-slate-200 px-2 py-2 text-center">
-                <p class="truncate text-sm font-bold text-slate-900">{{ c.nombre }}</p>
-                <p class="text-[11px] text-slate-500">{{ c.tipo }}{{ c.alquiler_id ? ' · alquilada' : '' }}</p>
+            <div class="w-14 shrink-0"></div>
+            @for (d of dias(); track d.fecha) {
+              <div class="flex-1 border-l border-slate-200 px-1 py-2 text-center">
+                <p class="text-[11px] font-semibold uppercase tracking-wide" [class.text-indigo-600]="d.esHoy" [class.text-slate-500]="!d.esHoy">{{ d.nombre }}</p>
+                <p class="mx-auto mt-0.5 flex h-9 w-9 items-center justify-center rounded-full text-xl font-bold"
+                  [class.bg-indigo-600]="d.esHoy" [class.text-white]="d.esHoy" [class.text-slate-900]="!d.esHoy">{{ d.numero }}</p>
               </div>
             }
           </div>
 
           <div class="relative flex" [style.height.px]="24 * pxHora">
-            <!-- Horas -->
-            <div class="sticky left-0 z-10 w-14 shrink-0 bg-white">
+            <div class="w-14 shrink-0">
               @for (h of horas; track h) {
-                <div class="relative border-t border-transparent text-right" [style.height.px]="pxHora">
+                <div class="relative" [style.height.px]="pxHora">
                   <span class="absolute -top-2 right-1.5 text-[10px] text-slate-400">{{ etiquetaHora(h) }}</span>
                 </div>
               }
             </div>
-
-            <!-- Columnas -->
-            @for (c of columnas(); track c.id) {
-              <div class="relative min-w-[132px] flex-1 border-l border-slate-200">
+            @for (d of dias(); track d.fecha) {
+              <div class="relative flex-1 border-l border-slate-200" [class.bg-indigo-50/40]="d.esHoy">
                 @for (h of horas; track h) {
                   <div class="border-t border-slate-100" [style.height.px]="pxHora"></div>
                 }
-                @for (b of bloquesDe(c.id); track b.clave) {
+                @for (b of d.bloques; track b.clave) {
                   <button type="button" (click)="elegido.set(b)"
-                    class="absolute left-1 right-1 overflow-hidden rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md"
+                    (mouseenter)="mostrarTooltip(b, $event)" (mousemove)="moverTooltip($event)" (mouseleave)="tooltip.set(null)"
                     [class]="claseBloque(b)"
                     [style.top.px]="b.top" [style.height.px]="b.alto"
-                    [title]="b.cliente + ' · ' + hora(b.inicio) + ' – ' + hora(b.fin)">
+                    [style.left]="'calc(' + (b.carril * 100) / b.carriles + '% + 2px)'"
+                    [style.width]="'calc(' + 100 / b.carriles + '% - 4px)'">
                     <p class="truncate font-bold">
+                      {{ nombreConsola(b.consolaId) }}
                       @if (b.gta6) { <span class="rounded bg-fuchsia-600 px-1 text-[9px] font-black text-white">GTA 6</span> }
-                      {{ b.cliente }}
                     </p>
-                    <p class="truncate opacity-80">{{ b.empiezaAntes ? '↑ ' : '' }}{{ hora(b.inicio) }} – {{ hora(b.fin) }}{{ b.terminaDespues ? ' ↓' : '' }}</p>
-                    @if (b.alto > 44) { <p class="truncate opacity-70">{{ b.plan }}</p> }
+                    @if (b.alto > 30) {
+                      <p class="truncate opacity-80">{{ b.empiezaAntes ? '↑' : '' }}{{ horaCompacta(b.inicio) }}–{{ horaCompacta(b.fin) }}{{ b.terminaDespues ? '↓' : '' }}</p>
+                    }
+                    @if (b.alto > 46) { <p class="truncate opacity-70">{{ b.cliente }}</p> }
                   </button>
                 }
-              </div>
-            }
-
-            <!-- Línea de "ahora" -->
-            @if (lineaAhora() !== null) {
-              <div class="pointer-events-none absolute left-14 right-0 z-10" [style.top.px]="lineaAhora()">
-                <div class="relative h-0.5 bg-red-500">
-                  <span class="absolute -left-1.5 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"></span>
-                </div>
+                @if (d.esHoy && lineaAhora() !== null) {
+                  <div class="pointer-events-none absolute inset-x-0 z-10" [style.top.px]="lineaAhora()">
+                    <div class="relative h-0.5 bg-red-500"><span class="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"></span></div>
+                  </div>
+                }
               </div>
             }
           </div>
         </div>
       </div>
 
-      @if (!columnas().length) {
-        <p class="p-4 text-sm text-slate-500">No hay consolas de alquiler activas.</p>
-      } @else if (!bloques().length) {
-        <p class="border-t border-slate-100 p-3 text-center text-sm text-slate-500">Sin alquileres ni reservas este día.</p>
+      @if (!totalBloques()) {
+        <p class="border-t border-slate-100 p-3 text-center text-sm text-slate-500">Sin alquileres ni reservas esta semana.</p>
       }
     </div>
+
+    <!-- Tooltip al pasar el mouse -->
+    @if (tooltip(); as t) {
+      <div class="pointer-events-none fixed z-50 w-64 rounded-xl bg-slate-900 p-3 text-xs text-white shadow-2xl"
+        [style.left.px]="t.x" [style.top.px]="t.y">
+        <ng-container *ngTemplateOutlet="ficha; context: { $implicit: t.evento, oscuro: true }" />
+      </div>
+    }
+
+    <ng-template #ficha let-e let-oscuro="oscuro">
+      <p class="font-bold" [class.text-slate-900]="!oscuro">
+        @if (e.gta6) { <span class="mr-1 rounded bg-fuchsia-600 px-1.5 py-0.5 text-[10px] font-black text-white">GTA 6</span> }
+        🎮 {{ nombreConsola(e.consolaId) }}
+      </p>
+      <p [class.text-slate-700]="!oscuro">{{ textoTipo(e.tipo) }} · {{ e.plan }}</p>
+      <p [class.text-slate-700]="!oscuro">👤 {{ e.cliente }}{{ e.telefono ? ' · ' + e.telefono : '' }}</p>
+      <p [class.text-slate-700]="!oscuro">🚚 {{ diaHora(e.inicio) }} → {{ diaHora(e.fin) }}</p>
+      @if (e.direccion) { <p [class.text-slate-600]="!oscuro">📍 {{ e.direccion }}</p> }
+      @if (e.precio != null) { <p class="font-semibold" [class.text-slate-900]="!oscuro">{{ e.precio | number: '1.0-0' }} COP</p> }
+    </ng-template>
   `,
 })
 export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
@@ -203,59 +277,52 @@ export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
 
   readonly pxHora = PX_HORA;
   readonly horas = Array.from({ length: 24 }, (_, i) => i);
-  readonly dia = signal(fechaColombia());
+  /** Lunes de la semana que se ve. */
+  readonly lunes = signal(lunesDe(fechaColombia()));
   readonly alquileres = signal<Alquiler[]>([]);
   readonly elegido = signal<EventoCalendario | null>(null);
+  readonly tooltip = signal<{ evento: EventoCalendario; x: number; y: number } | null>(null);
   private readonly ahora = signal(Date.now());
   private readonly scroll = viewChild<ElementRef<HTMLDivElement>>('scroll');
   private timer?: ReturnType<typeof setInterval>;
   readonly hora = hora;
-  readonly fechaColombia = fechaColombia;
+  readonly horaCompacta = horaCompacta;
 
-  readonly columnas = computed(() =>
-    this.consolas()
-      .filter((c) => c.activo)
-      .sort((a, b) => a.tipo.localeCompare(b.tipo) || a.nombre.localeCompare(b.nombre, 'es', { numeric: true })),
-  );
-  private readonly inicioDia = computed(() => new Date(inicioDiaColombia(this.dia())).getTime());
-  private readonly finDia = computed(() => this.inicioDia() + 24 * 3_600_000);
+  private readonly eventos = computed(() => eventosCalendario(this.alquileres(), this.reservas()));
 
-  readonly bloques = computed<Bloque[]>(() => {
-    const desde = this.inicioDia();
-    const hasta = this.finDia();
-    return eventosCalendario(this.alquileres(), this.reservas())
-      .filter((e) => e.inicio < hasta && e.fin > desde)
-      .map((e) => {
-        const ini = Math.max(e.inicio, desde);
-        const fin = Math.min(e.fin, hasta);
-        return {
-          ...e,
-          top: ((ini - desde) / 3_600_000) * PX_HORA,
-          alto: Math.max(24, ((fin - ini) / 3_600_000) * PX_HORA - 2),
-          empiezaAntes: e.inicio < desde,
-          terminaDespues: e.fin > hasta,
-        };
-      });
+  readonly dias = computed<DiaSemana[]>(() => {
+    const hoy = fechaColombia(new Date(this.ahora()));
+    const eventos = this.eventos();
+    return Array.from({ length: 7 }, (_, i) => {
+      const fecha = sumarDias(this.lunes(), i);
+      const desde = new Date(inicioDiaColombia(fecha)).getTime();
+      const nombre = new Date(`${fecha}T12:00:00-05:00`).toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, weekday: 'short' });
+      return { fecha, numero: Number(fecha.slice(8, 10)), nombre: nombre.replace('.', ''), esHoy: fecha === hoy, desde, bloques: bloquesDelDia(eventos, desde) };
+    });
   });
 
-  readonly titulo = computed(() =>
-    new Date(`${this.dia()}T12:00:00-05:00`).toLocaleDateString('es-CO', {
-      timeZone: ZONA_HORARIA,
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    }),
-  );
+  readonly totalBloques = computed(() => this.dias().reduce((t, d) => t + d.bloques.length, 0));
 
+  readonly tituloSemana = computed(() => {
+    const ini = new Date(`${this.lunes()}T12:00:00-05:00`);
+    const fin = new Date(`${sumarDias(this.lunes(), 6)}T12:00:00-05:00`);
+    const mes = (d: Date) => d.toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, month: 'long' });
+    const anio = fin.toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, year: 'numeric' });
+    return mes(ini) === mes(fin)
+      ? `${ini.getUTCDate()} – ${fin.getUTCDate()} de ${mes(fin)} de ${anio}`
+      : `${ini.getUTCDate()} de ${mes(ini)} – ${fin.getUTCDate()} de ${mes(fin)} de ${anio}`;
+  });
+
+  /** Posición de la línea roja de "ahora" en la columna de hoy. */
   readonly lineaAhora = computed(() => {
-    const t = this.ahora();
-    return t >= this.inicioDia() && t < this.finDia() ? ((t - this.inicioDia()) / 3_600_000) * PX_HORA : null;
+    const hoy = this.dias().find((d) => d.esHoy);
+    return hoy ? ((this.ahora() - hoy.desde) / MS_HORA) * PX_HORA : null;
   });
 
   constructor(private readonly alquiler: AlquilerService) {
-    // Recarga los alquileres al cambiar de día.
+    // Recarga los alquileres al cambiar de semana.
     effect(() => {
-      this.dia();
+      this.lunes();
       this.cargar();
     });
   }
@@ -272,26 +339,26 @@ export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
     clearInterval(this.timer);
   }
 
-  /** Alquileres que tocan el día: los que empezaron hasta 3 días antes (cubre 24 h y la noche). */
+  /** Alquileres que tocan la semana: los que empezaron hasta 3 días antes del lunes. */
   async cargar(): Promise<void> {
-    const dia = this.dia();
+    const lunes = this.lunes();
     try {
-      const lista = await this.alquiler.historial(inicioDiaColombia(sumarDias(dia, -3)), finDiaColombia(dia));
-      if (dia === this.dia()) this.alquileres.set(lista);
+      const lista = await this.alquiler.historial(inicioDiaColombia(sumarDias(lunes, -3)), finDiaColombia(sumarDias(lunes, 6)));
+      if (lunes === this.lunes()) this.alquileres.set(lista);
     } catch {
       /* sin conexión: se intenta en la próxima actualización */
     }
   }
 
-  irA(fecha: string): void {
-    if (!fecha) return;
+  irAHoy(): void {
     this.elegido.set(null);
-    this.dia.set(fecha);
-    if (fecha === fechaColombia()) setTimeout(() => this.irAHoraActual());
+    this.lunes.set(lunesDe(fechaColombia()));
+    setTimeout(() => this.irAHoraActual());
   }
 
   mover(dias: number): void {
-    this.irA(sumarDias(this.dia(), dias));
+    this.elegido.set(null);
+    this.lunes.set(sumarDias(this.lunes(), dias));
   }
 
   /** Deja a la vista una hora antes de la actual. */
@@ -301,8 +368,20 @@ export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
     if (el && linea !== null) el.scrollTop = Math.max(0, linea - PX_HORA);
   }
 
-  bloquesDe(consolaId: number): Bloque[] {
-    return this.bloques().filter((b) => b.consolaId === consolaId);
+  mostrarTooltip(e: EventoCalendario, ev: MouseEvent): void {
+    this.tooltip.set({ evento: e, ...this.posicion(ev) });
+  }
+
+  moverTooltip(ev: MouseEvent): void {
+    const t = this.tooltip();
+    if (t) this.tooltip.set({ ...t, ...this.posicion(ev) });
+  }
+
+  /** Al lado del puntero, sin salirse de la pantalla. */
+  private posicion(ev: MouseEvent): { x: number; y: number } {
+    const x = ev.clientX + 16 + 256 > window.innerWidth ? ev.clientX - 16 - 256 : ev.clientX + 16;
+    const y = Math.min(ev.clientY + 12, window.innerHeight - 170);
+    return { x: Math.max(8, x), y: Math.max(8, y) };
   }
 
   nombreConsola(id: number): string {
@@ -311,13 +390,11 @@ export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
 
   etiquetaHora(h: number): string {
     if (h === 0) return '';
-    const sufijo = h < 12 ? 'a. m.' : 'p. m.';
-    return `${h % 12 === 0 ? 12 : h % 12} ${sufijo}`;
+    return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'a. m.' : 'p. m.'}`;
   }
 
   diaHora(ms: number): string {
-    const d = new Date(ms);
-    const fecha = d.toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, weekday: 'short', day: 'numeric', month: 'short' });
+    const fecha = new Date(ms).toLocaleDateString('es-CO', { timeZone: ZONA_HORARIA, weekday: 'short', day: 'numeric', month: 'short' });
     return `${fecha} ${hora(ms)}`;
   }
 
@@ -326,14 +403,14 @@ export class CalendarioAlquiler implements OnInit, AfterViewInit, OnDestroy {
   }
 
   claseBloque(b: Bloque): string {
-    const base = 'absolute left-1 right-1 overflow-hidden rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ';
+    const base = 'absolute flex flex-col justify-start overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ';
     return (
       base +
       {
         activo: 'border-sky-600 bg-sky-100 text-sky-950',
         devuelto: 'border-slate-400 bg-slate-100 text-slate-600',
         confirmada: 'border-emerald-600 bg-emerald-100 text-emerald-950',
-        pendiente: 'border-amber-500 bg-amber-50 text-amber-950 border-dashed ring-1 ring-amber-300',
+        pendiente: 'border-amber-500 bg-amber-50 text-amber-950 ring-1 ring-amber-300',
       }[b.tipo]
     );
   }
