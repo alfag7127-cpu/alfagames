@@ -1,3 +1,4 @@
+import { finPlan, recogidaNocturna } from '../gta6/gta6-util';
 import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -593,6 +594,39 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   /** Lo que se cobra por la extensión: sugerido del plan o precio a mano. */
+  /** Fin del alquiler que se va a entregar (plan elegido, desde ahora o la hora real de entrega). */
+  private finAlquiler(c: ConsolaVM): number | null {
+    const t = this.tarifas().find((x) => x.id === c.tarifaId);
+    if (!t) return null;
+    const inicio = c.horaManual && c.horaInicio ? new Date(deHoraLocal(c.horaInicio)).getTime() : this.ahora();
+    return finPlan(inicio, t, this.config()?.noche_hasta ?? '09:00:00');
+  }
+
+  /** Nuevo fin si se extiende: plan desde la devolución pactada, u horas sueltas. */
+  private finExtension(c: ConsolaVM): number | null {
+    if (!c.fin_pactado) return null;
+    const base = new Date(c.fin_pactado).getTime();
+    const t = this.tarifas().find((x) => x.id === c.extTarifaId);
+    if (t) return finPlan(base, t, this.config()?.noche_hasta ?? '09:00:00');
+    return c.extHoras && c.extHoras > 0 ? base + c.extHoras * 3_600_000 : null;
+  }
+
+  /** Regla general de logística: no se recoge entre noche_desde (7 p. m.) y noche_hasta (9 a. m.). */
+  avisoNocturno(fin: number | null): string | null {
+    const cfg = this.config();
+    if (fin == null || !recogidaNocturna(fin, cfg?.noche_desde ?? '19:00:00', cfg?.noche_hasta ?? '09:00:00')) return null;
+    const h = new Date(fin).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' });
+    return `Terminaría a las ${h}: por logística no recogemos consolas entre las 7 p. m. y las 9 a. m.; usa el plan La noche u otra hora.`;
+  }
+
+  avisoNocturnoAlquiler(c: ConsolaVM): string | null {
+    return this.avisoNocturno(this.finAlquiler(c));
+  }
+
+  avisoNocturnoExtension(c: ConsolaVM): string | null {
+    return this.avisoNocturno(this.finExtension(c));
+  }
+
   totalExtension(c: ConsolaVM): number {
     return c.extCambiarPrecio || !c.extTarifaId ? (c.extPrecio ?? 0) : (this.precioSugeridoExtension(c) ?? 0);
   }

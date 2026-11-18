@@ -252,8 +252,11 @@
 
               <app-pago-potes [total]="totalAlquiler(c)" [nombre]="'alq-' + c.id" [(modo)]="c.pagoModo" [(montoLlave)]="c.pagoLlave" />
 
+              @if (avisoNocturnoAlquiler(c); as aviso) {
+                <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-300">🌙 {{ aviso }}</p>
+              }
               <div class="flex gap-2">
-                <button (click)="alquilar(c)" [disabled]="c.procesando"
+                <button (click)="alquilar(c)" [disabled]="c.procesando || !!avisoNocturnoAlquiler(c)"
                   class="flex-1 rounded-lg bg-emerald-600 text-white text-sm font-medium py-2 hover:bg-emerald-700 disabled:opacity-50">
                   {{ c.procesando ? 'Guardando...' : 'Entregar y cobrar' }}
                 </button>
@@ -354,8 +357,11 @@
 
               <app-pago-potes [total]="totalExtension(c)" [nombre]="'ext-' + c.id" [(modo)]="c.extPagoModo" [(montoLlave)]="c.extPagoLlave" />
 
+              @if (avisoNocturnoExtension(c); as aviso) {
+                <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-300">🌙 {{ aviso }}</p>
+              }
               <div class="flex gap-2">
-                <button (click)="extender(c)" [disabled]="c.procesando"
+                <button (click)="extender(c)" [disabled]="c.procesando || !!avisoNocturnoExtension(c)"
                   class="flex-1 rounded-lg bg-indigo-600 text-white text-sm font-medium py-2 hover:bg-indigo-700 disabled:opacity-50">
                   {{ c.procesando ? 'Guardando...' : 'Registrar pago y extender' }}
                 </button>
