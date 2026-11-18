@@ -168,7 +168,7 @@ function deHoraLocal(valor: string): string {
 export class AlquilerPage implements OnInit, OnDestroy {
   readonly pestana = signal<Pestana>('consolas');
   /** Vista con la que abre la pestaña Reservas (objeto nuevo en cada pedido para que se aplique otra vez). */
-  readonly reservasVer = signal<{ vista: 'lista' | 'atender' }>({ vista: 'lista' });
+  readonly reservasVer = signal<{ vista: 'calendario' | 'lista' | 'atender' }>({ vista: 'calendario' });
   private querySub?: { unsubscribe(): void };
   /** Menú de secciones: íconos grandes (el texto va en el title y aria-label). */
   readonly pestanas: { id: Pestana; icono: string; texto: string; soloAlquiler?: boolean }[] = [

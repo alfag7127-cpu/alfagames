@@ -1,4 +1,5 @@
 import { ReservasRealizadas } from '../../shared/reservas-realizadas';
+import { CalendarioAlquiler } from './calendario-alquiler';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, effect, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -11,7 +12,7 @@ import { ToastService } from '../../core/toast.service';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { diaYHora, mensajeError } from '../gta6/gta6-util';
 
-type Filtro = 'atender' | 'todas' | 'lista';
+type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
 
 /**
  * Pestaña Reservas del alquiler: reservas de PS4/PS5 a domicilio hechas desde /alquilar.
@@ -20,7 +21,7 @@ type Filtro = 'atender' | 'todas' | 'lista';
  */
 @Component({
   selector: 'app-reservas-alquiler',
-  imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas],
+  imports: [FormsModule, DecimalPipe, PagoPotes, ReservasRealizadas, CalendarioAlquiler],
   template: `
     <div class="mb-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
       <p class="text-xs font-medium text-slate-500">Enlace para que los clientes reserven su PS4 o PS5 (WhatsApp, redes)</p>
@@ -41,7 +42,9 @@ type Filtro = 'atender' | 'todas' | 'lista';
       }
     </div>
 
-    @if (filtro() === 'lista') {
+    @if (filtro() === 'calendario') {
+      <app-calendario-alquiler [consolas]="consolas()" [reservas]="reservas()" />
+    } @else if (filtro() === 'lista') {
       <app-reservas-realizadas negocio="domicilio" />
     } @else {
     <div class="space-y-2">
@@ -143,10 +146,11 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
   readonly reservas = signal<ReservaAlquiler[]>([]);
   readonly consolas = signal<ConsolaConEstado[]>([]);
   /** Vista pedida por la página (aviso de reserva nueva → Por atender). */
-  readonly ver = input<{ vista: 'lista' | 'atender' }>({ vista: 'lista' });
-  /** Abre en la lista numerada de alquileres entregados hoy. */
-  readonly filtro = signal<Filtro>('lista');
+  readonly ver = input<{ vista: 'calendario' | 'lista' | 'atender' }>({ vista: 'calendario' });
+  /** Abre en el calendario del día (consolas alquiladas y reservas, tipo Teams). */
+  readonly filtro = signal<Filtro>('calendario');
   readonly filtros: { id: Filtro; texto: string }[] = [
+    { id: 'calendario', texto: '🗓️ Calendario' },
     { id: 'lista', texto: '📋 Entregados' },
     { id: 'atender', texto: 'Por atender' },
     { id: 'todas', texto: 'Todas' },

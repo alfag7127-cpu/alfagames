@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Gta6Publico, Gta6Service, PlanGta6, ReservaGta6Creada } from '../../core/gta6.service';
 import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
 import { Gta6Hero } from './gta6-hero';
+import { NotaTransferencia } from '../../shared/nota-transferencia';
+import { sumarDias } from '../../core/zona-horaria';
 import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from './gta6-util';
 
 type Paso = 'plan' | 'datos' | 'pago' | 'listo';
@@ -15,7 +17,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
  */
 @Component({
   selector: 'app-gta6-domicilio-publica',
-  imports: [FormsModule, DecimalPipe, Gta6Hero],
+  imports: [FormsModule, DecimalPipe, Gta6Hero, NotaTransferencia],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <app-gta6-hero titulo="PS5 con GTA 6 a domicilio" subtitulo="Te llevamos la PS5 con GTA 6 a tu casa. Reserva desde ya y paga por adelantado." [lanzamiento]="estado()?.lanzamiento ?? null" />
@@ -37,7 +39,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                   <p class="mb-2 text-sm font-semibold text-pink-200">1. Elige el plan</p>
                   <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     @for (p of estado()!.alquiler_planes; track p.id) {
-                      <button type="button" (click)="plan.set(p)"
+                      <button type="button" (click)="elegirPlan(p)"
                         class="rounded-xl px-2 py-3 text-sm font-semibold ring-1 transition-colors"
                         [class.bg-pink-500]="plan()?.id === p.id" [class.text-slate-950]="plan()?.id === p.id" [class.ring-pink-500]="plan()?.id === p.id"
                         [class.bg-white/5]="plan()?.id !== p.id" [class.ring-white/15]="plan()?.id !== p.id">
@@ -46,16 +48,26 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                       </button>
                     }
                   </div>
-                  @if (plan()?.es_noche) {
-                    <p class="mt-2 text-xs text-slate-400">La noche: entrega desde las {{ horaCorta(estado()!.noche_desde) }} y la recogemos a las {{ horaCorta(estado()!.noche_hasta) }}.</p>
-                  }
                 </div>
-                <label class="block text-sm">
-                  <span class="font-semibold text-pink-200">2. Día y hora de entrega</span>
-                  <input type="datetime-local" [ngModel]="inicio()" (ngModelChange)="inicio.set($event)" name="inicio"
-                    [min]="minimo()" [max]="maximo()"
-                    class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
-                </label>
+                @if (plan()?.es_noche) {
+                  <label class="block text-sm">
+                    <span class="font-semibold text-pink-200">2. ¿Qué noche?</span>
+                    <input type="date" [ngModel]="inicio().slice(0, 10)" (ngModelChange)="elegirNoche($event)" name="noche"
+                      [min]="minimo().slice(0, 10)" [max]="maximo().slice(0, 10)"
+                      class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+                    <span class="mt-1 block text-xs text-slate-300">
+                      Horario fijo: entrega a las {{ horaCorta(estado()!.noche_desde) }} y recogida a las {{ horaCorta(estado()!.noche_hasta) }} del día siguiente.
+                    </span>
+                  </label>
+                } @else {
+                  <label class="block text-sm">
+                    <span class="font-semibold text-pink-200">2. Día y hora de entrega</span>
+                    <input type="datetime-local" [ngModel]="inicio()" (ngModelChange)="inicio.set($event)" name="inicio"
+                      [min]="minimo()" [max]="maximo()"
+                      class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+                    <span class="mt-1 block text-xs text-slate-300">El tiempo del plan cuenta desde esta hora.</span>
+                  </label>
+                }
                 @if (plan() && inicio()) {
                   <div class="rounded-xl p-3 text-sm ring-1"
                     [class.bg-emerald-500/15]="libres() > 0" [class.ring-emerald-400/40]="libres() > 0"
@@ -69,6 +81,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                     <p class="mt-1 text-lg font-black">Total: {{ plan()!.precio | number: '1.0-0' }} COP</p>
                   </div>
                 }
+                <app-nota-transferencia />
                 <button type="button" (click)="aDatos()" class="w-full rounded-xl bg-gradient-to-r from-pink-500 to-orange-400 py-2.5 text-sm font-black text-slate-950 hover:brightness-110">Continuar</button>
               </section>
             }
@@ -97,6 +110,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
               </label>
+              <app-nota-transferencia />
               <div class="flex gap-2">
                 <button type="button" (click)="paso.set('plan')" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
                 <button type="button" (click)="reservar()" [disabled]="enviando()"
@@ -201,6 +215,21 @@ export class Gta6DomicilioPublica implements OnInit {
 
   textoPlan(p: PlanGta6): string {
     return p.nombre.replace(/^GTA 6 · /, '');
+  }
+
+  /** La noche tiene horario fijo: entrega a noche_desde (7 p. m.) del día elegido. */
+  elegirPlan(p: PlanGta6): void {
+    this.plan.set(p);
+    if (p.es_noche) this.elegirNoche(this.inicio().slice(0, 10) || aHoraLocal(this.desdeMs()).slice(0, 10));
+  }
+
+  elegirNoche(fecha: string): void {
+    if (!fecha) return;
+    const desde = (this.estado()?.noche_desde ?? '19:00:00').slice(0, 5);
+    let valor = `${fecha}T${desde}`;
+    // Si esa noche ya empezó (o es antes del lanzamiento), pasa a la siguiente.
+    while (deHoraLocal(valor) < Math.max(Date.now(), this.desdeMs())) valor = `${sumarDias(valor.slice(0, 10), 1)}T${desde}`;
+    this.inicio.set(valor);
   }
 
   horaCorta(t: string): string {

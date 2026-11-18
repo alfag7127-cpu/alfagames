@@ -7355,3 +7355,27 @@ create policy "caja_cambios_delete" on public.caja_cambios
   );
 
 grant select, insert, delete on public.caja_cambios to authenticated;
+
+-- ============================================================
+-- 44. ALQUILER A DOMICILIO SOLO POR TRANSFERENCIA (2026-11-17)
+-- ============================================================
+-- Regla del dueño: las reservas de alquiler (/alquilar y /gta6-domicilio) solo se pagan por
+-- transferencia (QR). El trigger rechaza reservas nuevas con forma_pago efectivo.
+
+create or replace function private.reserva_alquiler_solo_transferencia()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.forma_pago = 'efectivo' then
+    raise exception 'Para el alquiler solo recibimos pagos por transferencia (QR). Actualiza la página e intenta de nuevo.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists reservas_alquiler_solo_transferencia on public.reservas_alquiler;
+create trigger reservas_alquiler_solo_transferencia
+  before insert on public.reservas_alquiler
+  for each row execute function private.reserva_alquiler_solo_transferencia();

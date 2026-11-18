@@ -1,6 +1,8 @@
+import { NotaTransferencia } from '../../shared/nota-transferencia';
 import { VolverServicios } from '../../shared/volver-servicios';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
+import { fechaColombia, sumarDias } from '../../core/zona-horaria';
 import { FormsModule } from '@angular/forms';
 import { PlanGta6 } from '../../core/gta6.service';
 import { AlquilerPublico, FormaPagoReserva, ReservaAlquilerCreada, ReservasAlquilerService } from '../../core/reservas-alquiler.service';
@@ -12,11 +14,11 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
 
 /**
  * Página pública /alquilar: el cliente reserva una PS4 o PS5 a domicilio con los planes del alquiler.
- * Paga con el QR (el local confirma el pago) o en efectivo al recibir la consola.
+ * Paga por transferencia con el QR (el local confirma el pago); no se recibe efectivo.
  */
 @Component({
   selector: 'app-alquilar',
-  imports: [FormsModule, DecimalPipe, VolverServicios],
+  imports: [FormsModule, DecimalPipe, VolverServicios, NotaTransferencia],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-br from-slate-950 via-slate-900 to-lime-900 px-4 py-5 shadow-lg">
@@ -61,7 +63,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                   <p class="mb-2 text-sm font-semibold text-lime-200">2. Elige el plan</p>
                   <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     @for (p of planesTipo(); track p.id) {
-                      <button type="button" (click)="plan.set(p)"
+                      <button type="button" (click)="elegirPlan(p)"
                         class="rounded-xl px-2 py-3 text-sm font-semibold ring-1 transition-colors"
                         [class.bg-lime-400]="plan()?.id === p.id" [class.text-slate-950]="plan()?.id === p.id" [class.ring-lime-400]="plan()?.id === p.id"
                         [class.bg-white/5]="plan()?.id !== p.id" [class.ring-white/15]="plan()?.id !== p.id">
@@ -70,16 +72,26 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                       </button>
                     }
                   </div>
-                  @if (plan()?.es_noche) {
-                    <p class="mt-2 text-xs text-slate-400">La noche: la recogemos a las {{ horaCorta(estado()!.noche_hasta) }}.</p>
-                  }
                 </div>
-                <label class="block text-sm">
-                  <span class="font-semibold text-lime-200">3. Día y hora de entrega</span>
-                  <input type="datetime-local" [ngModel]="inicio()" (ngModelChange)="inicio.set($event)" name="inicio"
-                    [min]="minimo()" [max]="maximo()"
-                    class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
-                </label>
+                @if (plan()?.es_noche) {
+                  <label class="block text-sm">
+                    <span class="font-semibold text-lime-200">3. ¿Qué noche?</span>
+                    <input type="date" [ngModel]="inicio().slice(0, 10)" (ngModelChange)="elegirNoche($event)" name="noche"
+                      [min]="minimo().slice(0, 10)" [max]="maximo().slice(0, 10)"
+                      class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+                    <span class="mt-1 block text-xs text-slate-300">
+                      Horario fijo: entrega a las {{ horaCorta(estado()!.noche_desde) }} y recogida a las {{ horaCorta(estado()!.noche_hasta) }} del día siguiente.
+                    </span>
+                  </label>
+                } @else {
+                  <label class="block text-sm">
+                    <span class="font-semibold text-lime-200">3. Día y hora de entrega</span>
+                    <input type="datetime-local" [ngModel]="inicio()" (ngModelChange)="inicio.set($event)" name="inicio"
+                      [min]="minimo()" [max]="maximo()"
+                      class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900" />
+                    <span class="mt-1 block text-xs text-slate-300">El tiempo del plan cuenta desde esta hora.</span>
+                  </label>
+                }
                 @if (plan() && inicio()) {
                   <div class="rounded-xl p-3 text-sm ring-1"
                     [class.bg-emerald-500/15]="libres() > 0" [class.ring-emerald-400/40]="libres() > 0"
@@ -96,6 +108,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                     <p class="mt-1 text-lg font-black">Total: {{ plan()!.precio | number: '1.0-0' }} COP</p>
                   </div>
                 }
+                <app-nota-transferencia />
                 <button type="button" (click)="aDatos()" class="w-full rounded-xl bg-lime-400 py-2.5 text-sm font-black text-slate-950 hover:bg-lime-300">Continuar</button>
               </section>
             }
@@ -124,25 +137,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
               </label>
-              <div>
-                <p class="mb-2 text-sm font-semibold text-lime-200">¿Cómo vas a pagar?</p>
-                <div class="grid grid-cols-2 gap-2">
-                  <button type="button" (click)="formaPago.set('qr')"
-                    class="rounded-xl px-2 py-3 text-sm font-bold ring-1"
-                    [class.bg-lime-400]="formaPago() === 'qr'" [class.text-slate-950]="formaPago() === 'qr'" [class.ring-lime-400]="formaPago() === 'qr'"
-                    [class.bg-white/5]="formaPago() !== 'qr'" [class.ring-white/15]="formaPago() !== 'qr'">
-                    📱 QR ahora
-                    <span class="block text-[11px] font-normal opacity-80">Transferencia</span>
-                  </button>
-                  <button type="button" (click)="formaPago.set('efectivo')"
-                    class="rounded-xl px-2 py-3 text-sm font-bold ring-1"
-                    [class.bg-lime-400]="formaPago() === 'efectivo'" [class.text-slate-950]="formaPago() === 'efectivo'" [class.ring-lime-400]="formaPago() === 'efectivo'"
-                    [class.bg-white/5]="formaPago() !== 'efectivo'" [class.ring-white/15]="formaPago() !== 'efectivo'">
-                    💵 Efectivo
-                    <span class="block text-[11px] font-normal opacity-80">Al recibir la consola</span>
-                  </button>
-                </div>
-              </div>
+              <app-nota-transferencia />
               <div class="flex gap-2">
                 <button type="button" (click)="paso.set('plan')" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
                 <button type="button" (click)="reservar()" [disabled]="enviando()"
@@ -175,18 +170,13 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                 #{{ creada()?.id }} · {{ creada()?.tipo }} · {{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }} · recogida {{ diaYHora(creada()!.fin) }} · {{ creada()?.precio | number: '1.0-0' }} COP
               </p>
               <div class="space-y-2 rounded-xl bg-lime-500/10 p-4 text-sm text-lime-50 ring-1 ring-lime-400/40">
-                @if (creada()?.forma_pago === 'efectivo') {
-                  <p>💵 Pagas <b>{{ creada()?.precio | number: '1.0-0' }} en efectivo</b> cuando recibas la consola.</p>
-                  <p>Escríbenos por WhatsApp para confirmar tu reserva: queda confirmada cuando te respondamos.</p>
-                } @else {
-                  <p>Envía el comprobante por WhatsApp: tu reserva queda confirmada cuando verifiquemos el pago.</p>
-                }
-                <p>El tiempo del plan cuenta desde que recibes la consola.</p>
+                <p>Envía el comprobante por WhatsApp: tu reserva queda confirmada cuando verifiquemos la transferencia.</p>
+                <p>El tiempo del plan cuenta desde la hora de entrega acordada: {{ diaYHora(creada()!.inicio) }} hasta {{ diaYHora(creada()!.fin) }}.</p>
               </div>
               @if (enlaceWhatsapp()) {
                 <a [href]="enlaceWhatsapp()" target="_blank" rel="noopener"
                   class="block w-full rounded-xl bg-emerald-500 py-2.5 text-center text-sm font-bold text-slate-950 hover:bg-emerald-400">
-                  {{ creada()?.forma_pago === 'efectivo' ? 'Confirmar por WhatsApp' : 'Enviar comprobante por WhatsApp' }}
+                  Enviar comprobante por WhatsApp
                 </a>
               }
               <button type="button" (click)="reiniciar()" class="w-full rounded-xl bg-white/10 py-2.5 text-sm hover:bg-white/20">Hacer otra reserva</button>
@@ -204,7 +194,8 @@ export class Alquilar implements OnInit {
   readonly tipo = signal<TipoConsola>('PS4');
   readonly plan = signal<PlanGta6 | null>(null);
   readonly inicio = signal('');
-  readonly formaPago = signal<FormaPagoReserva | null>(null);
+  /** Solo transferencia (QR): la regla del local para el alquiler. */
+  readonly formaPago = signal<FormaPagoReserva | null>('qr');
   readonly enviando = signal(false);
   readonly creada = signal<ReservaAlquilerCreada | null>(null);
   nombre = '';
@@ -244,7 +235,7 @@ export class Alquilar implements OnInit {
   readonly enlaceWhatsapp = computed(() => {
     const c = this.creada();
     if (!c) return null;
-    const pago = c.forma_pago === 'efectivo' ? 'Pago en efectivo al recibir' : 'Envío el comprobante del pago';
+    const pago = 'Envío el comprobante de la transferencia';
     return enlaceWhatsapp(
       this.estado()?.whatsapp ?? null,
       `Hola, hice la reserva #${c.id} de ${c.tipo} a domicilio: ${c.plan}, entrega ${diaYHora(c.inicio)}, ` +
@@ -282,6 +273,21 @@ export class Alquilar implements OnInit {
     return l ? new Date(l).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', timeZone: 'America/Bogota' }) : 'lanzamiento de GTA 6';
   }
 
+  /** La noche tiene horario fijo: entrega a noche_desde (7 p. m.) del día elegido. */
+  elegirPlan(p: PlanGta6): void {
+    this.plan.set(p);
+    if (p.es_noche) this.elegirNoche(this.inicio().slice(0, 10) || fechaColombia());
+  }
+
+  elegirNoche(fecha: string): void {
+    if (!fecha) return;
+    const desde = (this.estado()?.noche_desde ?? '19:00:00').slice(0, 5);
+    let valor = `${fecha}T${desde}`;
+    // Si la noche de ese día ya empezó, pasa a la siguiente.
+    if (deHoraLocal(valor) < Date.now()) valor = `${sumarDias(fecha, 1)}T${desde}`;
+    this.inicio.set(valor);
+  }
+
   elegirTipo(t: TipoConsola): void {
     if (t === this.tipo()) return;
     this.tipo.set(t);
@@ -316,7 +322,7 @@ export class Alquilar implements OnInit {
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
     if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
     if (this.direccion.trim().length < 5) return this.error.set('Escribe la dirección de entrega.');
-    if (!forma) return this.error.set('Elige cómo vas a pagar: QR o efectivo.');
+    if (forma !== 'qr') return this.error.set('Para el alquiler solo recibimos pagos por transferencia (QR).');
     this.enviando.set(true);
     this.error.set(null);
     try {
@@ -343,7 +349,7 @@ export class Alquilar implements OnInit {
   reiniciar(): void {
     this.creada.set(null);
     this.plan.set(null);
-    this.formaPago.set(null);
+    this.formaPago.set('qr');
     this.paso.set('plan');
     this.cargar();
   }
