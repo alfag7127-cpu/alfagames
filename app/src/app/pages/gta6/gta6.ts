@@ -102,6 +102,12 @@ type Filtro = 'proximas' | 'todas';
                 @if (whatsapp(r.cliente_telefono, r.cliente_nombre); as w) {
                   <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">WhatsApp</a>
                 }
+                @if (r.estado === 'pendiente') {
+                  @if (whatsappSinPago(r.cliente_telefono, r.cliente_nombre, r.inicio); as w) {
+                    <!-- Aviso al cliente que dijo que pagaba y no llegó la transferencia; luego se cancela con "Cancelar". -->
+                    <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">📵 Avisar: pago no verificado</a>
+                  }
+                }
                 <button type="button" (click)="cancelarSala(r)" [disabled]="ocupado()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
               </div>
               @if (r.estado === 'confirmada') {
@@ -149,6 +155,10 @@ type Filtro = 'proximas' | 'todas';
                   <button type="button" (click)="abrirConfirmar(r)" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">✅ Confirmar pago</button>
                   @if (whatsapp(r.cliente_telefono, r.cliente_nombre); as w) {
                     <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">WhatsApp</a>
+                  }
+                  @if (whatsappSinPago(r.cliente_telefono, r.cliente_nombre, r.inicio); as w) {
+                    <!-- Aviso al cliente que dijo que pagaba y no llegó la transferencia; luego se cancela con "Cancelar". -->
+                    <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">📵 Avisar: pago no verificado</a>
                   }
                   <button type="button" (click)="cancelarDomicilio(r, true)" [disabled]="ocupado()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
                 </div>
@@ -433,6 +443,14 @@ export class Gta6Page implements OnInit, OnDestroy {
 
   whatsapp(tel: string | null, nombre: string): string | null {
     return enlaceWhatsapp(tel, `Hola ${nombre}, te escribimos de Alfa Games por tu reserva de GTA 6.`);
+  }
+
+  /** Mensaje para el cliente cuya transferencia nunca llegó; después se cancela con "Cancelar" para liberar el horario. */
+  whatsappSinPago(tel: string | null, nombre: string, inicio: string): string | null {
+    return enlaceWhatsapp(
+      tel,
+      `Hola ${nombre}, te escribimos de Alfa Games. Tu reserva de GTA 6 para el ${diaYHora(inicio)} ha sido cancelada porque no se pudo verificar el pago. Si ya pagaste, envíanos el comprobante por aquí.`,
+    );
   }
 
   private async accion(fn: () => Promise<void>, ok: string): Promise<boolean> {
