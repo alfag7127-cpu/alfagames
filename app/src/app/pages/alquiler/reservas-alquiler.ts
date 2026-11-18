@@ -91,6 +91,10 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
                 @if (whatsapp(r); as w) {
                   <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">WhatsApp</a>
                 }
+                @if (whatsappSinPago(r); as w) {
+                  <!-- Aviso al cliente que dijo que pagaba y no llegó la transferencia; luego se cancela con "Cancelar". -->
+                  <a [href]="w" target="_blank" rel="noopener" class="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">📵 Avisar: pago no verificado</a>
+                }
                 <button type="button" (click)="cancelar(r, true)" [disabled]="ocupado()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
               </div>
             }
@@ -240,6 +244,14 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
 
   whatsapp(r: ReservaAlquiler): string | null {
     return enlaceWhatsapp(r.cliente_telefono, `Hola ${r.cliente_nombre}, te escribimos de Alfa Games por tu reserva #${r.id} de ${r.alquiler_consolas?.tipo ?? 'consola'} a domicilio.`);
+  }
+
+  /** Mensaje para el cliente cuya transferencia nunca llegó; después se cancela con "Cancelar" para liberar la consola. */
+  whatsappSinPago(r: ReservaAlquiler): string | null {
+    return enlaceWhatsapp(
+      r.cliente_telefono,
+      `Hola ${r.cliente_nombre}, te escribimos de Alfa Games. Tu reserva #${r.id} de ${r.alquiler_consolas?.tipo ?? 'consola'} a domicilio para el ${diaYHora(r.inicio)} ha sido cancelada porque no se pudo verificar el pago. Si ya pagaste, envíanos el comprobante por aquí.`,
+    );
   }
 
   abrir(r: ReservaAlquiler, modo: ModoPago | null = null): void {
