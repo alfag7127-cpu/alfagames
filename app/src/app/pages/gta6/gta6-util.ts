@@ -63,7 +63,7 @@ export function mensajeError(e: unknown, porDefecto = 'No se pudo completar. Int
 /**
  * Por logística no se recogen consolas de noche: un plan por horas no puede terminar
  * después de `nocheDesde` ni antes de `nocheHasta` ("HH:MM:SS", hora de Colombia).
- * Igual que el trigger reservas_alquiler_sin_recogida_nocturna.
+ * Ya no se usa como regla (el dueño la quitó el 2026-11-19).
  */
 export function recogidaNocturna(finMs: number, nocheDesde: string, nocheHasta: string): boolean {
   const [h, m] = new Date(finMs).toLocaleTimeString('en-GB', { timeZone: ZONA_HORARIA, hour: '2-digit', minute: '2-digit' }).split(':').map(Number);

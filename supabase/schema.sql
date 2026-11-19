@@ -7513,3 +7513,26 @@ $$;
 
 revoke all on function public.editar_pago_reserva_alquiler(bigint, numeric, numeric, numeric) from public, anon;
 grant execute on function public.editar_pago_reserva_alquiler(bigint, numeric, numeric, numeric) to authenticated;
+
+-- =============================================================================
+-- 58. SE QUITA LA REGLA DE NO RECOGER DE NOCHE (2026-11-19)
+-- Pedido del dueño: el horario de la noche queda libre en todo el alquiler.
+-- Un plan por horas puede terminar a cualquier hora; La noche sigue como plan aparte.
+-- Deshace las secciones 45 y 46.
+-- =============================================================================
+
+-- Las funciones de los triggers quedan sin efecto (devuelven new); no se borran
+-- para no necesitar DROP en la migración.
+create or replace function private.reserva_alquiler_sin_recogida_nocturna()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  return new; -- regla quitada por el dueño (2026-11-19): el horario de noche queda libre
+end;
+$$;
+
+create or replace function private.alquiler_sin_recogida_nocturna()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  return new; -- regla quitada por el dueño (2026-11-19): el horario de noche queda libre
+end;
+$$;

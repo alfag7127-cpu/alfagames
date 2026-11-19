@@ -8,7 +8,7 @@ import { PlanGta6 } from '../../core/gta6.service';
 import { AlquilerPublico, FormaPagoReserva, ReservaAlquilerCreada, ReservasAlquilerService } from '../../core/reservas-alquiler.service';
 import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
 import { TipoConsola } from '../../core/models';
-import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError, recogidaNocturna } from '../gta6/gta6-util';
+import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from '../gta6/gta6-util';
 
 type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
 
@@ -100,20 +100,10 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                     @if (soloGta6()) {
                       <p class="font-semibold text-red-200">Desde el {{ fechaGta6() }} la {{ tipo() }} a domicilio es solo para GTA 6.</p>
                       <a href="/gta6-domicilio" class="mt-1 inline-block rounded-lg bg-fuchsia-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-400">Reservar {{ tipo() }} con GTA 6</a>
-                    } @else if (nocturna()) {
                     } @else if (libres() > 0) {
                       <p class="font-semibold text-emerald-200">✅ Hay {{ libres() }} {{ tipo() }} disponible{{ libres() > 1 ? 's' : '' }} para ese horario</p>
                     } @else {
                       <p class="font-semibold text-red-200">No quedan {{ tipo() }} para ese horario. Prueba otro día u hora.</p>
-                    }
-                    @if (nocturna()) {
-                      <div class="mt-2 rounded-lg bg-amber-400/15 p-2 text-amber-50 ring-1 ring-amber-400/60">
-                        <p class="font-bold text-amber-300">🌙 Este plan terminaría a las {{ hora(finMs()) }}</p>
-                        <p class="text-xs">Por logística de entrega y recogida no recogemos consolas entre las {{ horaCorta(estado()!.noche_desde) }} y las {{ horaCorta(estado()!.noche_hasta) }}; para jugar en la noche te sugerimos el plan <b>La noche</b> ({{ horaCorta(estado()!.noche_desde) }} a {{ horaCorta(estado()!.noche_hasta) }}).</p>
-                        @if (planNoche(); as pn) {
-                          <button type="button" (click)="elegirPlan(pn)" class="mt-2 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-black text-slate-950 hover:bg-amber-300">Cambiar a La noche · {{ pn.precio | number: '1.0-0' }}</button>
-                        }
-                      </div>
                     }
                     <p class="mt-1 text-lg font-black">Total: {{ plan()!.precio | number: '1.0-0' }} COP</p>
                   </div>
@@ -228,14 +218,6 @@ export class Alquilar implements OnInit {
       (t) => e.planes.some((p) => p.tipo === t) && e.consolas.some((c) => c.tipo === t),
     );
   });
-  /** Plan por horas que terminaría de noche (no se recoge entre noche_desde y noche_hasta). */
-  readonly nocturna = computed(() => {
-    const p = this.plan();
-    const e = this.estado();
-    return !!p && !!e && !p.es_noche && !!this.inicio() && recogidaNocturna(this.finMs(), e.noche_desde, e.noche_hasta);
-  });
-  /** El plan La noche del tipo elegido (para sugerirlo). */
-  readonly planNoche = computed(() => this.planesTipo().find((p) => p.es_noche) ?? null);
   readonly planesTipo = computed(() => (this.estado()?.planes ?? []).filter((p) => p.tipo === this.tipo()));
   /** Consolas del tipo elegido que sirven para ese horario: desde el lanzamiento, las de GTA 6 no. */
   private readonly consolasTipo = computed(() => {
@@ -326,7 +308,6 @@ export class Alquilar implements OnInit {
     if (!this.plan()) return this.error.set('Elige un plan.');
     if (!this.inicio()) return this.error.set('Elige el día y la hora de entrega.');
     if (this.inicioMs() < Date.now() - 60_000) return this.error.set('Esa hora ya pasó. Elige una hora desde ahora.');
-    if (this.nocturna()) return this.error.set(`Por logística no recogemos consolas de noche: este plan terminaría a las ${hora(this.finMs())}; elige el plan La noche u otra hora de entrega.`);
     if (this.soloGta6()) return this.error.set(`Desde el ${this.fechaGta6()} la ${this.tipo()} a domicilio es solo para GTA 6. Usa el enlace de GTA 6.`);
     if (this.libres() === 0) return this.error.set(`No quedan ${this.tipo()} para ese horario. Prueba otro día u hora.`);
     this.error.set(null);
