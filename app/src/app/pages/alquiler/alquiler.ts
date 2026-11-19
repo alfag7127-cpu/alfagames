@@ -359,8 +359,11 @@ export class AlquilerPage implements OnInit, OnDestroy {
 
   // ── Alquilar ──
 
-  tarifasDe(tipo: TipoConsola): AlquilerTarifa[] {
-    return this.tarifas().filter((t) => t.tipo === tipo && t.activo && !t.gta6);
+  /** Planes de la consola: en una PS5 con GTA 6 salen primero los planes GTA 6 (para registrar a mano, también con hora pasada). */
+  tarifasDe(c: { id: number; tipo: TipoConsola }): AlquilerTarifa[] {
+    const gta6 = this.gta6Ids().has(c.id);
+    const planes = this.tarifas().filter((t) => t.tipo === c.tipo && t.activo && (!t.gta6 || gta6));
+    return [...planes.filter((t) => t.gta6), ...planes.filter((t) => !t.gta6)];
   }
 
   private actualizar(id: number, cambios: Partial<ConsolaVM>): void {
@@ -368,7 +371,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
   }
 
   abrirFormulario(c: ConsolaVM): void {
-    this.actualizar(c.id, { ...FORM_VACIO, formAbierto: true, tarifaId: this.tarifasDe(c.tipo)[0]?.id ?? null });
+    this.actualizar(c.id, { ...FORM_VACIO, formAbierto: true, tarifaId: this.tarifasDe(c)[0]?.id ?? null });
   }
 
   cerrarFormularios(c: ConsolaVM): void {
@@ -552,7 +555,7 @@ export class AlquilerPage implements OnInit, OnDestroy {
       extenderAbierto: true,
       devolverAbierto: false,
       editarAbierto: false,
-      extTarifaId: this.tarifasDe(c.tipo)[0]?.id ?? null,
+      extTarifaId: this.tarifasDe(c)[0]?.id ?? null,
       extHoras: null,
       extCambiarPrecio: false,
       extPrecio: null,
