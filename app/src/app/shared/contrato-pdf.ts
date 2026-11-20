@@ -71,7 +71,7 @@ export async function generarContratoPdf(
   enLinea = false,
 ): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
   const a = d.alquiler;
   const M = 18; // margen
   const ANCHO = 210 - M * 2;
@@ -122,7 +122,7 @@ export async function generarContratoPdf(
   campo('ARRENDADOR:', `${d.arrendadorNombre ?? ''} (ALFA GAMES)    |    C.C.: ${d.arrendadorCedula ?? ''}`);
   campo('CLIENTE / ARRENDATARIO:', a.cliente_nombre);
   campo('C.C. Nº:', `${a.cliente_cedula ?? ''}        TELÉFONO: ${a.cliente_telefono ?? ''}`);
-  campo('DIRECCIÓN DE ENTREGA:', a.cliente_direccion ?? '');
+  campo('DIRECCIÓN DE ENTREGA:', (a.cliente_direccion ?? '').replace(/\s*\n\s*/g, ', '));
 
   titulo('2. DETALLE DEL EQUIPO Y TIEMPOS');
   const tipo = d.consola?.tipo ?? '';
@@ -153,8 +153,16 @@ export async function generarContratoPdf(
   const ancho = 72;
   const xIzq = M + 2;
   const xDer = 210 - M - ancho - 2;
-  if (firmaArrendador) pdf.addImage(firmaArrendador, 'PNG', xIzq, y, ancho, alto);
-  pdf.addImage(firmaCliente, 'PNG', xDer, y, ancho, alto);
+  // La firma conserva su forma: se ajusta dentro del recuadro, apoyada sobre la línea.
+  const firma = (img: string, x: number) => {
+    const p = pdf.getImageProperties(img);
+    const k = Math.min(ancho / p.width, alto / p.height);
+    const w = p.width * k;
+    const h = p.height * k;
+    pdf.addImage(img, 'PNG', x + (ancho - w) / 2, y + alto - h, w, h, undefined, 'FAST');
+  };
+  if (firmaArrendador) firma(firmaArrendador, xIzq);
+  firma(firmaCliente, xDer);
   y += alto + 1;
   pdf.line(xIzq, y, xIzq + ancho, y);
   pdf.line(xDer, y, xDer + ancho, y);

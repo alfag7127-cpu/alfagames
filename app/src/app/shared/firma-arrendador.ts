@@ -45,9 +45,17 @@ import { FirmaPad } from './firma-pad';
             <button type="button" (click)="cambiandoFirma.set(false)" class="rounded-lg px-4 py-2 text-sm text-slate-600 ring-1 ring-slate-300">Cancelar</button>
           </div>
         } @else {
-          <button type="button" (click)="cambiandoFirma.set(true)" class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900">
-            ✍️ {{ firma() ? 'Cambiar mi firma' : 'Dibujar mi firma' }}
-          </button>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" (click)="cambiandoFirma.set(true)" class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900">
+              ✍️ {{ firma() ? 'Cambiar mi firma' : 'Dibujar mi firma' }}
+            </button>
+            <!-- Pedido del dueño: subir la foto de su firma en papel (PNG con fondo transparente o blanco). -->
+            <label class="cursor-pointer rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50" [class.opacity-50]="ocupado()">
+              📷 Subir foto de mi firma
+              <input type="file" accept="image/png" class="hidden" [disabled]="ocupado()" (change)="subirFoto($event)" />
+            </label>
+          </div>
+          <p class="text-xs text-slate-500">La foto debe ser PNG, solo con el trazo de la firma (sin nombre ni cédula).</p>
         }
       } @else {
         <p class="text-xs text-slate-500">🔒 Solo el dueño puede cambiar la firma y los datos del arrendador.</p>
@@ -104,6 +112,25 @@ export class FirmaArrendador implements OnInit {
       await this.alquiler.guardarFirmaArrendador(png);
       this.firma.set(url);
       this.cambiandoFirma.set(false);
+      this.toast.exito('Tu firma quedó guardada. Saldrá en todos los contratos.');
+    } catch (e) {
+      this.toast.error(this.mensaje(e));
+    } finally {
+      this.ocupado.set(false);
+    }
+  }
+
+  async subirFoto(evento: Event): Promise<void> {
+    const input = evento.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    input.value = '';
+    if (!archivo) return;
+    if (archivo.type !== 'image/png') return this.toast.error('La firma debe ser una imagen PNG.');
+    if (archivo.size > 2_000_000) return this.toast.error('La imagen es muy pesada (máximo 2 MB).');
+    this.ocupado.set(true);
+    try {
+      await this.alquiler.guardarFirmaArrendador(archivo);
+      this.firma.set(await this.alquiler.firmaArrendador());
       this.toast.exito('Tu firma quedó guardada. Saldrá en todos los contratos.');
     } catch (e) {
       this.toast.error(this.mensaje(e));
