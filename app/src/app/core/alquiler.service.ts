@@ -100,6 +100,34 @@ export interface DatosContrato {
   arrendadorCedula: string | null;
 }
 
+export interface FirmaEnLinea {
+  reserva_id: number;
+  firma: string | null;
+  firmado_en: string | null;
+  pdf_guardado_en: string | null;
+}
+
+/** Lo que ve el cliente en /contrato/<token>. */
+export interface ContratoPublico {
+  cancelada?: boolean;
+  reserva_id: number;
+  firmado_en: string | null;
+  cliente_nombre: string;
+  cliente_cedula: string | null;
+  cliente_telefono: string | null;
+  cliente_direccion: string | null;
+  consola_nombre: string | null;
+  consola_tipo: TipoConsola | null;
+  consola_serial: string | null;
+  mandos: number;
+  juegos: string[];
+  inicio: string;
+  fin: string;
+  pagado: number;
+  arrendador_nombre: string | null;
+  arrendador_cedula: string | null;
+}
+
 export interface NuevaConsola {
   nombre: string;
   tipo: TipoConsola;
@@ -357,6 +385,44 @@ export class AlquilerService {
     if (error) throw error;
     const borrar = (viejas ?? []).filter((f) => f.id).map((f) => `${CARPETA_FIRMA_DUENO}/${f.name}`);
     if (borrar.length) await this.supabase.client.storage.from(BUCKET_CONTRATOS).remove(borrar);
+  }
+
+  // ── Contrato firmado por el cliente desde su celular (reservas web) ──
+
+  /** Deja listo el enlace /contrato/<token> de una reserva; devuelve el token vigente. */
+  async crearEnlaceContrato(reservaId: number, token: string): Promise<string> {
+    const { data, error } = await this.supabase.client.rpc('crear_enlace_contrato', { p_reserva_id: reservaId, p_token: token });
+    if (error) throw error;
+    return data as string;
+  }
+
+  /** Firma en línea del cliente para este alquiler (si su reserva tenía enlace). */
+  async firmaEnLinea(alquilerId: number): Promise<FirmaEnLinea | null> {
+    const { data, error } = await this.supabase.client
+      .from('contratos_firmas')
+      .select('reserva_id, firma, firmado_en, pdf_guardado_en, reservas_alquiler!inner(alquiler_id)')
+      .eq('reservas_alquiler.alquiler_id', alquilerId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as unknown as FirmaEnLinea) ?? null;
+  }
+
+  async marcarContratoGuardado(reservaId: number): Promise<void> {
+    const { error } = await this.supabase.client.rpc('marcar_contrato_guardado', { p_reserva_id: reservaId });
+    if (error) throw error;
+  }
+
+  /** Público (sin login): datos del contrato para el enlace del cliente. */
+  async contratoPublico(token: string): Promise<ContratoPublico | null> {
+    const { data, error } = await this.supabase.client.rpc('contrato_publico', { p_token: token });
+    if (error) throw error;
+    return (data as ContratoPublico) ?? null;
+  }
+
+  /** Público (sin login): el cliente firma una sola vez. */
+  async firmarContrato(token: string, firma: string): Promise<void> {
+    const { error } = await this.supabase.client.rpc('firmar_contrato', { p_token: token, p_firma: firma });
+    if (error) throw error;
   }
 
   /** Solo el dueño: nombre y cédula que salen como arrendador en el contrato. */

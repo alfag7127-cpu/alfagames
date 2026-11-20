@@ -19,6 +19,8 @@ export const routes: Routes = [
   // Reservas GTA 6 (públicas): jugar en la sala o alquilar la PS5 con el juego a domicilio.
   { path: 'gta6-sala', loadComponent: () => import('./pages/gta6/gta6-sala-publica').then((m) => m.Gta6SalaPublica) },
   { path: 'gta6-domicilio', loadComponent: () => import('./pages/gta6/gta6-domicilio-publica').then((m) => m.Gta6DomicilioPublica) },
+  // Contrato de alquiler (público, con enlace secreto): el cliente de una reserva a domicilio lo firma en su celular.
+  { path: 'contrato/:token', loadComponent: () => import('./pages/contrato/contrato-publico').then((m) => m.ContratoPublicoPage) },
   {
     path: '',
     component: Shell,

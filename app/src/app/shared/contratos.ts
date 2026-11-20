@@ -1,9 +1,13 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, input, signal } from '@angular/core';
-import { AlquilerService, ArchivoContrato } from '../core/alquiler.service';
+import { AlquilerService, ArchivoContrato, FirmaEnLinea } from '../core/alquiler.service';
+import { generarContratoPdf } from './contrato-pdf';
 import { ToastService } from '../core/toast.service';
 import { prepararArchivo } from './comprimir-imagen';
 import { ContratoFirma } from './contrato-firma';
+
+/** Reservas cuyo PDF firmado en línea ya se está guardando en esta pestaña. */
+const GUARDANDO_EN_LINEA = new Set<number>();
 
 /**
  * Contrato firmado de un alquiler: fotos o PDF guardados en el bucket privado
@@ -40,6 +44,13 @@ import { ContratoFirma } from './contrato-firma';
       </div>
       @if (firmando()) {
         <app-contrato-firma [alquilerId]="alquilerId()" (cerrado)="alCerrarFirma($event)" />
+      }
+      @if (enLinea(); as f) {
+        @if (!f.firmado_en) {
+          <p class="text-xs text-amber-700">🕓 Se le envió el enlace para firmar desde su celular; aún no ha firmado.</p>
+        } @else if (!f.pdf_guardado_en) {
+          <p class="text-xs text-emerald-700">✍️ El cliente firmó desde su celular. Guardando el PDF…</p>
+        }
       }
       @if (cargando()) {
         <p class="text-xs text-slate-400">Cargando…</p>
@@ -87,13 +98,59 @@ export class Contratos implements OnInit {
     if (guardado) this.cargar();
   }
 
+  readonly enLinea = signal<FirmaEnLinea | null>(null);
+
   async cargar(): Promise<void> {
     try {
-      this.archivos.set(await this.alquiler.listarContratos(this.alquilerId()));
+      const [archivos, enLinea] = await Promise.all([
+        this.alquiler.listarContratos(this.alquilerId()),
+        this.alquiler.firmaEnLinea(this.alquilerId()).catch(() => null),
+      ]);
+      this.archivos.set(archivos);
+      this.enLinea.set(enLinea);
+      if (enLinea?.firma && enLinea.firmado_en && !enLinea.pdf_guardado_en) void this.guardarFirmaEnLinea(enLinea);
     } catch (e) {
       this.toast.error(this.mensaje(e));
     } finally {
       this.cargando.set(false);
+    }
+  }
+
+  /**
+   * El cliente firmó desde su celular (reserva web): se arma el PDF con la firma del dueño
+   * y se guarda en el alquiler. Lo hace la app de quien abra primero el alquiler.
+   */
+  private async guardarFirmaEnLinea(f: FirmaEnLinea): Promise<void> {
+    // El mismo alquiler puede verse en dos sitios a la vez (tarjeta e historial): uno solo guarda.
+    if (GUARDANDO_EN_LINEA.has(f.reserva_id)) return;
+    GUARDANDO_EN_LINEA.add(f.reserva_id);
+    try {
+      const [d, firmaDueno] = await Promise.all([
+        this.alquiler.datosContrato(this.alquilerId()),
+        this.alquiler.firmaArrendador().catch(() => null),
+      ]);
+      const a = d.alquiler;
+      const pdf = await generarContratoPdf(
+        d,
+        {
+          mandos: (a.controles ?? 0) + (a.controles_extra ?? 0),
+          cablePoder: true,
+          cableHdmi: true,
+          cableCarga: true,
+          otro: (a.juegos_entregados ?? []).join(', '),
+        },
+        f.firma!,
+        firmaDueno,
+        new Date(f.firmado_en!),
+        true,
+      );
+      await this.alquiler.subirContratoFirmado(this.alquilerId(), pdf);
+      await this.alquiler.marcarContratoGuardado(f.reserva_id);
+      this.enLinea.set({ ...f, pdf_guardado_en: new Date().toISOString() });
+      this.archivos.set(await this.alquiler.listarContratos(this.alquilerId()));
+    } catch {
+      // Se reintenta la próxima vez que se abra el alquiler.
+      GUARDANDO_EN_LINEA.delete(f.reserva_id);
     }
   }
 

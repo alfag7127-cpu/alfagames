@@ -1006,3 +1006,8 @@
     </section>
   </div>
 }
+
+<!-- Al terminar un alquiler se abre el contrato lleno para que el cliente firme ahí mismo (pedido del dueño). -->
+@if (contratoPorFirmar(); as id) {
+  <app-contrato-firma [alquilerId]="id" (cerrado)="contratoPorFirmar.set(null)" />
+}

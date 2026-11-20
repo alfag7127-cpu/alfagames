@@ -67,6 +67,8 @@ export async function generarContratoPdf(
   firmaCliente: string,
   firmaArrendador: string | null,
   firmadoEn: Date,
+  /** true = el cliente firmó desde su celular con el enlace de la reserva. */
+  enLinea = false,
 ): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -174,7 +176,9 @@ export async function generarContratoPdf(
   pdf.setTextColor(100, 116, 139);
   pdf.text(
     pdf.splitTextToSize(
-      `Firmado electrónicamente en pantalla el ${fechaHoraContrato(firmadoEn.toISOString())} (hora de Colombia), al momento de la entrega del equipo.`,
+      enLinea
+        ? `Firmado electrónicamente por el cliente desde su celular, con el enlace personal de su reserva, el ${fechaHoraContrato(firmadoEn.toISOString())} (hora de Colombia).`
+        : `Firmado electrónicamente en pantalla el ${fechaHoraContrato(firmadoEn.toISOString())} (hora de Colombia), al momento de la entrega del equipo.`,
       ANCHO,
     ) as string[],
     M,

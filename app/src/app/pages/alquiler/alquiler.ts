@@ -1,3 +1,4 @@
+import { ContratoFirma } from '../../shared/contrato-firma';
 import { FirmaArrendador } from '../../shared/firma-arrendador';
 import { PagoConfig } from '../../shared/pago-config';
 import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
@@ -164,7 +165,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes, ReservasAlquilerTab, PagoConfig, FirmaArrendador],
+  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes, ReservasAlquilerTab, PagoConfig, FirmaArrendador, ContratoFirma],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {
@@ -186,6 +187,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
   readonly consolas = signal<ConsolaVM[]>([]);
   readonly tarifas = signal<AlquilerTarifa[]>([]);
   readonly config = signal<AlquilerConfig | null>(null);
+  /** Alquiler recién hecho cuyo contrato se abre para que el cliente firme. */
+  readonly contratoPorFirmar = signal<number | null>(null);
   /** Controles sueltos libres por tipo de consola. */
   readonly controlesLibres = signal<Record<TipoConsola, number>>({ PS4: 0, PS5: 0 });
   readonly tipos: TipoConsola[] = ['PS4', 'PS5'];
@@ -521,6 +524,8 @@ export class AlquilerPage implements OnInit, OnDestroy {
       this.toast.exito(`${c.nombre} alquilada a ${a.cliente_nombre}: ${a.precio_total.toLocaleString('es-CO')} COP. Devolver: ${devolver}.`);
       await this.subirContratosNuevos(a.id, c.contratoArchivos);
       await Promise.all([this.cargar(), this.cargarHistorial()]);
+      // Pedido del dueño: con los datos recién tomados se abre el contrato para que el cliente firme ya.
+      this.contratoPorFirmar.set(a.id);
     } catch (e) {
       this.toast.error(this.mensajeError(e));
       this.actualizar(c.id, { procesando: false });

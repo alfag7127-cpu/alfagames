@@ -7732,3 +7732,119 @@ create policy "contratos_firma_dueno_subir" on storage.objects
 create policy "contratos_firma_dueno_borrar" on storage.objects
   for delete to authenticated
   using (bucket_id = 'contratos' and name like 'firma-dueno/%' and private.es_dueno_pagos());
+
+-- =============================================================================
+-- 62. EL CLIENTE FIRMA EL CONTRATO EN SU CELULAR (RESERVAS WEB A DOMICILIO) (2026-11-20)
+-- Pedido del dueño: al confirmar el pago de una reserva a domicilio, el mensaje de
+-- WhatsApp lleva un enlace /contrato/<token>. El cliente ve su contrato lleno y firma
+-- con el dedo. La firma queda aquí; la app del personal arma el PDF (con la firma del
+-- dueño) y lo guarda en el bucket "contratos" del alquiler. El token es secreto
+-- (uuid aleatorio): quien no lo tenga no ve nada.
+-- =============================================================================
+
+create table if not exists public.contratos_firmas (
+  token uuid primary key,
+  reserva_id bigint not null unique references public.reservas_alquiler (id) on delete cascade,
+  firma text check (firma is null or (firma like 'data:image/png;base64,%' and length(firma) < 400000)),
+  firmado_en timestamptz,
+  pdf_guardado_en timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.contratos_firmas enable row level security;
+create policy "contratos_firmas_ver" on public.contratos_firmas
+  for select to authenticated using (private.puede_alquiler());
+-- Se crean y cambian solo por RPC.
+
+-- Personal: deja listo el enlace de firma de una reserva (el token lo genera la app
+-- para ponerlo en el mensaje de WhatsApp). Si ya existía sin firmar, se cambia por el nuevo;
+-- si ya estaba firmado, se queda el que había.
+create or replace function public.crear_enlace_contrato(p_reserva_id bigint, p_token uuid)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  v_token uuid;
+begin
+  if not private.puede_alquiler() then raise exception 'Sin permiso.'; end if;
+  insert into public.contratos_firmas (token, reserva_id) values (p_token, p_reserva_id)
+  on conflict (reserva_id) do update set token = excluded.token, created_at = now()
+    where public.contratos_firmas.firmado_en is null;
+  select token into v_token from public.contratos_firmas where reserva_id = p_reserva_id;
+  return v_token;
+end;
+$$;
+revoke all on function public.crear_enlace_contrato(bigint, uuid) from public, anon;
+grant execute on function public.crear_enlace_contrato(bigint, uuid) to authenticated;
+
+-- Público (con el token): los datos que llenan el contrato.
+create or replace function public.contrato_publico(p_token uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_f public.contratos_firmas;
+  v_r public.reservas_alquiler;
+  v_a public.alquileres;
+  v_c public.alquiler_consolas;
+  v_cfg public.alquiler_config;
+  v_pagado numeric;
+begin
+  select * into v_f from public.contratos_firmas where token = p_token;
+  if not found then return null; end if;
+  select * into v_r from public.reservas_alquiler where id = v_f.reserva_id;
+  if v_r.estado = 'cancelada' then return jsonb_build_object('cancelada', true); end if;
+  select * into v_a from public.alquileres where id = v_r.alquiler_id;
+  select * into v_c from public.alquiler_consolas where id = coalesce(v_a.consola_id, v_r.consola_id);
+  select * into v_cfg from public.alquiler_config where id = 1;
+  select coalesce(sum(monto), 0) into v_pagado from public.alquiler_pagos where alquiler_id = v_a.id;
+  return jsonb_build_object(
+    'reserva_id', v_r.id,
+    'firmado_en', v_f.firmado_en,
+    'cliente_nombre', coalesce(v_a.cliente_nombre, v_r.cliente_nombre),
+    'cliente_cedula', coalesce(v_a.cliente_cedula, v_r.cliente_cedula),
+    'cliente_telefono', coalesce(v_a.cliente_telefono, v_r.cliente_telefono),
+    'cliente_direccion', coalesce(v_a.cliente_direccion, v_r.cliente_direccion),
+    'consola_nombre', v_c.nombre,
+    'consola_tipo', v_c.tipo,
+    'consola_serial', v_c.serial,
+    'mandos', coalesce(v_a.controles + v_a.controles_extra, v_c.controles_incluidos),
+    'juegos', coalesce(v_a.juegos_entregados, v_c.juegos, '{}'::text[]),
+    'inicio', coalesce(v_a.inicio, v_r.inicio),
+    'fin', coalesce(v_a.fin_pactado, v_r.fin),
+    'pagado', case when v_pagado > 0 then v_pagado else v_r.precio end,
+    'arrendador_nombre', v_cfg.arrendador_nombre,
+    'arrendador_cedula', v_cfg.arrendador_cedula
+  );
+end;
+$$;
+revoke all on function public.contrato_publico(uuid) from public;
+grant execute on function public.contrato_publico(uuid) to anon, authenticated;
+
+-- Público (con el token): el cliente firma una sola vez.
+create or replace function public.firmar_contrato(p_token uuid, p_firma text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_f public.contratos_firmas;
+begin
+  select * into v_f from public.contratos_firmas where token = p_token for update;
+  if not found then raise exception 'Enlace de contrato no válido.'; end if;
+  if v_f.firmado_en is not null then raise exception 'Este contrato ya fue firmado.'; end if;
+  if exists (select 1 from public.reservas_alquiler where id = v_f.reserva_id and estado = 'cancelada') then
+    raise exception 'La reserva fue cancelada.';
+  end if;
+  if p_firma is null or p_firma not like 'data:image/png;base64,%' or length(p_firma) >= 400000 then
+    raise exception 'Firma no válida. Intenta de nuevo.';
+  end if;
+  update public.contratos_firmas set firma = p_firma, firmado_en = now() where token = p_token;
+end;
+$$;
+revoke all on function public.firmar_contrato(uuid, text) from public;
+grant execute on function public.firmar_contrato(uuid, text) to anon, authenticated;
+
+-- Personal: marca que el PDF del contrato firmado en línea ya quedó guardado.
+create or replace function public.marcar_contrato_guardado(p_reserva_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not private.puede_alquiler() then raise exception 'Sin permiso.'; end if;
+  update public.contratos_firmas set pdf_guardado_en = now()
+  where reserva_id = p_reserva_id and firmado_en is not null and pdf_guardado_en is null;
+end;
+$$;
+revoke all on function public.marcar_contrato_guardado(bigint) from public, anon;
+grant execute on function public.marcar_contrato_guardado(bigint) to authenticated;

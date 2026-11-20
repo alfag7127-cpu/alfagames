@@ -57,6 +57,10 @@ describe('mensajes de WhatsApp de reserva confirmada', () => {
     expect(t).toContain('Calle 1 # 2-3');
     expect(t).not.toContain('efectivo');
     expect(texto(whatsappReservaDomicilioConfirmada({ ...r, forma_pago: 'efectivo' }, 'PS4'))).toContain('en efectivo al recibir');
+    expect(t).not.toContain('Firma tu contrato');
+    const conContrato = texto(whatsappReservaDomicilioConfirmada(r, 'PS4', 'https://x.app/contrato/abc'));
+    expect(conContrato).toContain('Firma tu contrato');
+    expect(conContrato).toContain('https://x.app/contrato/abc');
   });
 
   it('sin celular válido no hay enlace', () => {

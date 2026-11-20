@@ -1,3 +1,4 @@
+import { AlquilerService } from '../../core/alquiler.service';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -9,7 +10,7 @@ import { ToastService } from '../../core/toast.service';
 import { formatearDuracion } from '../../shared/duracion.pipe';
 import { ModoPago, PagoPotes, repartirPago } from '../../shared/pago-potes';
 import { PesosDirective } from '../../shared/pesos.directive';
-import { conWhatsappAlTerminar, whatsappReservaDomicilioConfirmada, whatsappReservaSalaConfirmada } from '../../shared/whatsapp-confirmacion';
+import { conWhatsappAlTerminar, nuevoEnlaceContrato, whatsappReservaDomicilioConfirmada, whatsappReservaSalaConfirmada } from '../../shared/whatsapp-confirmacion';
 import { aHoraLocal, cuentaRegresiva, deHoraLocal, diaYHora, hora, mensajeError } from './gta6-util';
 
 type Pestana = 'sala' | 'domicilio' | 'config';
@@ -349,6 +350,7 @@ export class Gta6Page implements OnInit, OnDestroy {
     readonly auth: AuthService,
     private readonly gta6: Gta6Service,
     private readonly reservas: ReservasService,
+    private readonly alquilerSrv: AlquilerService,
     private readonly toast: ToastService,
   ) {}
 
@@ -497,9 +499,14 @@ export class Gta6Page implements OnInit, OnDestroy {
       this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
       return;
     }
-    const ok = await conWhatsappAlTerminar(whatsappReservaDomicilioConfirmada(r, 'PS5'), () =>
+    // Pedido del dueño: el mensaje lleva el enlace para que el cliente firme el contrato en su celular.
+    const contrato = nuevoEnlaceContrato();
+    const ok = await conWhatsappAlTerminar(whatsappReservaDomicilioConfirmada(r, 'PS5', contrato.url), () =>
       this.accion(
-        () => this.gta6.confirmarDomicilio(r.id, reparto.llave, reparto.efectivo),
+        async () => {
+          await this.alquilerSrv.crearEnlaceContrato(r.id, contrato.token);
+          await this.gta6.confirmarDomicilio(r.id, reparto.llave, reparto.efectivo);
+        },
         `Reserva #${r.id} confirmada: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,
       ),
     );

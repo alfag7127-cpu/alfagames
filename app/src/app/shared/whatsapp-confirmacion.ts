@@ -36,7 +36,7 @@ export function whatsappReservaSalaConfirmada(r: {
 }
 
 /** Reserva de alquiler a domicilio (PS4, PS5 o GTA 6). */
-export function whatsappReservaDomicilioConfirmada(r: ReservaAlquiler, tipo: string | null): string | null {
+export function whatsappReservaDomicilioConfirmada(r: ReservaAlquiler, tipo: string | null, enlaceContrato?: string): string | null {
   const gta = r.juego === 'gta6';
   const que = gta ? 'GTA 6' : (tipo ?? 'consola');
   const lineas = [
@@ -49,12 +49,22 @@ export function whatsappReservaDomicilioConfirmada(r: ReservaAlquiler, tipo: str
     `🔁 Recogida: ${diaYHora(r.fin)}`,
     `📍 Dirección: ${r.cliente_direccion}`,
     ...(r.forma_pago === 'efectivo' ? [`💵 Pagas ${r.precio.toLocaleString('es-CO')} en efectivo al recibir.`] : []),
+    ...(enlaceContrato ? ['', `✍️ *Firma tu contrato de alquiler* desde el celular, antes de recibir la consola:`, enlaceContrato] : []),
     '',
     'Ten a mano tu cédula al recibir la consola.',
     '',
     gta ? '¡Prepárate para Vice City! 🌴 Gracias por confiar en nosotros 🔥' : '¡Gracias por confiar en nosotros! A disfrutar 🔥',
   ];
   return enlaceWhatsapp(r.cliente_telefono, lineas.join('\n'));
+}
+
+/**
+ * Enlace secreto para que el cliente firme su contrato desde el celular (/contrato/<token>).
+ * El token se crea aquí para ponerlo en el mensaje; se registra con crear_enlace_contrato.
+ */
+export function nuevoEnlaceContrato(): { token: string; url: string } {
+  const token = crypto.randomUUID();
+  return { token, url: `${location.origin}/contrato/${token}` };
 }
 
 /**
