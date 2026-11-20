@@ -207,7 +207,7 @@ type Filtro = 'proximas' | 'todas';
                 <input type="number" min="0" max="720" [(ngModel)]="cfgMargen" name="cfg-margen" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-1.5" />
               </label>
             </div>
-            <p class="text-xs text-slate-500">"Minutos entre alquileres": tiempo para llevar y recoger entre un cliente y otro en la misma PS5. El QR y el WhatsApp son los de Reservas → Configuración.</p>
+            <p class="text-xs text-slate-500">"Minutos entre alquileres": tiempo para llevar y recoger entre un cliente y otro en la misma PS5. QR y llave: GTA 6 en la sala usa los de Reservas → Configuración; GTA 6 a domicilio, los de Alquiler → Configuración. El WhatsApp es el de Reservas → Configuración.</p>
             <button type="button" (click)="guardarGeneral()" [disabled]="ocupado()" class="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">Guardar</button>
           </section>
 

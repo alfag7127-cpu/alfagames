@@ -7536,3 +7536,81 @@ begin
   return new; -- regla quitada por el dueño (2026-11-19): el horario de noche queda libre
 end;
 $$;
+
+-- =============================================================================
+-- 59. QR Y LLAVE DE PAGO SEPARADOS: SALA Y ALQUILER A DOMICILIO (2026-11-20)
+-- Pedido del dueño: hay clientes que no saben pagar con QR, así que se muestra
+-- también la llave (Bre-B). Y la plata del local no se debe mezclar con la del
+-- alquiler: la sala (/reservar, /gta6-sala) usa qr_path + llave; el alquiler a
+-- domicilio (/alquilar, /gta6-domicilio) usa qr_domicilio_path + llave_domicilio.
+-- Sala: lo cambia el admin. Domicilio: el admin o el rol alquiler.
+-- =============================================================================
+
+alter table public.reservas_config
+  add column if not exists llave text,
+  add column if not exists qr_domicilio_path text,
+  add column if not exists llave_domicilio text;
+
+-- Imagen del QR de domicilio: va en la carpeta domicilio/ del bucket reservas.
+create policy "reservas_qr_domicilio_subir" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'reservas' and name like 'domicilio/%' and private.puede_alquiler());
+create policy "reservas_qr_domicilio_borrar" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'reservas' and name like 'domicilio/%' and private.puede_alquiler());
+
+create or replace function private.puede_editar_pago(p_destino text)
+returns boolean language plpgsql stable security definer set search_path = '' as $$
+begin
+  if p_destino = 'sala' then return private.is_admin(); end if;
+  if p_destino = 'domicilio' then return private.puede_alquiler(); end if;
+  raise exception 'Destino de pago no válido: %', p_destino;
+end;
+$$;
+
+-- Deja la nueva imagen del QR y devuelve la anterior (para borrarla del bucket).
+create or replace function public.guardar_qr_pago(p_destino text, p_path text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_anterior text;
+begin
+  if not private.puede_editar_pago(p_destino) then
+    raise exception 'No tienes permiso para cambiar este QR.';
+  end if;
+  if p_destino = 'sala' then
+    select qr_path into v_anterior from public.reservas_config where id = 1;
+    update public.reservas_config set qr_path = p_path where id = 1;
+  else
+    if p_path is not null and p_path not like 'domicilio/%' then
+      raise exception 'El QR de domicilio debe estar en la carpeta domicilio/.';
+    end if;
+    select qr_domicilio_path into v_anterior from public.reservas_config where id = 1;
+    update public.reservas_config set qr_domicilio_path = p_path where id = 1;
+  end if;
+  return v_anterior;
+end;
+$$;
+
+create or replace function public.guardar_llave_pago(p_destino text, p_llave text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_llave text := nullif(btrim(p_llave), '');
+begin
+  if not private.puede_editar_pago(p_destino) then
+    raise exception 'No tienes permiso para cambiar esta llave.';
+  end if;
+  if length(v_llave) > 100 then raise exception 'La llave es muy larga.'; end if;
+  if p_destino = 'sala' then
+    update public.reservas_config set llave = v_llave where id = 1;
+  else
+    update public.reservas_config set llave_domicilio = v_llave where id = 1;
+  end if;
+end;
+$$;
+
+revoke all on function private.puede_editar_pago(text) from public, anon;
+grant execute on function private.puede_editar_pago(text) to authenticated;
+revoke all on function public.guardar_qr_pago(text, text) from public, anon;
+grant execute on function public.guardar_qr_pago(text, text) to authenticated;
+revoke all on function public.guardar_llave_pago(text, text) from public, anon;
+grant execute on function public.guardar_llave_pago(text, text) to authenticated;

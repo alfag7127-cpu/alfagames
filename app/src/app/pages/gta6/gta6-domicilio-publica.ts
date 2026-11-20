@@ -1,4 +1,5 @@
 import { DecimalPipe } from '@angular/common';
+import { PagoPublico } from '../../shared/pago-publico';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Gta6Publico, Gta6Service, PlanGta6, ReservaGta6Creada } from '../../core/gta6.service';
@@ -17,7 +18,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
  */
 @Component({
   selector: 'app-gta6-domicilio-publica',
-  imports: [FormsModule, DecimalPipe, Gta6Hero, NotaTransferencia],
+  imports: [FormsModule, DecimalPipe, Gta6Hero, NotaTransferencia, PagoPublico],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <app-gta6-hero titulo="PS5 con GTA 6 a domicilio" subtitulo="Te llevamos la PS5 con GTA 6 a tu casa. Reserva desde ya y paga por adelantado." [lanzamiento]="estado()?.lanzamiento ?? null" />
@@ -126,11 +127,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
               <p class="text-sm text-slate-300">Reserva GTA 6 a domicilio #{{ creada()?.id }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
               <p class="text-sm text-slate-300">{{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }}</p>
-              @if (urlQr()) {
-                <img [src]="urlQr()" alt="QR para pagar" class="mx-auto w-64 max-w-full rounded-xl bg-white p-2" />
-              } @else {
-                <p class="rounded-xl bg-amber-500/15 p-3 text-sm text-amber-100 ring-1 ring-amber-400/40">El QR de pago aún no está disponible. Escríbenos por WhatsApp para pagar.</p>
-              }
+              <app-pago-publico destino="domicilio" />
               <p class="text-xs text-slate-400">La consola queda apartada para ti mientras confirmamos el pago.</p>
               <button type="button" (click)="paso.set('listo')" class="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">Ya pagué</button>
             </section>
@@ -179,7 +176,6 @@ export class Gta6DomicilioPublica implements OnInit {
     return p ? finPlan(this.inicioMs(), p, this.estado()?.noche_hasta ?? '09:00:00') : this.inicioMs();
   });
   readonly libres = computed(() => consolasLibres(this.estado()?.alquiler_consolas ?? [], this.inicioMs(), this.finMs()));
-  readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
     const c = this.creada();
     if (!c) return null;

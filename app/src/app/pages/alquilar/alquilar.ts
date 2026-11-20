@@ -1,4 +1,5 @@
 import { NotaTransferencia } from '../../shared/nota-transferencia';
+import { PagoPublico } from '../../shared/pago-publico';
 import { VolverServicios } from '../../shared/volver-servicios';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
@@ -18,7 +19,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
  */
 @Component({
   selector: 'app-alquilar',
-  imports: [FormsModule, DecimalPipe, VolverServicios, NotaTransferencia],
+  imports: [FormsModule, DecimalPipe, VolverServicios, NotaTransferencia, PagoPublico],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-br from-slate-950 via-slate-900 to-lime-900 px-4 py-5 shadow-lg">
@@ -153,11 +154,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
               <p class="text-sm text-slate-300">Reserva #{{ creada()?.id }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
               <p class="text-sm text-slate-300">{{ creada()?.tipo }} · {{ creada()?.plan }} · entrega {{ diaYHora(creada()!.inicio) }}</p>
-              @if (urlQr()) {
-                <img [src]="urlQr()" alt="QR para pagar" class="mx-auto w-64 max-w-full rounded-xl bg-white p-2" />
-              } @else {
-                <p class="rounded-xl bg-amber-500/15 p-3 text-sm text-amber-100 ring-1 ring-amber-400/40">El QR de pago aún no está disponible. Escríbenos por WhatsApp para pagar.</p>
-              }
+              <app-pago-publico destino="domicilio" />
               <p class="text-xs text-slate-400">La consola queda apartada para ti mientras confirmamos el pago.</p>
               <button type="button" (click)="paso.set('listo')" class="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">Ya pagué</button>
             </section>
@@ -231,7 +228,6 @@ export class Alquilar implements OnInit {
   readonly soloGta6 = computed(
     () => !!this.plan() && this.consolasTipo().length === 0 && (this.estado()?.consolas ?? []).some((c) => c.tipo === this.tipo()),
   );
-  readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceWhatsapp = computed(() => {
     const c = this.creada();
     if (!c) return null;

@@ -943,6 +943,12 @@
     </section>
 
     <section class="space-y-4">
+      <!-- QR y llave del alquiler a domicilio: cuenta aparte de la sala (pedido del dueño). -->
+      <div class="bg-white rounded-xl shadow-sm p-4">
+        <h2 class="font-semibold text-slate-800 mb-3">💳 Pago del alquiler a domicilio</h2>
+        <app-pago-config destino="domicilio" />
+      </div>
+
       <div class="bg-white rounded-xl shadow-sm p-4">
         <h2 class="font-semibold text-slate-800 mb-3">Controles sueltos y extras</h2>
         @if (config(); as cfg) {

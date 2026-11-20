@@ -31,8 +31,16 @@ export interface Reserva {
   juego?: 'gta6' | null;
 }
 
+/** sala = /reservar y /gta6-sala (plata del local); domicilio = /alquilar y /gta6-domicilio (plata del alquiler). */
+export type DestinoPago = 'sala' | 'domicilio';
+
 export interface ReservasConfig {
+  /** QR y llave de la sala. */
   qr_path: string | null;
+  llave: string | null;
+  /** QR y llave del alquiler a domicilio (cuenta aparte, no se mezcla con la sala). */
+  qr_domicilio_path: string | null;
+  llave_domicilio: string | null;
   whatsapp: string | null;
   minutos_para_pagar: number;
   dias_maximos: number;
@@ -185,17 +193,34 @@ export class ReservasService {
     if (error) throw error;
   }
 
-  /** Solo admin: sube la imagen del QR y la deja como la de pago. */
-  async subirQr(archivo: File): Promise<void> {
+  /** QR y llave que ve el cliente según el negocio (sin login: la tabla se lee en público). */
+  async pago(destino: DestinoPago): Promise<{ qr: string | null; llave: string | null }> {
+    const c = await this.config();
+    return destino === 'sala'
+      ? { qr: this.urlQr(c.qr_path), llave: c.llave }
+      : { qr: this.urlQr(c.qr_domicilio_path), llave: c.llave_domicilio };
+  }
+
+  /** Sala: solo admin. Domicilio: admin o rol alquiler. Sube la imagen y la deja como la de pago. */
+  async subirQr(archivo: File, destino: DestinoPago = 'sala'): Promise<void> {
     const ext = (archivo.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const path = `qr-${Date.now()}.${ext}`;
+    const path = `${destino === 'domicilio' ? 'domicilio/' : ''}qr-${Date.now()}.${ext}`;
     const { error } = await this.supabase.client.storage
       .from(BUCKET_RESERVAS)
       .upload(path, archivo, { contentType: archivo.type || undefined });
     if (error) throw error;
-    const anterior = (await this.config()).qr_path;
-    await this.guardarConfig({ qr_path: path });
-    if (anterior) await this.supabase.client.storage.from(BUCKET_RESERVAS).remove([anterior]);
+    const { data: anterior, error: e2 } = await this.supabase.client.rpc('guardar_qr_pago', { p_destino: destino, p_path: path });
+    if (e2) {
+      await this.supabase.client.storage.from(BUCKET_RESERVAS).remove([path]);
+      throw e2;
+    }
+    if (anterior) await this.supabase.client.storage.from(BUCKET_RESERVAS).remove([anterior as string]);
+  }
+
+  /** Llave (Bre-B, celular o cuenta) para quien no sabe pagar con QR. Vacía = se quita. */
+  async guardarLlave(destino: DestinoPago, llave: string): Promise<void> {
+    const { error } = await this.supabase.client.rpc('guardar_llave_pago', { p_destino: destino, p_llave: llave });
+    if (error) throw error;
   }
 
   onCambios(callback: () => void): () => void {

@@ -1,4 +1,5 @@
 import { VolverServicios } from '../../shared/volver-servicios';
+import { PagoPublico } from '../../shared/pago-publico';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -46,7 +47,7 @@ function diaYHora(iso: string | number): string {
  */
 @Component({
   selector: 'app-reservar',
-  imports: [FormsModule, DecimalPipe, VolverServicios],
+  imports: [FormsModule, DecimalPipe, VolverServicios, PagoPublico],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 px-4 py-4 shadow-lg">
@@ -219,13 +220,7 @@ function diaYHora(iso: string | number): string {
               <p class="text-sm text-slate-300">Paso 3 de 3 · Reserva #{{ numeroCreada() }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
               <p class="text-sm text-slate-300">{{ creada()?.consola }} · {{ diaYHora(creada()!.inicio) }} a {{ hora(creada()!.fin) }}</p>
-              @if (urlQr()) {
-                <img [src]="urlQr()" alt="QR para pagar" class="mx-auto w-64 max-w-full rounded-xl bg-white p-2" />
-              } @else {
-                <p class="rounded-xl bg-amber-500/15 ring-1 ring-amber-400/40 p-3 text-sm text-amber-100">
-                  El QR de pago aún no está disponible. Escríbenos por WhatsApp para pagar.
-                </p>
-              }
+              <app-pago-publico destino="sala" />
               <p class="text-xs text-slate-400">
                 Tu consola queda apartada {{ creada()?.minutos_para_pagar }} minutos mientras confirmamos el pago.
               </p>
@@ -284,7 +279,6 @@ export class Reservar implements OnInit, OnDestroy {
   readonly inicioMs = computed(() => (this.inicio() ? deHoraLocal(this.inicio()) : Date.now()));
   readonly precioElegido = computed(() => this.estado()?.precios.find((p) => p.minutos === this.minutos())?.precio ?? 0);
   readonly numeroCreada = computed(() => this.creada()?.numero ?? this.creada()?.id);
-  readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
     const c = this.creada();
     if (!c) return null;

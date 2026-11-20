@@ -1,4 +1,5 @@
 import { DecimalPipe } from '@angular/common';
+import { PagoPublico } from '../../shared/pago-publico';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Gta6Publico, Gta6Service, ReservaGta6Creada } from '../../core/gta6.service';
@@ -16,7 +17,7 @@ type ConsolaGta6 = Gta6Publico['sala_consolas'][number];
  */
 @Component({
   selector: 'app-gta6-sala-publica',
-  imports: [FormsModule, DecimalPipe, Gta6Hero],
+  imports: [FormsModule, DecimalPipe, Gta6Hero, PagoPublico],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <app-gta6-hero titulo="Juega GTA 6 en la sala" subtitulo="Reserva tu consola y tu horario. Pagas por adelantado y llegas a jugar." [lanzamiento]="estado()?.lanzamiento ?? null" />
@@ -138,11 +139,7 @@ type ConsolaGta6 = Gta6Publico['sala_consolas'][number];
               <p class="text-sm text-slate-300">Paso 3 de 3 · Reserva GTA 6 #{{ creada()?.numero ?? creada()?.id }}</p>
               <p class="text-lg">Paga <b class="text-2xl">{{ creada()?.precio | number: '1.0-0' }} COP</b></p>
               <p class="text-sm text-slate-300">{{ creada()?.consola }} · {{ diaYHora(creada()!.inicio) }} a {{ hora(creada()!.fin) }}</p>
-              @if (urlQr()) {
-                <img [src]="urlQr()" alt="QR para pagar" class="mx-auto w-64 max-w-full rounded-xl bg-white p-2" />
-              } @else {
-                <p class="rounded-xl bg-amber-500/15 p-3 text-sm text-amber-100 ring-1 ring-amber-400/40">El QR de pago aún no está disponible. Escríbenos por WhatsApp para pagar.</p>
-              }
+              <app-pago-publico destino="sala" />
               <p class="text-xs text-slate-400">Tu horario queda apartado {{ creada()?.minutos_para_pagar }} minutos mientras confirmamos el pago.</p>
               <button type="button" (click)="paso.set('listo')" class="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400">Ya pagué</button>
             </section>
@@ -188,7 +185,6 @@ export class Gta6SalaPublica implements OnInit {
   readonly diaYHora = diaYHora;
   readonly inicioMs = computed(() => (this.inicio() ? deHoraLocal(this.inicio()) : Date.now()));
   readonly precioElegido = computed(() => this.estado()?.sala_precios.find((p) => p.minutos === this.minutos())?.precio ?? 0);
-  readonly urlQr = computed(() => this.reservas.urlQr(this.estado()?.qr_path ?? null));
   readonly enlaceComprobante = computed(() => {
     const c = this.creada();
     if (!c) return null;

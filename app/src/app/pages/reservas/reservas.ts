@@ -1,3 +1,4 @@
+import { PagoConfig } from '../../shared/pago-config';
 import { ReservasRealizadas } from '../../shared/reservas-realizadas';
 import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
@@ -69,7 +70,7 @@ function dia(iso: string): string {
  */
 @Component({
   selector: 'app-reservas',
-  imports: [FormsModule, DecimalPipe, ReservasRealizadas],
+  imports: [FormsModule, DecimalPipe, ReservasRealizadas, PagoConfig],
   template: `
     <section class="banner-sala p-5 mb-4">
       <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">📅 Reservas</h1>
@@ -324,17 +325,8 @@ function dia(iso: string): string {
     @if (auth.isAdmin() && config()) {
       <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 space-y-3">
         <h2 class="font-semibold text-slate-900">⚙️ Configuración</h2>
-        <div class="flex flex-wrap items-start gap-4">
-          <div class="space-y-2">
-            <p class="text-xs font-medium text-slate-500">QR de pago</p>
-            @if (urlQr()) {
-              <img [src]="urlQr()" alt="QR de pago" class="w-40 rounded-lg ring-1 ring-slate-200" />
-            }
-            <label class="inline-block cursor-pointer rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900">
-              {{ urlQr() ? 'Cambiar QR' : 'Subir QR' }}
-              <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" (change)="subirQr($event)" />
-            </label>
-          </div>
+        <app-pago-config destino="sala" />
+        <div class="flex flex-wrap items-start gap-4 border-t border-slate-100 pt-3">
           <div class="flex-1 min-w-[220px] space-y-3">
             <label class="block text-xs font-medium text-slate-500">
               WhatsApp del local (donde llegan los comprobantes)
@@ -430,7 +422,6 @@ export class ReservasPage implements OnInit, OnDestroy {
       .filter((r) => new Date(r.inicio).getTime() <= this.ahora())
       .reverse(),
   );
-  readonly urlQr = computed(() => this.reservas.urlQr(this.config()?.qr_path ?? null));
 
   private unsubscribe?: () => void;
   private timer?: ReturnType<typeof setInterval>;
@@ -590,20 +581,6 @@ export class ReservasPage implements OnInit, OnDestroy {
       return false;
     } finally {
       this.procesando.set(null);
-    }
-  }
-
-  async subirQr(evento: Event): Promise<void> {
-    const input = evento.target as HTMLInputElement;
-    const archivo = input.files?.[0];
-    input.value = '';
-    if (!archivo) return;
-    try {
-      await this.reservas.subirQr(archivo);
-      this.toast.exito('QR de pago guardado.');
-      this.config.set(await this.reservas.config());
-    } catch (e) {
-      this.toast.error(this.mensaje(e));
     }
   }
 
