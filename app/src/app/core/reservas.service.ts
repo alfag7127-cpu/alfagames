@@ -217,6 +217,13 @@ export class ReservasService {
     if (anterior) await this.supabase.client.storage.from(BUCKET_RESERVAS).remove([anterior as string]);
   }
 
+  /** Solo el dueño puede cambiar QR y llaves (regla del dueño, candado en la base de datos). */
+  async puedoEditarPagos(): Promise<boolean> {
+    const { data, error } = await this.supabase.client.rpc('puedo_editar_pagos');
+    if (error) return false;
+    return data === true;
+  }
+
   /** Llave (Bre-B, celular o cuenta) para quien no sabe pagar con QR. Vacía = se quita. */
   async guardarLlave(destino: DestinoPago, llave: string): Promise<void> {
     const { error } = await this.supabase.client.rpc('guardar_llave_pago', { p_destino: destino, p_llave: llave });

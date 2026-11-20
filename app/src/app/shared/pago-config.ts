@@ -4,9 +4,10 @@ import { DestinoPago, ReservasService } from '../core/reservas.service';
 import { ToastService } from '../core/toast.service';
 
 /**
- * Configuración del QR y la llave de pago de un negocio. Sala: en Reservas → Configuración
- * (admin). Domicilio: en Alquiler → Configuración (admin o rol alquiler). Son cuentas
- * distintas para no mezclar la plata del local con la del alquiler.
+ * Configuración del QR y la llave de pago de un negocio. Sala: en Reservas → Configuración.
+ * Domicilio: en Alquiler → Configuración. Son cuentas distintas para no mezclar la plata
+ * del local con la del alquiler. Regla del dueño: SOLO el dueño puede cambiarlos; los demás
+ * los ven con candado (la base de datos también lo bloquea).
  */
 @Component({
   selector: 'app-pago-config',
@@ -20,21 +21,29 @@ import { ToastService } from '../core/toast.service';
         } @else {
           <p class="text-xs text-amber-700">⚠️ Falta subir el QR.</p>
         }
-        <label class="inline-block cursor-pointer rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900"
-          [class.opacity-50]="ocupado()">
-          {{ qr() ? 'Cambiar QR' : 'Subir QR' }}
-          <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" [disabled]="ocupado()" (change)="subirQr($event)" />
-        </label>
+        @if (puedeEditar()) {
+          <label class="inline-block cursor-pointer rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-900"
+            [class.opacity-50]="ocupado()">
+            {{ qr() ? 'Cambiar QR' : 'Subir QR' }}
+            <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" [disabled]="ocupado()" (change)="subirQr($event)" />
+          </label>
+        }
       </div>
       <div class="min-w-[220px] flex-1 space-y-2">
-        <label class="block text-xs font-medium text-slate-500">
-          Llave de pago {{ nombre() }} (para quien no sabe pagar con QR)
-          <input [(ngModel)]="llaveTexto" [name]="'llave-' + destino()" maxlength="100" placeholder="Ej. @alfagames o 3001234567"
-            class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-800" />
-        </label>
-        <button type="button" (click)="guardarLlave()" [disabled]="ocupado()"
-          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50">Guardar llave</button>
-        <p class="text-xs text-slate-500">{{ ayuda() }}</p>
+        @if (puedeEditar()) {
+          <label class="block text-xs font-medium text-slate-500">
+            Llave de pago {{ nombre() }} (para quien no sabe pagar con QR)
+            <input [(ngModel)]="llaveTexto" [name]="'llave-' + destino()" maxlength="100" placeholder="Ej. @alfagames o 3001234567"
+              class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-800" />
+          </label>
+          <button type="button" (click)="guardarLlave()" [disabled]="ocupado()"
+            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50">Guardar llave</button>
+          <p class="text-xs text-slate-500">{{ ayuda() }}</p>
+        } @else {
+          <p class="text-xs font-medium text-slate-500">Llave de pago {{ nombre() }}</p>
+          <p class="break-all text-sm font-semibold text-slate-800">{{ llaveTexto || 'Sin llave' }}</p>
+          <p class="text-xs text-slate-500">🔒 Solo el dueño puede cambiar el QR y la llave.</p>
+        }
       </div>
     </div>
   `,
@@ -44,6 +53,7 @@ export class PagoConfig implements OnInit {
 
   readonly qr = signal<string | null>(null);
   readonly ocupado = signal(false);
+  readonly puedeEditar = signal(false);
   llaveTexto = '';
 
   constructor(
@@ -62,6 +72,7 @@ export class PagoConfig implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
+    this.puedeEditar.set(await this.reservas.puedoEditarPagos());
     await this.cargar();
   }
 

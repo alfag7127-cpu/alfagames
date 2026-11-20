@@ -7614,3 +7614,64 @@ revoke all on function public.guardar_qr_pago(text, text) from public, anon;
 grant execute on function public.guardar_qr_pago(text, text) to authenticated;
 revoke all on function public.guardar_llave_pago(text, text) from public, anon;
 grant execute on function public.guardar_llave_pago(text, text) to authenticated;
+
+-- =============================================================================
+-- 60. SOLO EL DUEÑO CAMBIA LOS QR Y LAS LLAVES DE PAGO (2026-11-20)
+-- Regla del dueño: por ningún motivo otra persona (otro admin, el rol alquiler,
+-- el trabajador) puede cambiar los QR ni las llaves. Dueño = seoliveros.18.
+-- Candados: RPCs (puede_editar_pago), trigger en reservas_config (aunque un admin
+-- actualice la tabla directo) y políticas del bucket reservas.
+-- =============================================================================
+
+create or replace function private.es_dueno_pagos()
+returns boolean language sql stable set search_path = '' as $$
+  select auth.uid() = '246fe5c4-b538-4dc8-9d0e-5263880981ef'::uuid;
+$$;
+revoke all on function private.es_dueno_pagos() from public, anon;
+grant execute on function private.es_dueno_pagos() to authenticated;
+
+create or replace function private.puede_editar_pago(p_destino text)
+returns boolean language plpgsql stable security definer set search_path = '' as $$
+begin
+  if p_destino not in ('sala', 'domicilio') then
+    raise exception 'Destino de pago no válido: %', p_destino;
+  end if;
+  return private.es_dueno_pagos();
+end;
+$$;
+
+create or replace function public.puedo_editar_pagos()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce(private.es_dueno_pagos(), false);
+$$;
+revoke all on function public.puedo_editar_pagos() from public, anon;
+grant execute on function public.puedo_editar_pagos() to authenticated;
+
+create or replace function private.proteger_pagos_config()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if (new.qr_path is distinct from old.qr_path
+      or new.llave is distinct from old.llave
+      or new.qr_domicilio_path is distinct from old.qr_domicilio_path
+      or new.llave_domicilio is distinct from old.llave_domicilio)
+     and coalesce(auth.role(), '') in ('authenticated', 'anon')
+     and not coalesce(private.es_dueno_pagos(), false) then
+    raise exception 'Solo el dueño puede cambiar los QR y las llaves de pago.';
+  end if;
+  return new;
+end;
+$$;
+create trigger reservas_config_proteger_pagos
+  before update on public.reservas_config
+  for each row execute function private.proteger_pagos_config();
+
+alter policy "reservas_qr_subir" on storage.objects
+  with check (bucket_id = 'reservas' and private.es_dueno_pagos());
+alter policy "reservas_qr_cambiar" on storage.objects
+  using (bucket_id = 'reservas' and private.es_dueno_pagos());
+alter policy "reservas_qr_borrar" on storage.objects
+  using (bucket_id = 'reservas' and private.es_dueno_pagos());
+alter policy "reservas_qr_domicilio_subir" on storage.objects
+  with check (bucket_id = 'reservas' and name like 'domicilio/%' and private.es_dueno_pagos());
+alter policy "reservas_qr_domicilio_borrar" on storage.objects
+  using (bucket_id = 'reservas' and name like 'domicilio/%' and private.es_dueno_pagos());
