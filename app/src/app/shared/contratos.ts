@@ -3,18 +3,25 @@ import { Component, OnInit, input, signal } from '@angular/core';
 import { AlquilerService, ArchivoContrato } from '../core/alquiler.service';
 import { ToastService } from '../core/toast.service';
 import { prepararArchivo } from './comprimir-imagen';
+import { ContratoFirma } from './contrato-firma';
 
 /**
- * Contrato físico firmado de un alquiler: fotos o PDF guardados en el bucket privado
+ * Contrato firmado de un alquiler: fotos o PDF guardados en el bucket privado
  * "contratos". Se abren con un enlace temporal (no son públicos).
+ * "✍️ Firmar contrato" llena el formato del dueño y el cliente firma en pantalla.
  */
 @Component({
   selector: 'app-contratos',
-  imports: [DatePipe],
+  imports: [DatePipe, ContratoFirma],
   template: `
     <div class="rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 space-y-2 text-sm">
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs font-semibold text-slate-600">📎 Contrato firmado</span>
+        <span class="flex items-center gap-1.5">
+        <button type="button" (click)="firmando.set(true)"
+          class="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">
+          ✍️ Firmar contrato
+        </button>
         <label
           class="cursor-pointer rounded-lg bg-white border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
           [class.opacity-50]="subiendo()"
@@ -29,7 +36,11 @@ import { prepararArchivo } from './comprimir-imagen';
             (change)="subir($event)"
           />
         </label>
+        </span>
       </div>
+      @if (firmando()) {
+        <app-contrato-firma [alquilerId]="alquilerId()" (cerrado)="alCerrarFirma($event)" />
+      }
       @if (cargando()) {
         <p class="text-xs text-slate-400">Cargando…</p>
       } @else {
@@ -65,8 +76,15 @@ export class Contratos implements OnInit {
     private readonly toast: ToastService,
   ) {}
 
+  readonly firmando = signal(false);
+
   ngOnInit(): void {
     this.cargar();
+  }
+
+  alCerrarFirma(guardado: boolean): void {
+    this.firmando.set(false);
+    if (guardado) this.cargar();
   }
 
   async cargar(): Promise<void> {

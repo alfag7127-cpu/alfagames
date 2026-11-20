@@ -88,6 +88,17 @@ export interface PagoExtension {
 }
 
 const BUCKET_CONTRATOS = 'contratos';
+/** Firma del dueño como arrendador; solo él la sube (políticas del bucket). */
+const CARPETA_FIRMA_DUENO = 'firma-dueno';
+
+export interface DatosContrato {
+  alquiler: Alquiler;
+  consola: { nombre: string; tipo: TipoConsola; serial: string | null } | null;
+  /** Suma de los pagos del alquiler (si no hay pagos registrados, el precio total). */
+  pagado: number;
+  arrendadorNombre: string | null;
+  arrendadorCedula: string | null;
+}
 
 export interface NuevaConsola {
   nombre: string;
@@ -279,6 +290,78 @@ export class AlquilerService {
 
   async eliminarContrato(path: string): Promise<void> {
     const { error } = await this.supabase.client.storage.from(BUCKET_CONTRATOS).remove([path]);
+    if (error) throw error;
+  }
+
+  // ── Contrato firmado en pantalla ──
+
+  /** Todo lo que llena el formato del contrato: alquiler, consola, pagos y arrendador. */
+  async datosContrato(alquilerId: number): Promise<DatosContrato> {
+    const [{ data, error }, config] = await Promise.all([
+      this.supabase.client
+        .from('alquileres')
+        .select('*, alquiler_consolas(nombre, tipo, serial), alquiler_pagos(monto)')
+        .eq('id', alquilerId)
+        .single(),
+      this.obtenerConfig(),
+    ]);
+    if (error) throw error;
+    const a = data as Alquiler & {
+      alquiler_consolas: { nombre: string; tipo: TipoConsola; serial: string | null } | null;
+      alquiler_pagos: { monto: number | string }[] | null;
+    };
+    const pagado = (a.alquiler_pagos ?? []).reduce((s, p) => s + Number(p.monto), 0);
+    return {
+      alquiler: a,
+      consola: a.alquiler_consolas,
+      pagado: pagado || Number(a.precio_total) || 0,
+      arrendadorNombre: config.arrendador_nombre ?? null,
+      arrendadorCedula: config.arrendador_cedula ?? null,
+    };
+  }
+
+  /** Guarda el PDF del contrato firmado en la carpeta del alquiler. */
+  async subirContratoFirmado(alquilerId: number, pdf: Blob): Promise<void> {
+    const { error } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .upload(`${alquilerId}/${Date.now()}-contrato-firmado.pdf`, pdf, { contentType: 'application/pdf' });
+    if (error) throw error;
+  }
+
+  /** Firma del arrendador (la dibuja el dueño una sola vez) como data URL PNG, o null si no hay. */
+  async firmaArrendador(): Promise<string | null> {
+    const { data, error } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .list(CARPETA_FIRMA_DUENO, { sortBy: { column: 'created_at', order: 'desc' } });
+    if (error) throw error;
+    const ultima = (data ?? []).find((f) => f.id);
+    if (!ultima) return null;
+    const { data: blob, error: e2 } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .download(`${CARPETA_FIRMA_DUENO}/${ultima.name}`);
+    if (e2) throw e2;
+    return await new Promise<string>((ok, mal) => {
+      const lector = new FileReader();
+      lector.onload = () => ok(String(lector.result));
+      lector.onerror = () => mal(lector.error);
+      lector.readAsDataURL(blob);
+    });
+  }
+
+  /** Solo el dueño (políticas del bucket): reemplaza su firma de arrendador. */
+  async guardarFirmaArrendador(png: Blob): Promise<void> {
+    const { data: viejas } = await this.supabase.client.storage.from(BUCKET_CONTRATOS).list(CARPETA_FIRMA_DUENO);
+    const { error } = await this.supabase.client.storage
+      .from(BUCKET_CONTRATOS)
+      .upload(`${CARPETA_FIRMA_DUENO}/firma-${Date.now()}.png`, png, { contentType: 'image/png' });
+    if (error) throw error;
+    const borrar = (viejas ?? []).filter((f) => f.id).map((f) => `${CARPETA_FIRMA_DUENO}/${f.name}`);
+    if (borrar.length) await this.supabase.client.storage.from(BUCKET_CONTRATOS).remove(borrar);
+  }
+
+  /** Solo el dueño: nombre y cédula que salen como arrendador en el contrato. */
+  async guardarArrendador(nombre: string, cedula: string): Promise<void> {
+    const { error } = await this.supabase.client.rpc('guardar_arrendador', { p_nombre: nombre, p_cedula: cedula });
     if (error) throw error;
   }
 

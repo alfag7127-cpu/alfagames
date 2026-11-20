@@ -949,6 +949,12 @@
         <app-pago-config destino="domicilio" />
       </div>
 
+      <!-- Firma del arrendador para el contrato firmado en pantalla (pedido del dueño). -->
+      <div class="bg-white rounded-xl shadow-sm p-4">
+        <h2 class="font-semibold text-slate-800 mb-3">✍️ Contrato: firma del arrendador</h2>
+        <app-firma-arrendador />
+      </div>
+
       <div class="bg-white rounded-xl shadow-sm p-4">
         <h2 class="font-semibold text-slate-800 mb-3">Controles sueltos y extras</h2>
         @if (config(); as cfg) {

@@ -1,3 +1,4 @@
+import { FirmaArrendador } from '../../shared/firma-arrendador';
 import { PagoConfig } from '../../shared/pago-config';
 import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
@@ -163,7 +164,7 @@ function deHoraLocal(valor: string): string {
 
 @Component({
   selector: 'app-alquiler',
-  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes, ReservasAlquilerTab, PagoConfig],
+  imports: [FormsModule, DecimalPipe, DatePipe, NgTemplateOutlet, Contratos, PagoPotes, ControlIcono, PesosDirective, GraficaProducido, Potes, LiquidacionPage, Clientes, ReservasAlquilerTab, PagoConfig, FirmaArrendador],
   templateUrl: './alquiler.html',
 })
 export class AlquilerPage implements OnInit, OnDestroy {

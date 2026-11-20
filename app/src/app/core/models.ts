@@ -152,6 +152,9 @@ export interface AlquilerConfig {
   precio_control_extra: number;
   noche_desde: string;
   noche_hasta: string;
+  /** Datos del arrendador en el contrato (solo el dueño los cambia). */
+  arrendador_nombre?: string | null;
+  arrendador_cedula?: string | null;
 }
 
 export interface Alquiler {

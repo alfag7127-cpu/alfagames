@@ -7675,3 +7675,60 @@ alter policy "reservas_qr_domicilio_subir" on storage.objects
   with check (bucket_id = 'reservas' and name like 'domicilio/%' and private.es_dueno_pagos());
 alter policy "reservas_qr_domicilio_borrar" on storage.objects
   using (bucket_id = 'reservas' and name like 'domicilio/%' and private.es_dueno_pagos());
+
+-- =============================================================================
+-- 61. CONTRATO DE ALQUILER FIRMADO EN PANTALLA (2026-11-20)
+-- Pedido del dueño: al entregar una consola se llena su formato de contrato con
+-- los datos del alquiler, el cliente firma con el dedo en el celular y queda un
+-- PDF en el bucket "contratos" (carpeta = id del alquiler). La firma del
+-- arrendador la dibuja el dueño una sola vez (carpeta firma-dueno/, solo él la
+-- cambia). Nombre y cédula del arrendador viven en alquiler_config (no en el
+-- código: el repositorio es público) y solo el dueño los cambia.
+-- =============================================================================
+
+alter table public.alquiler_config
+  add column if not exists arrendador_nombre text,
+  add column if not exists arrendador_cedula text;
+
+create or replace function private.proteger_arrendador()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if (new.arrendador_nombre is distinct from old.arrendador_nombre
+      or new.arrendador_cedula is distinct from old.arrendador_cedula)
+     and coalesce(auth.role(), '') in ('authenticated', 'anon')
+     and not coalesce(private.es_dueno_pagos(), false) then
+    raise exception 'Solo el dueño puede cambiar los datos del arrendador.';
+  end if;
+  return new;
+end;
+$$;
+create trigger alquiler_config_proteger_arrendador
+  before update on public.alquiler_config
+  for each row execute function private.proteger_arrendador();
+
+create or replace function public.guardar_arrendador(p_nombre text, p_cedula text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not coalesce(private.es_dueno_pagos(), false) then
+    raise exception 'Solo el dueño puede cambiar los datos del arrendador.';
+  end if;
+  update public.alquiler_config
+  set arrendador_nombre = nullif(btrim(p_nombre), ''),
+      arrendador_cedula = nullif(btrim(p_cedula), '')
+  where id = 1;
+end;
+$$;
+revoke all on function public.guardar_arrendador(text, text) from public, anon;
+grant execute on function public.guardar_arrendador(text, text) to authenticated;
+
+-- La firma del dueño (firma-dueno/) solo la sube o borra el dueño.
+alter policy "contratos_subir" on storage.objects
+  with check (bucket_id = 'contratos' and private.puede_alquiler() and name not like 'firma-dueno/%');
+alter policy "contratos_borrar_admin" on storage.objects
+  using (bucket_id = 'contratos' and private.is_admin() and name not like 'firma-dueno/%');
+create policy "contratos_firma_dueno_subir" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'contratos' and name like 'firma-dueno/%' and private.es_dueno_pagos());
+create policy "contratos_firma_dueno_borrar" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'contratos' and name like 'firma-dueno/%' and private.es_dueno_pagos());
