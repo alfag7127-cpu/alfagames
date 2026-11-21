@@ -2,7 +2,7 @@ import { Component, OnInit, input, output, signal, viewChild } from '@angular/co
 import { FormsModule } from '@angular/forms';
 import { AlquilerService, DatosContrato } from '../core/alquiler.service';
 import { ToastService } from '../core/toast.service';
-import { AccesoriosContrato, CONDICIONES_CONTRATO, fechaContrato, fechaHoraContrato, generarContratoPdf, pesosContrato } from './contrato-pdf';
+import { AccesoriosContrato, CONDICIONES_CONTRATO, fechaContrato, fechaHoraContrato, generarContratoPdf, pesosContrato, planContrato } from './contrato-pdf';
 import { FirmaPad } from './firma-pad';
 
 /**
@@ -59,6 +59,7 @@ import { FirmaPad } from './firma-pad';
             </div>
             <p><b>Entrega:</b> {{ fh(a.inicio) }}</p>
             <p><b>Devolución:</b> {{ fh(a.fin_pactado) }}</p>
+            <p><b>Plan / tiempo:</b> {{ plan(d) }}</p>
             <p><b>Valor pagado:</b> {{ pesos(d.pagado) }}</p>
           </section>
 
@@ -144,6 +145,10 @@ export class ContratoFirma implements OnInit {
 
   fh(iso: string): string {
     return fechaHoraContrato(iso);
+  }
+
+  plan(d: DatosContrato): string {
+    return planContrato(d.alquiler.plan_nombre, d.alquiler.inicio, d.alquiler.fin_pactado, d.extensiones ?? 0);
   }
 
   pesos(n: number): string {

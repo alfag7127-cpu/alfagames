@@ -64,6 +64,24 @@ export interface ReservaAlquiler {
   confirmada_en: string | null;
   created_at: string;
   alquiler_consolas?: { nombre: string; tipo?: TipoConsola } | null;
+  /** Ubicación que compartió el cliente al reservar (botón "Usar mi ubicación"). */
+  ubicacion_lat?: number | null;
+  ubicacion_lng?: number | null;
+  /** Contrato firmado por el cliente (desde la reserva web o con el enlace). */
+  contratos_firmas?: { firmado_en: string | null } | { firmado_en: string | null }[] | null;
+}
+
+/** El cliente ya firmó el contrato de esta reserva. */
+export function contratoFirmado(r: ReservaAlquiler): boolean {
+  const c = r.contratos_firmas;
+  const f = Array.isArray(c) ? c[0] : c;
+  return !!f?.firmado_en;
+}
+
+/** Enlace de Google Maps a la ubicación que compartió el cliente, o null. */
+export function enlaceUbicacion(r: { ubicacion_lat?: number | null; ubicacion_lng?: number | null }): string | null {
+  if (r.ubicacion_lat == null || r.ubicacion_lng == null) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${r.ubicacion_lat},${r.ubicacion_lng}`;
 }
 
 export interface ReservaGta6Creada {
@@ -135,7 +153,7 @@ export class Gta6Service {
   }
 
   async reservasDomicilio(): Promise<ReservaAlquiler[]> {
-    const { data, error } = await this.db.from('reservas_alquiler').select('*, alquiler_consolas(nombre)').eq('juego', 'gta6').order('inicio');
+    const { data, error } = await this.db.from('reservas_alquiler').select('*, alquiler_consolas(nombre), contratos_firmas(firmado_en)').eq('juego', 'gta6').order('inicio');
     if (error) throw error;
     return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));
   }

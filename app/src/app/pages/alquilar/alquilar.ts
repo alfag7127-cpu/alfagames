@@ -1,3 +1,5 @@
+import { ContratoReserva, DatosContratoReserva } from '../../shared/contrato-reserva';
+import { UbicacionBoton } from '../../shared/ubicacion-boton';
 import { NotaTransferencia } from '../../shared/nota-transferencia';
 import { PagoPublico } from '../../shared/pago-publico';
 import { VolverServicios } from '../../shared/volver-servicios';
@@ -11,7 +13,7 @@ import { ReservasService, enlaceWhatsapp } from '../../core/reservas.service';
 import { TipoConsola } from '../../core/models';
 import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from '../gta6/gta6-util';
 
-type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
+type Paso = 'plan' | 'datos' | 'contrato' | 'pago' | 'qr' | 'listo';
 
 /**
  * Página pública /alquilar: el cliente reserva una PS4 o PS5 a domicilio con los planes del alquiler.
@@ -19,7 +21,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
  */
 @Component({
   selector: 'app-alquilar',
-  imports: [FormsModule, DecimalPipe, VolverServicios, NotaTransferencia, PagoPublico],
+  imports: [FormsModule, DecimalPipe, VolverServicios, NotaTransferencia, PagoPublico, UbicacionBoton, ContratoReserva],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <header class="bg-gradient-to-br from-slate-950 via-slate-900 to-lime-900 px-4 py-5 shadow-lg">
@@ -138,14 +140,25 @@ type Paso = 'plan' | 'datos' | 'pago' | 'qr' | 'listo';
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
               </label>
+              <p class="-mt-2 text-xs text-slate-400">Escribe la dirección, comparte tu ubicación, o ambas.</p>
+              <app-ubicacion-boton [(ubicacion)]="ubicacion" />
               <app-nota-transferencia />
               <div class="flex gap-2">
                 <button type="button" (click)="paso.set('plan')" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
-                <button type="button" (click)="reservar()" [disabled]="enviando()"
-                  class="flex-1 rounded-xl bg-lime-400 py-2.5 text-sm font-bold text-slate-950 hover:bg-lime-300 disabled:opacity-50">
-                  {{ enviando() ? 'Reservando…' : 'Reservar' }}
+                <button type="button" (click)="aContrato()"
+                  class="flex-1 rounded-xl bg-lime-400 py-2.5 text-sm font-bold text-slate-950 hover:bg-lime-300">
+                  Continuar: leer y firmar el contrato
                 </button>
               </div>
+            </section>
+          }
+
+          @case ('contrato') {
+            <!-- Orden del dueño: sin contrato firmado no hay reserva; después se paga. -->
+            <section class="space-y-3">
+              <p class="text-sm text-slate-300">Paso 2 de 3 · Lee tu contrato y fírmalo con el dedo para reservar.</p>
+              <app-contrato-reserva [datos]="datosContrato()" [enviando]="enviando()" (firmado)="reservar($event)" />
+              <button type="button" (click)="paso.set('datos')" class="w-full rounded-xl bg-white/10 py-2.5 text-sm hover:bg-white/20">Atrás: corregir mis datos</button>
             </section>
           }
 
@@ -199,6 +212,7 @@ export class Alquilar implements OnInit {
   telefono = '';
   cedula = '';
   direccion = '';
+  readonly ubicacion = signal<{ lat: number; lng: number } | null>(null);
 
   readonly hora = hora;
   readonly diaYHora = diaYHora;
@@ -311,26 +325,55 @@ export class Alquilar implements OnInit {
     window.scrollTo({ top: 0 });
   }
 
-  async reservar(): Promise<void> {
-    const p = this.plan();
-    const forma = this.formaPago();
-    if (!p) return;
+  /** Paso 1 → 2: valida los datos y muestra el contrato para firmar. */
+  aContrato(): void {
+    if (!this.plan()) return;
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
     if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
-    if (this.direccion.trim().length < 5) return this.error.set('Escribe la dirección de entrega.');
-    if (forma !== 'qr') return this.error.set('Para el alquiler solo recibimos pagos por transferencia (QR).');
+    if (this.direccion.trim().length < 5 && !this.ubicacion()) return this.error.set('Escribe la dirección de entrega o comparte tu ubicación.');
+    this.error.set(null);
+    this.paso.set('contrato');
+    window.scrollTo({ top: 0 });
+  }
+
+  /** Dirección que se guarda: la escrita, o un aviso si solo compartió la ubicación. */
+  private direccionFinal(): string {
+    return this.direccion.trim().length >= 5 ? this.direccion.trim() : 'Ubicación compartida (ver mapa)';
+  }
+
+  datosContrato(): DatosContratoReserva {
+    return {
+      nombre: this.nombre.trim(),
+      cedula: this.cedula.trim(),
+      telefono: this.telefono.trim(),
+      direccion: this.direccion.trim(),
+      ubicacion: this.ubicacion(),
+      tipo: this.tipo(),
+      plan: this.plan()?.nombre ?? '',
+      inicio: this.inicioMs(),
+      fin: this.finMs(),
+      precio: this.plan()?.precio ?? 0,
+    };
+  }
+
+  /** Paso 2: con la firma se crea la reserva (y el contrato firmado) de una vez. Luego se paga. */
+  async reservar(firma: string): Promise<void> {
+    const p = this.plan();
+    if (!p) return;
     this.enviando.set(true);
     this.error.set(null);
     try {
-      const c = await this.servicio.crear({
+      const c = await this.servicio.crearFirmada({
+        gta6: false,
         tarifaId: p.id,
         nombre: this.nombre.trim(),
         telefono: this.telefono,
         cedula: this.cedula,
-        direccion: this.direccion.trim(),
+        direccion: this.direccionFinal(),
         inicio: new Date(this.inicioMs()).toISOString(),
-        formaPago: forma,
+        firma,
+        ubicacion: this.ubicacion(),
       });
       this.creada.set(c);
       this.paso.set(c.forma_pago === 'qr' ? 'qr' : 'listo');
@@ -347,6 +390,7 @@ export class Alquilar implements OnInit {
     this.creada.set(null);
     this.plan.set(null);
     this.formaPago.set('qr');
+    this.ubicacion.set(null);
     this.paso.set('plan');
     this.cargar();
   }

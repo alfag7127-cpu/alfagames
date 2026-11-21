@@ -7848,3 +7848,65 @@ end;
 $$;
 revoke all on function public.marcar_contrato_guardado(bigint) from public, anon;
 grant execute on function public.marcar_contrato_guardado(bigint) to authenticated;
+
+-- =============================================================================
+-- 63. RESERVA A DOMICILIO: PRIMERO SE FIRMA EL CONTRATO, LUEGO SE PAGA (2026-11-20)
+-- Pedido del dueño (orden nuevo en /alquilar y /gta6-domicilio): 1) el cliente pone sus
+-- datos (y si quiere su ubicación con un botón), 2) lee y firma el contrato con el dedo
+-- (sin firma no hay reserva), 3) paga con el QR y el local confirma el pago. Al local le
+-- llega la reserva con el contrato ya firmado. Los alquileres que hace el personal siguen
+-- igual (el contrato se abre al alquilar).
+-- =============================================================================
+
+alter table public.reservas_alquiler
+  add column if not exists ubicacion_lat numeric(9, 6) check (ubicacion_lat between -90 and 90),
+  add column if not exists ubicacion_lng numeric(9, 6) check (ubicacion_lng between -180 and 180);
+
+-- Público: nombre y cédula del arrendador (salen en todo contrato) para mostrar el contrato antes de firmar.
+create or replace function public.arrendador_publico()
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('nombre', arrendador_nombre, 'cedula', arrendador_cedula)
+  from public.alquiler_config where id = 1;
+$$;
+revoke all on function public.arrendador_publico() from public;
+grant execute on function public.arrendador_publico() to anon, authenticated;
+
+-- Público: crea la reserva (normal o GTA 6) y guarda en la misma operación el contrato firmado
+-- y la ubicación. Usa las funciones de siempre, con todas sus validaciones.
+create or replace function public.reservar_alquiler_firmado(
+  p_gta6 boolean,
+  p_tarifa_id bigint,
+  p_cliente_nombre text,
+  p_cliente_telefono text,
+  p_cliente_direccion text,
+  p_inicio timestamptz,
+  p_cliente_cedula text,
+  p_firma text,
+  p_lat numeric default null,
+  p_lng numeric default null
+)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v jsonb;
+  v_id bigint;
+begin
+  if p_firma is null or p_firma not like 'data:image/png;base64,%' or length(p_firma) >= 400000 then
+    raise exception 'Firma el contrato para poder reservar.';
+  end if;
+  if (p_lat is null) <> (p_lng is null) then raise exception 'Ubicación no válida.'; end if;
+  if p_gta6 then
+    v := public.crear_reserva_gta6_alquiler(p_tarifa_id, p_cliente_nombre, p_cliente_telefono, p_cliente_direccion, p_inicio, p_cliente_cedula);
+  else
+    v := public.crear_reserva_alquiler(p_tarifa_id, p_cliente_nombre, p_cliente_telefono, p_cliente_direccion, p_inicio, 'qr', p_cliente_cedula);
+  end if;
+  v_id := (v ->> 'id')::bigint;
+  if p_lat is not null then
+    update public.reservas_alquiler set ubicacion_lat = round(p_lat, 6), ubicacion_lng = round(p_lng, 6) where id = v_id;
+  end if;
+  insert into public.contratos_firmas (token, reserva_id, firma, firmado_en)
+  values (gen_random_uuid(), v_id, p_firma, now());
+  return v || jsonb_build_object('contrato_firmado', true);
+end;
+$$;
+revoke all on function public.reservar_alquiler_firmado(boolean, bigint, text, text, text, timestamptz, text, text, numeric, numeric) from public;
+grant execute on function public.reservar_alquiler_firmado(boolean, bigint, text, text, text, timestamptz, text, text, numeric, numeric) to anon, authenticated;

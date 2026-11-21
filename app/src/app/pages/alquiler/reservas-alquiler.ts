@@ -4,7 +4,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, effect, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlquilerService } from '../../core/alquiler.service';
-import { ReservaAlquiler } from '../../core/gta6.service';
+import { ReservaAlquiler, contratoFirmado, enlaceUbicacion } from '../../core/gta6.service';
 import { ConsolaConEstado } from '../../core/models';
 import { ReservasAlquilerService, porAtender } from '../../core/reservas-alquiler.service';
 import { enlaceWhatsapp } from '../../core/reservas.service';
@@ -65,6 +65,11 @@ type Filtro = 'calendario' | 'atender' | 'todas' | 'lista';
               <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
               <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }}</p>
               <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
+              <p class="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                @if (ubicacion(r); as u) { <a [href]="u" target="_blank" rel="noopener" class="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 hover:bg-sky-200">🗺️ Ver ubicación</a> }
+                @if (firmado(r)) { <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">✍️ Contrato firmado</span> }
+                @else { <span class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">✍️ Sin contrato firmado</span> }
+              </p>
             </div>
             <div class="text-right">
               <p class="font-bold tabular-nums text-slate-900">{{ r.precio | number: '1.0-0' }}</p>
@@ -203,6 +208,16 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
       : this.reservas().filter((r) => porAtender(r, this.ahora())),
   );
 
+  /** Mapa con la ubicación que compartió el cliente al reservar. */
+  ubicacion(r: ReservaAlquiler): string | null {
+    return enlaceUbicacion(r);
+  }
+
+  /** El cliente ya firmó el contrato (al reservar o con el enlace). */
+  firmado(r: ReservaAlquiler): boolean {
+    return contratoFirmado(r);
+  }
+
   constructor(
     private readonly servicio: ReservasAlquilerService,
     private readonly alquiler: AlquilerService,
@@ -329,12 +344,13 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
 
   confirmar(r: ReservaAlquiler): void {
     // Pedido del dueño: el mensaje lleva el enlace para que el cliente firme el contrato en su celular.
-    const contrato = nuevoEnlaceContrato();
+    // Si ya firmó al reservar (orden nuevo), no se manda enlace de firma.
+    const contrato = contratoFirmado(r) ? null : nuevoEnlaceContrato();
     if (r.forma_pago === 'efectivo') {
       if (!confirm(`¿Confirmar la reserva #${r.id} de ${r.cliente_nombre}? Paga ${r.precio.toLocaleString('es-CO')} en efectivo al recibir.`)) return;
-      void conWhatsappAlTerminar(this.whatsappConfirmada(r, contrato.url), () =>
+      void conWhatsappAlTerminar(this.whatsappConfirmada(r, contrato?.url), () =>
         this.accion(async () => {
-          await this.alquiler.crearEnlaceContrato(r.id, contrato.token);
+          if (contrato) await this.alquiler.crearEnlaceContrato(r.id, contrato.token);
           await this.servicio.confirmar(r.id, null, null);
         }, `Reserva #${r.id} confirmada.`),
       );
@@ -345,10 +361,10 @@ export class ReservasAlquilerTab implements OnInit, OnDestroy {
       this.toast.error('Indica en qué pote entró el dinero (Llave, Efectivo o Mixto).');
       return;
     }
-    void conWhatsappAlTerminar(this.whatsappConfirmada(r, contrato.url), () =>
+    void conWhatsappAlTerminar(this.whatsappConfirmada(r, contrato?.url), () =>
       this.accion(
         async () => {
-          await this.alquiler.crearEnlaceContrato(r.id, contrato.token);
+          if (contrato) await this.alquiler.crearEnlaceContrato(r.id, contrato.token);
           await this.servicio.confirmar(r.id, reparto.llave, reparto.efectivo);
         },
         `Pago de la reserva #${r.id} confirmado: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,

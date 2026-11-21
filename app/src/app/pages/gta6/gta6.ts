@@ -3,7 +3,7 @@ import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
-import { Gta6Config, Gta6Service, ReservaAlquiler } from '../../core/gta6.service';
+import { Gta6Config, Gta6Service, ReservaAlquiler, contratoFirmado, enlaceUbicacion } from '../../core/gta6.service';
 import { AlquilerTarifa } from '../../core/models';
 import { Reserva, ReservasService, enlaceWhatsapp, finReserva, reservaVigente } from '../../core/reservas.service';
 import { ToastService } from '../../core/toast.service';
@@ -136,6 +136,11 @@ type Filtro = 'proximas' | 'todas';
                 <p class="text-sm text-slate-700">Entrega {{ diaYHora(r.inicio) }} · recoge {{ diaYHora(r.fin) }}</p>
                 <p class="text-sm text-slate-600">{{ r.cliente_nombre }} · {{ r.cliente_telefono }}{{ r.cliente_cedula ? ' · C.C. ' + r.cliente_cedula : '' }}</p>
                 <p class="text-sm text-slate-600">📍 {{ r.cliente_direccion }}</p>
+                <p class="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                  @if (ubicacion(r); as u) { <a [href]="u" target="_blank" rel="noopener" class="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 hover:bg-sky-200">🗺️ Ver ubicación</a> }
+                  @if (firmado(r)) { <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">✍️ Contrato firmado</span> }
+                  @else { <span class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">✍️ Sin contrato firmado</span> }
+                </p>
               </div>
               <div class="text-right">
                 <p class="font-bold tabular-nums text-slate-900">{{ r.precio | number: '1.0-0' }}</p>
@@ -346,6 +351,16 @@ export class Gta6Page implements OnInit, OnDestroy {
       : this.reservasDomicilio().filter((r) => r.estado === 'confirmada' || (r.estado === 'pendiente' && !this.vencidaDomicilio(r))),
   );
 
+  /** Mapa con la ubicación que compartió el cliente al reservar. */
+  ubicacion(r: ReservaAlquiler): string | null {
+    return enlaceUbicacion(r);
+  }
+
+  /** El cliente ya firmó el contrato (al reservar o con el enlace). */
+  firmado(r: ReservaAlquiler): boolean {
+    return contratoFirmado(r);
+  }
+
   constructor(
     readonly auth: AuthService,
     private readonly gta6: Gta6Service,
@@ -500,11 +515,12 @@ export class Gta6Page implements OnInit, OnDestroy {
       return;
     }
     // Pedido del dueño: el mensaje lleva el enlace para que el cliente firme el contrato en su celular.
-    const contrato = nuevoEnlaceContrato();
-    const ok = await conWhatsappAlTerminar(whatsappReservaDomicilioConfirmada(r, 'PS5', contrato.url), () =>
+    // Si ya firmó al reservar (orden nuevo), no se manda enlace de firma.
+    const contrato = contratoFirmado(r) ? null : nuevoEnlaceContrato();
+    const ok = await conWhatsappAlTerminar(whatsappReservaDomicilioConfirmada(r, 'PS5', contrato?.url), () =>
       this.accion(
         async () => {
-          await this.alquilerSrv.crearEnlaceContrato(r.id, contrato.token);
+          if (contrato) await this.alquilerSrv.crearEnlaceContrato(r.id, contrato.token);
           await this.gta6.confirmarDomicilio(r.id, reparto.llave, reparto.efectivo);
         },
         `Reserva #${r.id} confirmada: ${r.precio.toLocaleString('es-CO')} entraron a los potes.`,

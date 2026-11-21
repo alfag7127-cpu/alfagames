@@ -56,6 +56,25 @@ export function fechaContrato(iso: string): string {
   return fechaHoraContrato(iso).split('  --  ')[0];
 }
 
+/** "13 h 55 min" entre dos fechas. */
+export function duracionContrato(desdeIso: string, hastaIso: string): string {
+  const min = Math.max(0, Math.round((new Date(hastaIso).getTime() - new Date(desdeIso).getTime()) / 60_000));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} ${h === 1 ? 'hora' : 'horas'}`;
+}
+
+/**
+ * Plan y tiempo total, para que se entienda la hora de devolución:
+ * "4 horas · total 4 horas", "La noche (7 PM a 9 AM) · total 12 h 55 min",
+ * "GTA 6 · 6 horas + 2 extensiones de tiempo · total 43 horas".
+ */
+export function planContrato(plan: string, inicio: string, fin: string, extensiones: number): string {
+  const ext = extensiones > 0 ? ` + ${extensiones} ${extensiones === 1 ? 'extensión' : 'extensiones'} de tiempo` : '';
+  return `${plan}${ext} · total ${duracionContrato(inicio, fin)}`;
+}
+
 export function pesosContrato(n: number): string {
   return '$ ' + Math.round(n).toLocaleString('es-CO');
 }
@@ -142,6 +161,7 @@ export async function generarContratoPdf(
   linea(`${marca(acc.cableCarga)} Cable de carga de mando        ${marca(!!acc.otro.trim())} Otro / Juego: ${acc.otro.trim()}`, 10, false, M + 4);
   campo('FECHA Y HORA DE ENTREGA:', fechaHoraContrato(a.inicio));
   campo('FECHA Y HORA DE DEVOLUCIÓN:', fechaHoraContrato(a.fin_pactado));
+  campo('PLAN / TIEMPO:', planContrato(a.plan_nombre, a.inicio, a.fin_pactado, d.extensiones ?? 0));
   campo('VALOR PAGADO:', pesosContrato(d.pagado));
 
   titulo('3. CONDICIONES BÁSICAS Y COMPROMISOS');

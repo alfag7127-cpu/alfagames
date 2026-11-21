@@ -96,6 +96,8 @@ export interface DatosContrato {
   consola: { nombre: string; tipo: TipoConsola; serial: string | null } | null;
   /** Suma de los pagos del alquiler (si no hay pagos registrados, el precio total). */
   pagado: number;
+  /** Veces que se pagó más tiempo (explica una devolución más tarde que el plan). */
+  extensiones?: number;
   arrendadorNombre: string | null;
   arrendadorCedula: string | null;
 }
@@ -124,6 +126,8 @@ export interface ContratoPublico {
   inicio: string;
   fin: string;
   pagado: number;
+  /** Veces que se pagó más tiempo (explica una devolución más tarde que el plan). */
+  extensiones?: number;
   arrendador_nombre: string | null;
   arrendador_cedula: string | null;
 }
@@ -328,7 +332,7 @@ export class AlquilerService {
     const [{ data, error }, config] = await Promise.all([
       this.supabase.client
         .from('alquileres')
-        .select('*, alquiler_consolas(nombre, tipo, serial), alquiler_pagos(monto)')
+        .select('*, alquiler_consolas(nombre, tipo, serial), alquiler_pagos(monto), alquiler_extensiones(id)')
         .eq('id', alquilerId)
         .single(),
       this.obtenerConfig(),
@@ -337,12 +341,14 @@ export class AlquilerService {
     const a = data as Alquiler & {
       alquiler_consolas: { nombre: string; tipo: TipoConsola; serial: string | null } | null;
       alquiler_pagos: { monto: number | string }[] | null;
+      alquiler_extensiones: { id: number }[] | null;
     };
     const pagado = (a.alquiler_pagos ?? []).reduce((s, p) => s + Number(p.monto), 0);
     return {
       alquiler: a,
       consola: a.alquiler_consolas,
       pagado: pagado || Number(a.precio_total) || 0,
+      extensiones: a.alquiler_extensiones?.length ?? 0,
       arrendadorNombre: config.arrendador_nombre ?? null,
       arrendadorCedula: config.arrendador_cedula ?? null,
     };

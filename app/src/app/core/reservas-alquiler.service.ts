@@ -82,11 +82,50 @@ export class ReservasAlquilerService {
     return { ...c, precio: Number(c.precio) };
   }
 
+  /**
+   * Orden del dueño: el cliente firma el contrato antes de reservar. Crea la reserva (normal o
+   * GTA 6) con el contrato firmado y la ubicación (si la compartió), todo junto.
+   */
+  async crearFirmada(r: {
+    gta6: boolean;
+    tarifaId: number;
+    nombre: string;
+    telefono: string;
+    cedula: string;
+    direccion: string;
+    inicio: string;
+    firma: string;
+    ubicacion: { lat: number; lng: number } | null;
+  }): Promise<ReservaAlquilerCreada> {
+    const { data, error } = await this.db.rpc('reservar_alquiler_firmado', {
+      p_gta6: r.gta6,
+      p_tarifa_id: r.tarifaId,
+      p_cliente_nombre: r.nombre,
+      p_cliente_telefono: r.telefono,
+      p_cliente_direccion: r.direccion,
+      p_inicio: r.inicio,
+      p_cliente_cedula: r.cedula,
+      p_firma: r.firma,
+      p_lat: r.ubicacion?.lat ?? null,
+      p_lng: r.ubicacion?.lng ?? null,
+    });
+    if (error) throw error;
+    const c = data as ReservaAlquilerCreada;
+    return { ...c, precio: Number(c.precio) };
+  }
+
+  /** Público: nombre y cédula del arrendador, para mostrar el contrato antes de firmar. */
+  async arrendador(): Promise<{ nombre: string | null; cedula: string | null }> {
+    const { data, error } = await this.db.rpc('arrendador_publico');
+    if (error) throw error;
+    return (data as { nombre: string | null; cedula: string | null }) ?? { nombre: null, cedula: null };
+  }
+
   /** Todas las reservas a domicilio: normales (/alquilar) y GTA 6 (/gta6-domicilio). */
   async listar(): Promise<ReservaAlquiler[]> {
     const { data, error } = await this.db
       .from('reservas_alquiler')
-      .select('*, alquiler_consolas(nombre, tipo)')
+      .select('*, alquiler_consolas(nombre, tipo), contratos_firmas(firmado_en)')
       .order('inicio');
     if (error) throw error;
     return (data as ReservaAlquiler[]).map((r) => ({ ...r, precio: Number(r.precio) }));

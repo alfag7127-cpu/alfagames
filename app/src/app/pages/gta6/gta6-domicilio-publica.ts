@@ -1,3 +1,6 @@
+import { ContratoReserva, DatosContratoReserva } from '../../shared/contrato-reserva';
+import { UbicacionBoton } from '../../shared/ubicacion-boton';
+import { ReservasAlquilerService } from '../../core/reservas-alquiler.service';
 import { DecimalPipe } from '@angular/common';
 import { PagoPublico } from '../../shared/pago-publico';
 import { Component, OnInit, computed, signal } from '@angular/core';
@@ -9,7 +12,7 @@ import { NotaTransferencia } from '../../shared/nota-transferencia';
 import { sumarDias } from '../../core/zona-horaria';
 import { aHoraLocal, consolasLibres, deHoraLocal, diaYHora, finPlan, hora, mensajeError } from './gta6-util';
 
-type Paso = 'plan' | 'datos' | 'pago' | 'listo';
+type Paso = 'plan' | 'datos' | 'contrato' | 'pago' | 'listo';
 
 /**
  * Página pública /gta6-domicilio: alquilar una PS5 con GTA 6 a domicilio desde el lanzamiento.
@@ -18,7 +21,7 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
  */
 @Component({
   selector: 'app-gta6-domicilio-publica',
-  imports: [FormsModule, DecimalPipe, Gta6Hero, NotaTransferencia, PagoPublico],
+  imports: [FormsModule, DecimalPipe, Gta6Hero, NotaTransferencia, PagoPublico, UbicacionBoton, ContratoReserva],
   template: `
     <div class="min-h-screen bg-slate-950 text-white">
       <app-gta6-hero titulo="PS5 con GTA 6 a domicilio" subtitulo="Te llevamos la PS5 con GTA 6 a tu casa. Reserva desde ya y paga por adelantado." [lanzamiento]="estado()?.lanzamiento ?? null" />
@@ -111,14 +114,25 @@ type Paso = 'plan' | 'datos' | 'pago' | 'listo';
                 <textarea [(ngModel)]="direccion" name="direccion" autocomplete="street-address" maxlength="200" rows="2"
                   class="mt-1 block w-full rounded-xl bg-white px-3 py-2.5 text-base text-slate-900"></textarea>
               </label>
+              <p class="-mt-2 text-xs text-slate-400">Escribe la dirección, comparte tu ubicación, o ambas.</p>
+              <app-ubicacion-boton [(ubicacion)]="ubicacion" />
               <app-nota-transferencia />
               <div class="flex gap-2">
                 <button type="button" (click)="paso.set('plan')" class="rounded-xl bg-white/10 px-4 py-2.5 text-sm hover:bg-white/20">Atrás</button>
-                <button type="button" (click)="reservar()" [disabled]="enviando()"
-                  class="flex-1 rounded-xl bg-pink-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-pink-400 disabled:opacity-50">
-                  {{ enviando() ? 'Reservando…' : 'Reservar y pagar' }}
+                <button type="button" (click)="aContrato()"
+                  class="flex-1 rounded-xl bg-pink-500 py-2.5 text-sm font-bold text-slate-950 hover:bg-pink-400">
+                  Continuar: leer y firmar el contrato
                 </button>
               </div>
+            </section>
+          }
+
+          @case ('contrato') {
+            <!-- Orden del dueño: sin contrato firmado no hay reserva; después se paga. -->
+            <section class="space-y-3">
+              <p class="text-sm text-slate-300">Paso 2 de 3 · Lee tu contrato y fírmalo con el dedo para reservar.</p>
+              <app-contrato-reserva [datos]="datosContrato()" [enviando]="enviando()" (firmado)="reservar($event)" />
+              <button type="button" (click)="paso.set('datos')" class="w-full rounded-xl bg-white/10 py-2.5 text-sm hover:bg-white/20">Atrás: corregir mis datos</button>
             </section>
           }
 
@@ -167,6 +181,7 @@ export class Gta6DomicilioPublica implements OnInit {
   telefono = '';
   cedula = '';
   direccion = '';
+  readonly ubicacion = signal<{ lat: number; lng: number } | null>(null);
 
   readonly hora = hora;
   readonly diaYHora = diaYHora;
@@ -189,6 +204,7 @@ export class Gta6DomicilioPublica implements OnInit {
   constructor(
     private readonly gta6: Gta6Service,
     private readonly reservas: ReservasService,
+    private readonly reservasAlquiler: ReservasAlquilerService,
   ) {}
 
   ngOnInit(): void {
@@ -255,25 +271,52 @@ export class Gta6DomicilioPublica implements OnInit {
     window.scrollTo({ top: 0 });
   }
 
-  async reservar(): Promise<void> {
-    const p = this.plan();
-    if (!p) return;
+  /** Paso 1 → 2: valida los datos y muestra el contrato para firmar. */
+  aContrato(): void {
+    if (!this.plan()) return;
     if (this.nombre.trim().length < 2) return this.error.set('Escribe tu nombre.');
     if (this.telefono.replace(/\D/g, '').length < 7) return this.error.set('Escribe tu número de celular.');
     if (this.cedula.replace(/[^0-9A-Za-z]/g, '').length < 5) return this.error.set('Escribe tu número de cédula.');
-    if (this.direccion.trim().length < 5) return this.error.set('Escribe la dirección de entrega.');
+    if (this.direccion.trim().length < 5 && !this.ubicacion()) return this.error.set('Escribe la dirección de entrega o comparte tu ubicación.');
+    this.error.set(null);
+    this.paso.set('contrato');
+    window.scrollTo({ top: 0 });
+  }
+
+  datosContrato(): DatosContratoReserva {
+    return {
+      nombre: this.nombre.trim(),
+      cedula: this.cedula.trim(),
+      telefono: this.telefono.trim(),
+      direccion: this.direccion.trim(),
+      ubicacion: this.ubicacion(),
+      tipo: 'PS5 con GTA 6',
+      plan: this.plan()?.nombre ?? '',
+      inicio: this.inicioMs(),
+      fin: this.finMs(),
+      precio: this.plan()?.precio ?? 0,
+    };
+  }
+
+  /** Paso 2: con la firma se crea la reserva (y el contrato firmado) de una vez. Luego se paga. */
+  async reservar(firma: string): Promise<void> {
+    const p = this.plan();
+    if (!p) return;
     this.enviando.set(true);
     this.error.set(null);
     try {
       this.creada.set(
-        await this.gta6.crearDomicilio({
+        (await this.reservasAlquiler.crearFirmada({
+          gta6: true,
           tarifaId: p.id,
           nombre: this.nombre.trim(),
           telefono: this.telefono,
           cedula: this.cedula,
-          direccion: this.direccion.trim(),
+          direccion: this.direccion.trim().length >= 5 ? this.direccion.trim() : 'Ubicación compartida (ver mapa)',
           inicio: new Date(this.inicioMs()).toISOString(),
-        }),
+          firma,
+          ubicacion: this.ubicacion(),
+        })) as unknown as ReservaGta6Creada,
       );
       this.paso.set('pago');
       window.scrollTo({ top: 0 });
@@ -288,6 +331,7 @@ export class Gta6DomicilioPublica implements OnInit {
   reiniciar(): void {
     this.creada.set(null);
     this.plan.set(null);
+    this.ubicacion.set(null);
     this.paso.set('plan');
     this.cargar();
   }

@@ -1,7 +1,7 @@
 import { Component, OnInit, signal, viewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { AlquilerService, ContratoPublico } from '../../core/alquiler.service';
-import { CONDICIONES_CONTRATO, fechaContrato, fechaHoraContrato, pesosContrato } from '../../shared/contrato-pdf';
+import { CONDICIONES_CONTRATO, duracionContrato, fechaContrato, fechaHoraContrato, pesosContrato } from '../../shared/contrato-pdf';
 import { FirmaPad } from '../../shared/firma-pad';
 
 /**
@@ -43,6 +43,7 @@ import { FirmaPad } from '../../shared/firma-pad';
               <p><b>Accesorios:</b> {{ k.mandos }} mando(s) inalámbrico(s), cable de poder, cable HDMI y cable de carga de mando{{ k.juegos.length ? '. Juegos: ' + k.juegos.join(', ') : '' }}.</p>
               <p><b>Entrega:</b> {{ fh(k.inicio) }}</p>
               <p><b>Devolución:</b> {{ fh(k.fin) }}</p>
+              <p><b>Tiempo total:</b> {{ dur(k.inicio, k.fin) }}</p>
               <p><b>Valor pagado:</b> {{ pesos(k.pagado) }}</p>
             </section>
             <section class="space-y-1">
@@ -108,6 +109,10 @@ export class ContratoPublicoPage implements OnInit {
 
   fh(iso: string): string {
     return fechaHoraContrato(iso);
+  }
+
+  dur(desde: string, hasta: string): string {
+    return duracionContrato(desde, hasta);
   }
 
   pesos(n: number): string {
